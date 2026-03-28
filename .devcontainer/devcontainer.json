@@ -1,0 +1,33 @@
+{
+    "name": "triton-redis-connector",
+    "image": "mcr.microsoft.com/devcontainers/python:3.12",
+    "features": {
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    },
+    "postCreateCommand": "curl -LsSf https://astral.sh/uv/install.sh | sh && source $HOME/.local/bin/env && uv sync --dev",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "charliermarsh.ruff",
+                "ms-python.python",
+                "ms-python.mypy-type-checker",
+                "ms-pyright.pyright",
+                "ms-azuretools.vscode-docker"
+            ],
+            "settings": {
+                "[python]": {
+                    "editor.defaultFormatter": "charliermarsh.ruff",
+                    "editor.formatOnSave": true,
+                    "editor.codeActionsOnSave": {
+                        "source.fixAll": "explicit",
+                        "source.organizeImports": "explicit"
+                    }
+                },
+                "ruff.fixAll": true,
+                "ruff.organizeImports": true,
+                "ruff.configurationPreference": "filesystemFirst"
+            }
+        }
+    },
+    "forwardPorts": [6379, 8000, 8001, 8002, 5540]
+}

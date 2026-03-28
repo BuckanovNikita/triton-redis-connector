@@ -1,0 +1,99 @@
+[project]
+name = "triton-redis-connector-workspace"
+version = "0.0.0"
+description = "Workspace root for triton-redis-connector and triton-model-tools"
+requires-python = ">=3.12"
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.15.0",
+    "pyright>=1.1.400",
+    "pre-commit>=4.1.0",
+    "pytest>=8.3.0",
+    "pytest-xdist>=3.5.0",
+    "pytest-cov>=6.0.0",
+    "pytest-asyncio>=0.25.0",
+    "ruff>=0.9.0",
+    "vulture>=2.14",
+    "types-redis>=4.6.0",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "COM812",   # missing-trailing-comma - conflicts with ruff formatter
+    "ISC001",   # single-line-implicit-string-concatenation - conflicts with formatter
+    "EM",       # flake8-errmsg - overly pedantic
+    "TRY003",   # raise-vanilla-args - same as EM
+    "D213",     # multi-line-summary-second-line
+    "D203",     # one-blank-line-before-class
+    "RUF001",   # ambiguous-unicode-character - project uses Russian strings
+    "PERF203",  # try-except-in-loop - false positive in Python 3.11+
+    "PLR2004",  # magic-value-comparison
+]
+fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "ANN401", "PLR2004", "PLC0415", "D101", "D102", "D103", "D104", "INP001", "S311", "SLF001"]
+"**/tests/**" = ["S101", "S105", "S106", "ANN401", "PLR2004", "PLC0415", "D101", "D102", "D103", "D104", "INP001", "S311", "SLF001"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+explicit_package_bases = true
+mypy_path = [
+    "packages/triton_redis_connector",
+    "packages/triton_model_tools",
+]
+exclude = [
+    "packages/triton_redis_connector/tests/",
+    "packages/triton_model_tools/tests/",
+]
+
+[[tool.mypy.overrides]]
+module = ["tritonclient.*", "tritonserver.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["ultralytics.*", "onnx.*", "onnxruntime.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = [
+    "packages/triton_redis_connector/tests",
+    "packages/triton_model_tools/tests",
+]
+addopts = ["-v", "--tb=short", "-n", "auto"]
+
+[tool.vulture]
+min_confidence = 80
+paths = [
+    "packages/triton_redis_connector/triton_redis_connector",
+    "packages/triton_model_tools/triton_model_tools",
+]
+
+[tool.coverage.run]
+source = ["triton_redis_connector", "triton_model_tools"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 65
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "\\.\\.\\.",
+]

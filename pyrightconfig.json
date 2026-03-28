@@ -1,0 +1,15 @@
+{
+    "pythonVersion": "3.12",
+    "typeCheckingMode": "strict",
+    "include": [
+        "packages/triton_redis_connector/triton_redis_connector",
+        "packages/triton_model_tools/triton_model_tools"
+    ],
+    "exclude": [
+        "**/__pycache__",
+        ".venv",
+        "build",
+        "dist"
+    ],
+    "reportMissingTypeStubs": "warning"
+}
