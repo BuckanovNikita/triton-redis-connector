@@ -1,0 +1,55 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - ..:/workspace:cached
+    command: sleep infinity
+    depends_on:
+      redis:
+        condition: service_started
+      triton:
+        condition: service_started
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: redis-cli ping
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      RI_REDIS_HOST_default: redis
+      RI_REDIS_PORT_default: 6379
+      RI_REDIS_ALIAS_default: Local Redis
+
+  triton:
+    image: nvcr.io/nvidia/tritonserver:25.02-py3
+    volumes:
+      - ../model_repository:/models
+    command: >
+      tritonserver
+        --model-repository=/models
+        --model-control-mode=poll
+        --repository-poll-secs=10
+        --exit-on-error=false
+        --strict-model-config=false
+    healthcheck:
+      test: curl -f http://localhost:8000/v2/health/ready || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  redis_data:

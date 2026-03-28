@@ -1,10 +1,10 @@
 {
     "name": "triton-redis-connector",
-    "image": "mcr.microsoft.com/devcontainers/python:3.12",
-    "features": {
-        "ghcr.io/devcontainers/features/docker-in-docker:2": {}
-    },
-    "postCreateCommand": "curl -LsSf https://astral.sh/uv/install.sh | sh && source $HOME/.local/bin/env && uv sync --dev",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "app",
+    "workspaceFolder": "/workspace",
+    "remoteUser": "vscode",
+    "postCreateCommand": "uv sync --dev",
     "customizations": {
         "vscode": {
             "extensions": [
@@ -25,9 +25,17 @@
                 },
                 "ruff.fixAll": true,
                 "ruff.organizeImports": true,
-                "ruff.configurationPreference": "filesystemFirst"
+                "ruff.configurationPreference": "filesystemFirst",
+                "python.testing.pytestEnabled": true,
+                "python.testing.pytestArgs": ["-v", "--tb=short"]
             }
         }
     },
-    "forwardPorts": [6379, 8000, 8001, 8002, 5540]
+    "otherPortsAttributes": { "onAutoForward": "ignore" },
+    "containerEnv": {
+        "REDIS_HOST": "redis",
+        "REDIS_PORT": "6379",
+        "TRITON_HTTP_URL": "triton:8000",
+        "TRITON_GRPC_URL": "triton:8001"
+    }
 }
