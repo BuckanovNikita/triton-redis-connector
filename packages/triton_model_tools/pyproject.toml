@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Tools for converting and verifying ultralytics models for Triton"
 requires-python = ">=3.12"
 dependencies = [
+    "triton-shared-models",
     "ultralytics>=8.4.0",
     "onnx>=1.20.0",
     "onnxruntime>=1.24.0",
@@ -17,6 +18,9 @@ dependencies = [
     "numpy>=1.26.0",
     "Pillow>=10.0.0",
 ]
+
+[tool.uv.sources]
+triton-shared-models = { workspace = true }
 
 [project.scripts]
 triton-model-export = "triton_model_tools.__main__:main"

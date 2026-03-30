@@ -1,0 +1,13 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "triton-shared-models"
+version = "0.1.0"
+description = "Shared Triton type definitions for triton-redis-connector workspace"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.10.0",
+    "loguru>=0.7.3",
+]

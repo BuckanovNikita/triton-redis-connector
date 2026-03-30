@@ -57,10 +57,12 @@ explicit_package_bases = true
 mypy_path = [
     "packages/triton_redis_connector",
     "packages/triton_model_tools",
+    "packages/triton_shared_models",
 ]
 exclude = [
     "packages/triton_redis_connector/tests/",
     "packages/triton_model_tools/tests/",
+    "packages/triton_shared_models/tests/",
 ]
 
 [[tool.mypy.overrides]]
@@ -79,6 +81,7 @@ ignore_missing_imports = true
 testpaths = [
     "packages/triton_redis_connector/tests",
     "packages/triton_model_tools/tests",
+    "packages/triton_shared_models/tests",
 ]
 addopts = ["-v", "--tb=short", "-n", "auto"]
 
@@ -87,6 +90,7 @@ min_confidence = 80
 paths = [
     "packages/triton_redis_connector/triton_redis_connector",
     "packages/triton_model_tools/triton_model_tools",
+    "packages/triton_shared_models/triton_shared_models",
 ]
 
 # ---------------------------------------------------------------------------
@@ -97,6 +101,7 @@ paths = [
 root_packages = [
     "triton_redis_connector",
     "triton_model_tools",
+    "triton_shared_models",
 ]
 include_external_packages = false
 
@@ -146,7 +151,20 @@ forbidden_modules = [
     "triton_redis_connector",
 ]
 
-# Contract 5: model_tools internal layers
+# Contract 5: Package boundary — shared_models must not import connector or model_tools
+[[tool.importlinter.contracts]]
+id = "shared-models-independence"
+name = "triton_shared_models must not import connector or model_tools"
+type = "forbidden"
+source_modules = [
+    "triton_shared_models",
+]
+forbidden_modules = [
+    "triton_redis_connector",
+    "triton_model_tools",
+]
+
+# Contract 6: model_tools internal layers
 # __main__ (CLI) → exporter (logic) → repository (builder) → models (leaf)
 [[tool.importlinter.contracts]]
 id = "model-tools-layers"
@@ -160,7 +178,7 @@ layers = [
 ]
 
 [tool.coverage.run]
-source = ["triton_redis_connector", "triton_model_tools"]
+source = ["triton_redis_connector", "triton_model_tools", "triton_shared_models"]
 branch = true
 
 [tool.coverage.report]

@@ -17,6 +17,7 @@ members = [
     "triton-model-tools",
     "triton-redis-connector",
     "triton-redis-connector-workspace",
+    "triton-shared-models",
 ]
 
 [[package]]
@@ -2753,6 +2754,7 @@ dependencies = [
     { name = "onnxruntime" },
     { name = "pillow" },
     { name = "pydantic" },
+    { name = "triton-shared-models" },
     { name = "tritonclient", extra = ["all"] },
     { name = "ultralytics" },
 ]
@@ -2765,6 +2767,7 @@ requires-dist = [
     { name = "onnxruntime", specifier = ">=1.24.0" },
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "pydantic", specifier = ">=2.10.0" },
+    { name = "triton-shared-models", editable = "packages/triton_shared_models" },
     { name = "tritonclient", extras = ["all"], specifier = ">=2.66.0" },
     { name = "ultralytics", specifier = ">=8.4.0" },
 ]
@@ -2827,6 +2830,21 @@ dev = [
     { name = "ruff", specifier = ">=0.9.0" },
     { name = "types-redis", specifier = ">=4.6.0" },
     { name = "vulture", specifier = ">=2.14" },
+]
+
+[[package]]
+name = "triton-shared-models"
+version = "0.1.0"
+source = { editable = "packages/triton_shared_models" }
+dependencies = [
+    { name = "loguru" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "loguru", specifier = ">=0.7.3" },
+    { name = "pydantic", specifier = ">=2.10.0" },
 ]
 
 [[package]]
