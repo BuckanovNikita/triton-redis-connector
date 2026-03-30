@@ -38,6 +38,11 @@ def set_context(ctx: EventContext) -> Token[EventContext]:
     """Set the EventContext for the current processing scope.
 
     Returns a Token that can be used to reset the context via
-    _context_var.reset(token).
+    reset_context(token).
     """
     return _context_var.set(ctx)
+
+
+def reset_context(token: Token[EventContext]) -> None:
+    """Reset the EventContext to the state before set_context was called."""
+    _context_var.reset(token)
