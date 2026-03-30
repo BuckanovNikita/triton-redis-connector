@@ -2,8 +2,8 @@
 name: implementer
 description: >
   Implementation agent. Writes production code following project conventions:
-  strict typing, loguru logging, pydantic models, async patterns. Knows
-  tritonclient and redis-py APIs in depth. Use when implementing features,
+  strict typing, loguru logging, pydantic models, execution variant patterns.
+  Knows tritonclient and redis-py APIs in depth. Use when implementing features,
   fixing bugs, or writing new modules. Always runs linters after writing code.
 ---
 
@@ -42,34 +42,282 @@ If ruff check reports fixable issues: `uv run ruff check --fix .` then re-run fo
 
 ---
 
-## Component Model — `__call__` Pattern
+## Execution Variant Model
 
-### Three Primitives
+### Nine Variants Overview
 
-User code implements one of three callable interfaces:
+The framework has three primitives, each with execution mode variants:
 
-- **`Source[TOut]`** — `__call__(self) -> TOut`, with `stop: threading.Event` field.
-  Framework calls it in a loop until `stop` is set.
-- **`Processor[TIn, TOut]`** — `__call__(self, item: TIn) -> TOut`. Pure transform.
-- **`Sink[TIn]`** — `__call__(self, item: TIn) -> None`. Writes to external systems.
+**Source** — produces events:
+- `Source`: inline, `__call__(self) -> Event | None`
+- `ThreadSource`: dedicated thread, `__call__(self) -> Event | None`, has `stop: threading.Event`
+- `ProcessSource`: dedicated process, `__call__(self) -> Event | None`, has `stop: threading.Event`
 
-### Envelope Is Internal Only
+**Processor** — transforms events:
+- `Processor`: inline, `__call__(self, event) -> Event | None`
+- `ThreadProcessor`: dedicated thread, `__call__(self, event) -> Event | None`
+- `ThreadPoolProcessor`: thread pool (N workers), `__call__(self, event) -> Event | None`
+- `ProcessPoolProcessor`: process pool (N workers), `__call__(self, event) -> Event | None`
+
+**Sink** — consumes events:
+- `Sink`: inline, `__call__(self, event) -> MetricEvent | None`
+- `ThreadSink`: dedicated thread, `__call__(self, event) -> MetricEvent | None`, has `stop: threading.Event`
+
+### Source Implementation
+
+Sources return events directly — no `emit` callback:
+
+```python
+from __future__ import annotations
+import threading
+from redis import Redis
+
+class RedisStreamSource:
+    def __init__(self, redis_client: Redis, stream: str, group: str, consumer: str) -> None:
+        self.redis = redis_client
+        self.stream = stream
+        self.group = group
+        self.consumer = consumer
+        self.stop = threading.Event()
+
+    def __call__(self) -> ImageEvent | None:
+        messages = self.redis.xreadgroup(
+            groupname=self.group,
+            consumername=self.consumer,
+            streams={self.stream: ">"},
+            count=1,
+            block=1000,
+        )
+        if not messages:
+            return None
+        stream_name, entries = messages[0]
+        msg_id, fields = entries[0]
+        return ImageEvent(message_id=msg_id, image_key=fields[b"image_key"].decode())
+```
+
+For `ThreadSource` and `ProcessSource`, the framework runs `__call__` in a loop
+in the dedicated thread/process, checking `stop` between iterations.
+
+### Processor Implementation
+
+Processors are pure transforms. Return `None` to filter/drop an event:
+
+```python
+from __future__ import annotations
+import numpy as np
+import numpy.typing as npt
+
+class ImagePreprocessor:
+    def __init__(self, target_size: tuple[int, int]) -> None:
+        self.target_size = target_size
+
+    def __call__(self, event: ImageEvent) -> TensorEvent | None:
+        if event.image_data is None:
+            return None
+        tensor = self._resize_and_normalize(event.image_data)
+        return TensorEvent(request_id=event.request_id, tensor=tensor)
+
+    def _resize_and_normalize(self, image: npt.NDArray[np.uint8]) -> npt.NDArray[np.float32]:
+        ...
+```
+
+For pool variants (`ThreadPoolProcessor`, `ProcessPoolProcessor`), the framework
+manages N instances. Each instance has isolated state by default.
+
+### Sink Implementation
+
+Sinks consume events and optionally return a `MetricEvent`:
+
+```python
+from __future__ import annotations
+import threading
+from redis import Redis
+
+class RedisResultSink:
+    def __init__(self, redis_client: Redis, stream: str) -> None:
+        self.redis = redis_client
+        self.stream = stream
+        self.stop = threading.Event()
+
+    def __call__(self, event: DetectionEvent) -> MetricEvent | None:
+        self.redis.xadd(
+            name=self.stream,
+            fields=event.to_redis_fields(),
+            maxlen=10000,
+            approximate=True,
+        )
+        return MetricEvent(name="results_written", value=1)
+```
+
+### Inference as ProcessPoolProcessor
+
+Triton inference is just a `ProcessPoolProcessor` — no special intercept pattern:
+
+```python
+from __future__ import annotations
+import numpy as np
+import numpy.typing as npt
+
+class TritonInferenceProcessor:
+    def __init__(self, model_name: str, triton_url: str) -> None:
+        self.model_name = model_name
+        import tritonclient.grpc as grpcclient  # noqa: PLC0415
+        self.client = grpcclient.InferenceServerClient(url=triton_url)
+
+    def __call__(self, event: TensorEvent) -> InferenceResultEvent:
+        import tritonclient.grpc as grpcclient  # noqa: PLC0415
+        input_tensor = grpcclient.InferInput("images", event.tensor.shape, "FP32")
+        input_tensor.set_data_from_numpy(event.tensor)
+        output = grpcclient.InferRequestedOutput("output0")
+        result = self.client.infer(
+            model_name=self.model_name,
+            inputs=[input_tensor],
+            outputs=[output],
+        )
+        return InferenceResultEvent(
+            request_id=event.request_id,
+            detections=result.as_numpy("output0"),
+        )
+```
+
+Each process in the pool creates its own Triton gRPC client (connections are
+not fork-safe).
+
+---
+
+## Factory Pattern for Shared State
+
+By default, pool variant instances have isolated state. For shared state, use
+the factory pattern:
+
+```python
+from __future__ import annotations
+from dataclasses import dataclass
+import numpy.typing as npt
+import numpy as np
+
+@dataclass(frozen=True)
+class PreprocessSharedContext:
+    class_names: tuple[str, ...]
+    mean: npt.NDArray[np.float32]
+    std: npt.NDArray[np.float32]
+
+def create_shared() -> PreprocessSharedContext:
+    return PreprocessSharedContext(
+        class_names=("person", "car", "truck"),
+        mean=np.array([0.485, 0.456, 0.406], dtype=np.float32),
+        std=np.array([0.229, 0.224, 0.225], dtype=np.float32),
+    )
+
+def create_processor(shared: PreprocessSharedContext) -> ImagePreprocessor:
+    return ImagePreprocessor(mean=shared.mean, std=shared.std)
+```
+
+For `ProcessPoolProcessor`: the `SharedContext` must be picklable (or use
+`multiprocessing.shared_memory` for large arrays). The user is responsible for
+process safety.
+
+For `ThreadPoolProcessor`: the `SharedContext` can use `threading.Lock` for
+mutable shared state. The user is responsible for thread safety.
+
+---
+
+## Queue Ownership for Parallel Variants
+
+Parallel variants own their input/output queues internally. The framework wires
+queues at graph build time based on type annotations:
+
+- `ThreadProcessor` owns one input queue, one output queue.
+- `ThreadPoolProcessor` owns one shared input queue, one shared output queue
+  consumed by N threads.
+- `ProcessPoolProcessor` owns one shared input queue, one shared output queue
+  consumed by N processes.
+- `ThreadSource`/`ProcessSource` own one output queue.
+- `ThreadSink` owns one input queue.
+
+User code never creates or touches queues. All queues have `maxsize` set by
+the framework (configurable per variant).
+
+---
+
+## Main Loop Dispatch
+
+The main loop has three responsibilities:
+
+1. **Non-parallel dispatch** — calls inline `Source`, `Processor`, and `Sink`
+   variants sequentially, routing events through the graph by type matching.
+2. **Terminal event listening** — watches for `ShutdownEvent` on a dedicated
+   channel. On receipt, sets `stop` on all parallel variants and drains queues.
+3. **Monitor/restart parallel** — periodically checks if Thread/Process variants
+   are alive. On crash: logs error, restarts the variant, re-wires queues.
+
+```python
+from __future__ import annotations
+
+class MainLoop:
+    def run(self) -> None:
+        while not self.shutdown_requested:
+            for source in self.inline_sources:
+                event = source()
+                if event is not None:
+                    self._route_event(event)
+
+            self._check_parallel_health()
+            self._drain_parallel_outputs()
+
+    def _route_event(self, event: object) -> None:
+        event_type = type(event)
+        for handler in self.graph.handlers_for(event_type):
+            result = handler(event)
+            if result is not None:
+                self._route_event(result)
+
+    def _check_parallel_health(self) -> None:
+        for variant in self.parallel_variants:
+            if not variant.is_alive():
+                logger.error("Variant {} crashed, restarting", variant.name)
+                variant.restart()
+```
+
+---
+
+## Error Handling — Errors to Queues
+
+No primitive raises exceptions during normal operation. Errors become typed events:
+
+```python
+from __future__ import annotations
+from pydantic import BaseModel
+
+class DecodeError(BaseModel):
+    request_id: str
+    error_message: str
+    source_event_type: str
+
+class InferenceError(BaseModel):
+    request_id: str
+    model_name: str
+    error_message: str
+```
+
+The graph routes error events to error-handling sinks (logging, dead-letter, retry).
+Only catastrophic failures (OOM, segfault) propagate as exceptions. The main loop
+catches worker crashes and restarts parallel variants.
+
+---
+
+## Envelope Is Internal Only
 
 The `Envelope` type is a framework-internal transport. User code NEVER receives
 or returns an Envelope. Metadata access (request_id, timestamps) is via
 `current_context()` from `contextvars`.
 
-### Config Naming
+---
+
+## Config Naming
 
 Pipeline config sections are named `sources`, `sinks`, `processors` (not
 `input_streams`, `output_streams`, or `components`).
-
-### Inference Interception
-
-There is no `TritonInferenceProcessor` class. A `Processor` returns
-`InferenceInput` (pydantic model with tensor data, model name, output names).
-The framework intercepts this return type, routes to a worker pool for Triton
-inference, and re-injects `InferenceOutput` into the next stage.
 
 ---
 
@@ -81,7 +329,6 @@ inference, and re-injects `InferenceOutput` into the next stage.
 from redis.asyncio import Redis
 
 redis_client = Redis(host="redis", port=6379, decode_responses=True)
-# For binary data (images, numpy), use decode_responses=False on a separate client
 redis_binary = Redis(host="redis", port=6379, decode_responses=False)
 ```
 
@@ -92,47 +339,36 @@ try:
     await redis_client.xgroup_create(
         name="stream:input",
         groupname="inference-workers",
-        id="0",       # Start from beginning; use "$" for only new messages
-        mkstream=True, # Create stream if it doesn't exist
+        id="0",
+        mkstream=True,
     )
 except redis.exceptions.ResponseError as exc:
     if "BUSYGROUP" not in str(exc):
         raise
-    # Group already exists — safe to ignore
 ```
 
 ### Reading with Consumer Groups
 
 ```python
-# Read new messages (competing consumers)
 messages = await redis_client.xreadgroup(
     groupname="inference-workers",
     consumername="worker-1",
-    streams={"stream:input": ">"},  # ">" = only new undelivered messages
-    count=10,       # Max messages per read
-    block=5000,     # Block for 5s (0 = forever, None = no block)
+    streams={"stream:input": ">"},
+    count=10,
+    block=5000,
 )
-# Returns: list of [stream_name, [(message_id, {field: value}), ...]]
-
-# Acknowledge after successful processing
 await redis_client.xack("stream:input", "inference-workers", message_id)
 ```
 
 ### Recovery: Interleave Ratio + TTL
 
 ```python
-# Interleave pending reclaim with new message reads at 4:1 ratio.
-# Pending messages older than TTL (default 60s) are dropped with XACK.
 pending = await redis_client.xreadgroup(
     groupname="inference-workers",
     consumername="worker-1",
-    streams={"stream:input": "0"},  # "0" = re-read all pending for this consumer
+    streams={"stream:input": "0"},
     count=100,
 )
-# Check idle time for each pending message.
-# If idle > pending_ttl_seconds: XACK and drop (do not reprocess).
-# Otherwise: process normally.
-# Then read 4x new messages before reclaiming more pending.
 ```
 
 ### Writing Results
@@ -141,7 +377,7 @@ pending = await redis_client.xreadgroup(
 await redis_client.xadd(
     name="stream:results",
     fields={"request_id": req_id, "detections": json_str, "model": model_name},
-    maxlen=10000,       # Approximate trimming
+    maxlen=10000,
     approximate=True,
 )
 ```
@@ -155,8 +391,7 @@ await redis_client.xadd(
 - Redis connections are NOT fork-safe. After `os.fork()` or in multiprocessing
   workers, create new connections. Never share a Redis client across processes.
 - Pipeline/transaction: use `async with redis_client.pipeline() as pipe:` for
-  batching commands. Pipeline reduces round-trips but is not atomic (use MULTI
-  for atomicity).
+  batching commands.
 
 ---
 
@@ -171,10 +406,7 @@ triton_client = grpcclient.InferenceServerClient(url="triton:8001")
 ready = await triton_client.is_server_ready()
 ```
 
-### Building Inference Request with async_infer + Callback
-
-Workers use `async_infer` with callback-based completion. Do NOT wrap synchronous
-`infer()` calls in retry logic around async code.
+### Building Inference Request
 
 ```python
 import numpy as np
@@ -186,41 +418,13 @@ input_tensor.set_data_from_numpy(input_data)
 
 output = grpcclient.InferRequestedOutput("output0")
 
-# Callback-based async inference
-def on_infer_complete(result, error):
-    if error is not None:
-        handle_inference_error(error)
-        return
-    output_data = result.as_numpy("output0")
-    process_output(output_data)
-
-await triton_client.async_infer(
+result = await triton_client.infer(
     model_name="yolo11s",
     inputs=[input_tensor],
     outputs=[output],
-    callback=on_infer_complete,
-    model_version="",  # Empty string = latest version
+    model_version="",
 )
-```
-
-### Callback-Based Retry with threading.Timer
-
-Retry failed inference using `threading.Timer` rather than wrapping sync retry
-logic around async calls:
-
-```python
-import threading
-
-def on_infer_with_retry(result, error, *, attempt: int = 1, max_retries: int = 3):
-    if error is not None and attempt < max_retries:
-        delay = 0.5 * (2 ** (attempt - 1))
-        timer = threading.Timer(delay, schedule_retry, args=[attempt + 1])
-        timer.start()
-        return
-    if error is not None:
-        logger.error("Inference failed after {} attempts: {}", max_retries, error)
-        return
-    process_output(result)
+output_data = result.as_numpy("output0")
 ```
 
 ### Triton Data Type Mapping
@@ -233,7 +437,6 @@ Use these string names in InferInput:
 
 ```python
 metadata = await triton_client.get_model_metadata("yolo11s")
-# Access: metadata.inputs[i].name, .datatype, .shape
 config = await triton_client.get_model_config("yolo11s")
 ```
 
@@ -308,11 +511,9 @@ class StreamConfig(BaseModel):
 ### Serialization for Redis
 
 ```python
-# To dict for XADD (all values must be str)
 fields = {k: str(v) for k, v in request.model_dump().items()}
 await redis_client.xadd("stream:input", fields)
 
-# From Redis dict back to model
 request = InferenceRequest.model_validate(message_fields)
 ```
 
@@ -350,16 +551,13 @@ Gotchas:
 ```python
 from loguru import logger
 
-# Structured logging with {} placeholders (NOT f-strings for performance)
 logger.info("Processing request {}", request_id)
 logger.debug("Tensor shape: {} dtype: {}", arr.shape, arr.dtype)
 logger.error("Inference failed for model {}: {}", model_name, exc)
 
-# Binding context for a subsystem
 sub_logger = logger.bind(worker_id=worker_id, model=model_name)
 sub_logger.info("Starting inference")
 
-# Exception logging (captures traceback automatically)
 try:
     result = await triton_client.infer(...)
 except tritonclient.utils.InferenceServerException:
@@ -370,8 +568,7 @@ except tritonclient.utils.InferenceServerException:
 Gotchas:
 - NEVER use f-strings in logger calls: `logger.info(f"x={x}")` — this evaluates
   the f-string even at disabled log levels. Always use `logger.info("x={}", x)`.
-- loguru intercepts stdlib logging by default. If third-party libs use stdlib
-  logging, their output goes through loguru.
+- loguru intercepts stdlib logging by default.
 
 ---
 
@@ -391,8 +588,8 @@ def process(config: TritonModelConfig, path: Path) -> None: ...
 ```
 
 When to use: for imports that are ONLY needed for type annotations, not at
-runtime. This avoids circular imports and reduces startup time. Heavy imports
-like `numpy`, `onnx`, `ultralytics` should use runtime lazy import pattern:
+runtime. Heavy imports like `numpy`, `onnx`, `ultralytics` should use runtime
+lazy import pattern:
 
 ```python
 def export() -> None:
@@ -440,13 +637,12 @@ def inference_worker(
     request_queue: multiprocessing.Queue,
     result_queue: multiprocessing.Queue,
 ) -> None:
-    # Create connections INSIDE the worker (not in parent)
     import tritonclient.grpc as grpcclient  # noqa: PLC0415
     client = grpcclient.InferenceServerClient(url="triton:8001")
 
     while True:
         request = request_queue.get()
-        if request is None:  # Poison pill shutdown
+        if request is None:
             break
         result = client.infer(...)
         result_queue.put(result)

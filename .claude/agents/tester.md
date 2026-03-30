@@ -106,67 +106,395 @@ async def redis_client() -> AsyncIterator[redis.asyncio.Redis]:
 
 ---
 
-## Testing the `__call__` Pattern
+## Execution Variant Architecture
 
-### Source Testing
+The framework has 9 execution variants across 3 primitive roles:
 
-Sources are callables with a `stop` event. Test the call and the stop mechanism:
+| Role | Variants | Signature |
+|---|---|---|
+| **Source** | `Source`, `ThreadSource`, `ProcessSource` | `__call__(self) -> Event \| None` |
+| **Processor** | `Processor`, `ThreadProcessor`, `ThreadPoolProcessor`, `ProcessPoolProcessor` | `__call__(self, event) -> Event \| None` |
+| **Sink** | `Sink`, `ThreadSink` | `__call__(self, event) -> MetricEvent \| None` |
+
+Key properties:
+- Sources return events directly (no `emit` callback)
+- Thread/Process variants have a `stop: threading.Event` field
+- Parallel variants own their queues; the framework wires them at graph build
+- No primitive raises exceptions — errors go to error queues as typed events
+- Inference is just a `ProcessPoolProcessor` (no special intercept pattern)
+- Factory pattern for shared state: `create_shared() -> SharedContext`, `create_processor(shared) -> Processor`
+
+---
+
+## Testing Source Variants
+
+### Source (synchronous, non-parallel)
+
+```python
+def test_source_produces_event() -> None:
+    source = MyRedisSource(config=test_config)
+
+    event = source()
+
+    assert event is not None
+    assert isinstance(event, ImageEvent)
+
+def test_source_returns_none_when_no_data() -> None:
+    source = MyRedisSource(config=empty_config)
+
+    event = source()
+
+    assert event is None
+```
+
+### ThreadSource / ProcessSource (with stop event)
 
 ```python
 import threading
 
-def test_source_produces_items() -> None:
-    source = MyRedisSource(config=test_config)
+def test_thread_source_produces_events() -> None:
+    source = MyThreadSource(config=test_config)
     source.stop = threading.Event()
 
-    item = source()
-    assert item is not None
-    assert isinstance(item, ExpectedType)
+    event = source()
 
-def test_source_respects_stop_event() -> None:
-    source = MyRedisSource(config=test_config)
+    assert event is not None
+    assert isinstance(event, ImageEvent)
+
+def test_thread_source_respects_stop_event() -> None:
+    source = MyThreadSource(config=test_config)
     source.stop = threading.Event()
     source.stop.set()
-    # Source should return sentinel or raise StopIteration when stopped
+
+    event = source()
+
+    assert event is None
+
+def test_process_source_has_stop_event() -> None:
+    source = MyProcessSource(config=test_config)
+    source.stop = threading.Event()
+
+    assert hasattr(source, "stop")
+    assert isinstance(source.stop, threading.Event)
 ```
 
-### Processor Testing
+---
 
-Processors are pure `__call__(item) -> result` transforms. No framework setup needed:
+## Testing Processor Variants
+
+### Processor (synchronous, non-parallel)
 
 ```python
-def test_processor_transforms_correctly() -> None:
+def test_processor_transforms_event() -> None:
     processor = MyPreprocessor(target_size=(640, 640))
-    raw_image = make_test_image(width=1920, height=1080)
+    input_event = ImageEvent(data=make_test_image(1920, 1080))
 
-    result = processor(raw_image)
+    result = processor(input_event)
 
-    assert result.shape == (1, 3, 640, 640)
-    assert result.dtype == np.float32
+    assert result is not None
+    assert isinstance(result, TensorEvent)
+    assert result.tensor.shape == (1, 3, 640, 640)
 
-def test_processor_returns_inference_input() -> None:
-    processor = MyPreprocessor(target_size=(640, 640))
-    raw_image = make_test_image(width=640, height=640)
+def test_processor_returns_none_to_filter() -> None:
+    processor = MyFilterProcessor(min_confidence=0.5)
+    low_confidence_event = DetectionEvent(confidence=0.1)
 
-    result = processor(raw_image)
+    result = processor(low_confidence_event)
 
-    assert isinstance(result, InferenceInput)
-    assert result.model_name == "yolo11s"
+    assert result is None
 ```
 
-### Sink Testing
-
-Sinks are `__call__(item) -> None`. Verify side effects via fakes or mocks:
+### ThreadProcessor (with stop event)
 
 ```python
-def test_sink_writes_to_redis() -> None:
+def test_thread_processor_respects_stop() -> None:
+    processor = MyThreadProcessor(config=test_config)
+    processor.stop = threading.Event()
+
+    result = processor(some_event)
+    assert result is not None
+
+    processor.stop.set()
+    result = processor(some_event)
+    assert result is None
+```
+
+### ProcessPoolProcessor (inference pattern)
+
+Inference is just a `ProcessPoolProcessor` — no special intercept needed.
+
+```python
+def test_inference_processor_produces_result() -> None:
+    processor = InferenceProcessor(
+        model_name="yolo11s",
+        triton_url="localhost:8001",
+    )
+    tensor_event = TensorEvent(
+        tensor=np.random.rand(1, 3, 640, 640).astype(np.float32),
+    )
+
+    result = processor(tensor_event)
+
+    assert result is not None
+    assert isinstance(result, DetectionEvent)
+```
+
+### Union Return Types (multiple output edges)
+
+```python
+def test_processor_returns_union_types() -> None:
+    processor = MyRouter()
+
+    high_conf = DetectionEvent(confidence=0.9, label="car")
+    result_high = processor(high_conf)
+    assert isinstance(result_high, HighConfidenceEvent)
+
+    low_conf = DetectionEvent(confidence=0.2, label="unknown")
+    result_low = processor(low_conf)
+    assert isinstance(result_low, LowConfidenceEvent)
+```
+
+---
+
+## Testing Sink Variants
+
+### Sink (synchronous)
+
+```python
+def test_sink_returns_metric_event() -> None:
     fake_redis = FakeRedisStreamWriter()
     sink = MyResultSink(redis_client=fake_redis, stream="stream:results")
 
-    sink(detection_result)
+    metric = sink(detection_result)
 
     assert len(fake_redis.written) == 1
     assert fake_redis.written[0]["stream"] == "stream:results"
+    assert metric is None or isinstance(metric, MetricEvent)
+
+def test_sink_returns_none_on_success() -> None:
+    sink = MyResultSink(redis_client=FakeRedisStreamWriter(), stream="s")
+
+    result = sink(valid_event)
+
+    assert result is None
+```
+
+### ThreadSink (with stop event)
+
+```python
+def test_thread_sink_respects_stop() -> None:
+    sink = MyThreadSink(config=test_config)
+    sink.stop = threading.Event()
+
+    result = sink(some_event)
+    assert result is None
+
+    sink.stop.set()
+    result = sink(some_event)
+    assert result is None
+```
+
+---
+
+## Testing Factory Pattern for Shared State
+
+The factory pattern enables shared state across N instances in pool variants.
+
+```python
+def test_factory_creates_shared_context() -> None:
+    shared = MyProcessorFactory.create_shared(config=test_config)
+
+    assert shared is not None
+    assert shared.model_loaded
+
+def test_factory_creates_processor_with_shared_state() -> None:
+    shared = MyProcessorFactory.create_shared(config=test_config)
+    processor = MyProcessorFactory.create_processor(shared)
+
+    assert processor is not None
+    result = processor(test_event)
+    assert result is not None
+
+def test_factory_creates_independent_processors() -> None:
+    shared = MyProcessorFactory.create_shared(config=test_config)
+    proc_a = MyProcessorFactory.create_processor(shared)
+    proc_b = MyProcessorFactory.create_processor(shared)
+
+    result_a = proc_a(test_event)
+    result_b = proc_b(test_event)
+
+    assert result_a is not None
+    assert result_b is not None
+
+def test_factory_shared_state_is_process_safe() -> None:
+    import multiprocessing
+
+    shared = MyProcessorFactory.create_shared(config=test_config)
+    # SharedContext should use process-safe primitives
+    assert isinstance(shared.counter, multiprocessing.Value) or isinstance(
+        shared.queue, multiprocessing.Queue,
+    )
+```
+
+---
+
+## Testing Graph Verification
+
+The graph is verified at startup: DAG from type annotations, union returns = multiple edges.
+
+### Valid DAG
+
+```python
+def test_valid_graph_passes_verification() -> None:
+    graph = PipelineGraph()
+    graph.add_source(MySource)          # -> ImageEvent
+    graph.add_processor(MyProcessor)    # ImageEvent -> TensorEvent
+    graph.add_sink(MySink)              # TensorEvent -> MetricEvent | None
+
+    errors = graph.verify()
+
+    assert errors == []
+
+def test_graph_with_union_return_all_consumed() -> None:
+    graph = PipelineGraph()
+    graph.add_source(MySource)          # -> ImageEvent
+    graph.add_processor(MyRouter)       # ImageEvent -> HighConfEvent | LowConfEvent
+    graph.add_sink(HighConfSink)        # HighConfEvent -> MetricEvent | None
+    graph.add_sink(LowConfSink)         # LowConfEvent -> MetricEvent | None
+
+    errors = graph.verify()
+
+    assert errors == []
+```
+
+### Invalid DAG
+
+```python
+def test_disconnected_node_fails_verification() -> None:
+    graph = PipelineGraph()
+    graph.add_source(MySource)          # -> ImageEvent
+    graph.add_processor(MyProcessor)    # ImageEvent -> TensorEvent
+    graph.add_sink(MySink)              # TensorEvent -> MetricEvent | None
+    graph.add_processor(OrphanProcessor)  # UnrelatedEvent -> OtherEvent (no input)
+
+    errors = graph.verify()
+
+    assert len(errors) > 0
+    assert any("disconnected" in e.lower() or "orphan" in e.lower() for e in errors)
+
+def test_union_return_with_missing_consumer_fails() -> None:
+    graph = PipelineGraph()
+    graph.add_source(MySource)          # -> ImageEvent
+    graph.add_processor(MyRouter)       # ImageEvent -> HighConfEvent | LowConfEvent
+    graph.add_sink(HighConfSink)        # HighConfEvent -> MetricEvent | None
+    # Missing: LowConfEvent consumer
+
+    errors = graph.verify()
+
+    assert len(errors) > 0
+    assert any("LowConfEvent" in e for e in errors)
+
+def test_cycle_in_graph_fails_verification() -> None:
+    graph = PipelineGraph()
+    graph.add_source(MySource)
+    graph.add_processor(ProcA)          # ImageEvent -> TensorEvent
+    graph.add_processor(ProcB)          # TensorEvent -> ImageEvent (cycle!)
+
+    errors = graph.verify()
+
+    assert len(errors) > 0
+```
+
+---
+
+## Testing Error Queues (No Primitive Raises)
+
+Primitives must not raise exceptions. Errors go to error queues as typed events.
+
+```python
+def test_processor_sends_error_to_queue_instead_of_raising() -> None:
+    error_queue: queue.Queue[ErrorEvent] = queue.Queue(maxsize=100)
+    processor = MyProcessor(config=test_config, error_queue=error_queue)
+
+    corrupt_event = ImageEvent(data=b"not_an_image")
+    result = processor(corrupt_event)
+
+    assert result is None
+    assert error_queue.qsize() == 1
+    error_event = error_queue.get_nowait()
+    assert isinstance(error_event, ErrorEvent)
+    assert "decode" in error_event.message.lower() or "corrupt" in error_event.message.lower()
+
+def test_source_sends_connection_error_to_queue() -> None:
+    error_queue: queue.Queue[ErrorEvent] = queue.Queue(maxsize=100)
+    source = MyRedisSource(
+        config=broken_config,
+        error_queue=error_queue,
+    )
+
+    result = source()
+
+    assert result is None
+    assert error_queue.qsize() == 1
+```
+
+---
+
+## Testing Parallel Variant Restart on Crash
+
+The main loop monitors parallel variants and restarts them on crash.
+
+```python
+import threading
+import time
+
+def test_main_loop_restarts_crashed_thread_source() -> None:
+    crash_count = 0
+
+    class CrashingSource:
+        def __init__(self) -> None:
+            self.stop = threading.Event()
+
+        def __call__(self) -> None:
+            nonlocal crash_count
+            crash_count += 1
+            msg = "simulated crash"
+            raise RuntimeError(msg)
+
+    monitor = VariantMonitor(restart_delay_seconds=0.01)
+    monitor.register(CrashingSource())
+    monitor.start()
+
+    time.sleep(0.1)
+    monitor.stop_all()
+
+    assert crash_count >= 2  # At least one restart happened
+
+def test_main_loop_does_not_restart_after_clean_stop() -> None:
+    call_count = 0
+
+    class CleanSource:
+        def __init__(self) -> None:
+            self.stop = threading.Event()
+
+        def __call__(self) -> None:
+            nonlocal call_count
+            call_count += 1
+            self.stop.wait(0.1)
+            return None
+
+    monitor = VariantMonitor(restart_delay_seconds=0.01)
+    source = CleanSource()
+    monitor.register(source)
+    monitor.start()
+
+    source.stop.set()
+    time.sleep(0.05)
+    monitor.stop_all()
+
+    final_count = call_count
+    time.sleep(0.05)
+    assert call_count == final_count  # No further calls after clean stop
 ```
 
 ---
@@ -234,16 +562,14 @@ async def test_handles_redis_connection_error() -> None:
 
 ---
 
-## Mocking Triton Client — async_infer Callback Pattern
+## Mocking Triton Client for ProcessPoolProcessor
 
-### Fake async_infer with Callback
-
-The production code uses `async_infer` with callbacks. Mocks must invoke the
-callback to simulate completion:
+Triton inference is a `ProcessPoolProcessor`. Mock the underlying client for
+unit testing:
 
 ```python
 import numpy as np
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 def make_fake_infer_result(
     outputs: dict[str, np.ndarray],
@@ -252,52 +578,27 @@ def make_fake_infer_result(
     result.as_numpy = lambda name: outputs[name]
     return result
 
-async def test_inference_callback_receives_result() -> None:
+def test_inference_processor_with_mock_client() -> None:
     fake_output = np.array([[0.5, 0.5, 0.8, 0.8, 0.95, 0]]).astype(np.float32)
     fake_result = make_fake_infer_result({"output0": fake_output})
 
-    mock_client = AsyncMock()
-
-    async def fake_async_infer(*, model_name, inputs, outputs, callback, **kwargs):
-        callback(fake_result, None)
-
-    mock_client.async_infer = fake_async_infer
+    mock_client = MagicMock()
+    mock_client.infer.return_value = fake_result
     mock_client.is_server_ready.return_value = True
 
-    # Trigger inference and verify the callback was invoked with correct data
-    received = []
-    def capture_callback(result, error):
-        received.append((result, error))
-
-    await mock_client.async_infer(
+    processor = InferenceProcessor(
         model_name="yolo11s",
-        inputs=[],
-        outputs=[],
-        callback=capture_callback,
+        triton_client=mock_client,
     )
-    assert len(received) == 1
-    assert received[0][1] is None  # No error
-
-async def test_inference_callback_receives_error() -> None:
-    mock_client = AsyncMock()
-
-    async def fake_async_infer_error(*, model_name, inputs, outputs, callback, **kwargs):
-        callback(None, RuntimeError("Triton unavailable"))
-
-    mock_client.async_infer = fake_async_infer_error
-
-    errors = []
-    def capture_error(result, error):
-        errors.append(error)
-
-    await mock_client.async_infer(
-        model_name="yolo11s",
-        inputs=[],
-        outputs=[],
-        callback=capture_error,
+    tensor_event = TensorEvent(
+        tensor=np.random.rand(1, 3, 640, 640).astype(np.float32),
     )
-    assert len(errors) == 1
-    assert isinstance(errors[0], RuntimeError)
+
+    result = processor(tensor_event)
+
+    assert result is not None
+    assert isinstance(result, DetectionEvent)
+    mock_client.infer.assert_called_once()
 ```
 
 ### Fake Model Metadata

@@ -4,9 +4,8 @@ description: >
   System architect agent. Designs data flow, API contracts, and component
   interfaces for the Redis Streams / Triton inference pipeline. Use when
   planning new features, designing integrations, or making architectural
-  decisions. Focuses on Redis consumer/producer patterns, Triton model
-  repository layout, gRPC/HTTP protocol choices, and async processing
-  architecture.
+  decisions. Focuses on execution variant selection, graph-based routing,
+  factory patterns, and async processing architecture.
 ---
 
 # Architect Agent
@@ -39,50 +38,159 @@ Before making architectural decisions, always read:
 
 ---
 
-## Component Model — `__call__` Pattern
+## Execution Variant Model
 
-### Three Primitives
+### Nine Variants (3 Primitives x Execution Modes)
 
-The framework uses three callable primitives instead of a unified
-`ComponentProtocol.process(envelope)` interface:
+The framework uses three callable primitives, each with execution mode variants:
 
-- **`Source[TOut]`** — produces data. Has a `stop: threading.Event` protocol field.
-  `__call__(self) -> TOut` yields one item per call. Framework calls it in a loop
-  until `stop` is set.
-- **`Processor[TIn, TOut]`** — transforms data. `__call__(self, item: TIn) -> TOut`.
-  Pure function signature, no framework awareness needed.
-- **`Sink[TIn]`** — consumes data. `__call__(self, item: TIn) -> None`.
-  Writes to external systems (Redis, files, metrics).
+#### Source — `__call__(self) -> Event | None`
 
-### Envelope Is Hidden
+Produces events. Returns `None` when no data is available (e.g., empty read).
 
-The `Envelope` type carries metadata (request_id, timestamps, trace context) but
-is NEVER exposed to user code. Users write plain `__call__` with domain types.
-Metadata is accessible via `current_context()` using `contextvars` when needed.
+| Variant | Execution | Stop mechanism | Use when |
+|---|---|---|---|
+| `Source` | Inline in main loop | N/A (called once per tick) | Lightweight polling |
+| `ThreadSource` | Dedicated thread | `stop: threading.Event` | Blocking I/O (Redis XREADGROUP) |
+| `ProcessSource` | Dedicated process | `stop: threading.Event` | CPU-bound generation |
 
-**Anti-pattern**: never expose Envelope in any user-facing API, protocol definition,
-or configuration schema. Envelope is a framework-internal transport mechanism only.
+#### Processor — `__call__(self, event) -> Event | None`
 
-### Config Naming
+Transforms events. Returns `None` to drop/filter an event from the pipeline.
 
-Pipeline configuration uses `sources`, `sinks`, and `processors` as section names.
-Do NOT use `input_streams`, `output_streams`, or `components`.
+| Variant | Execution | Concurrency | Use when |
+|---|---|---|---|
+| `Processor` | Inline in main loop | None (sequential) | Fast transforms, routing |
+| `ThreadProcessor` | Dedicated thread | Single thread with input queue | I/O-bound processing |
+| `ThreadPoolProcessor` | Thread pool | N threads with shared input queue | Concurrent I/O (HTTP calls) |
+| `ProcessPoolProcessor` | Process pool | N processes with shared input queue | CPU-bound work (image decode, inference) |
+
+#### Sink — `__call__(self, event) -> MetricEvent | None`
+
+Consumes events, writes to external systems. Optionally returns a `MetricEvent`
+for monitoring.
+
+| Variant | Execution | Stop mechanism | Use when |
+|---|---|---|---|
+| `Sink` | Inline in main loop | N/A | Fast writes, metrics emission |
+| `ThreadSink` | Dedicated thread | `stop: threading.Event` | Blocking I/O (Redis XADD, file writes) |
+
+### Execution Variant Selection Guide
+
+1. **Default to inline** (`Source`, `Processor`, `Sink`) — simplest, no threading overhead.
+2. **Use Thread variants** when the operation blocks (network I/O, disk I/O).
+3. **Use ThreadPool** when you need concurrent I/O with shared resources.
+4. **Use ProcessPool** when work is CPU-bound (image preprocessing, numpy ops, Triton inference).
+5. **Use Process variants** for CPU-bound sources that generate data continuously.
+
+### No `emit` Callback
+
+Sources return events directly from `__call__`. The framework collects the return
+value — there is no `emit(event)` callback pattern. This keeps sources pure
+functions that are trivially testable.
+
+### Thread/Process Variants Own Their Queues
+
+Parallel variants (`ThreadProcessor`, `ThreadPoolProcessor`, `ProcessPoolProcessor`,
+`ThreadSource`, `ProcessSource`, `ThreadSink`) own input/output queues internally.
+The framework wires these queues at graph build time. User code never touches queues.
+
+### Stop Protocol for Parallel Variants
+
+All Thread and Process variants expose `stop: threading.Event`. The framework sets
+this event during graceful shutdown. The variant's internal loop checks `stop`
+between iterations.
 
 ---
 
-## Inference Interception Pattern
+## Inference as ProcessPoolProcessor
 
-There is NO `TritonInferenceProcessor` class. Instead, the framework intercepts
-based on return types:
+There is NO framework-level intercept pattern. Triton inference is a user-defined
+`ProcessPoolProcessor` (e.g. `TritonInferenceProcessor`):
 
-1. A `Processor` returns `InferenceInput` (a pydantic model with tensor data,
-   model name, and output names).
-2. The framework detects the `InferenceInput` return type and routes it to a
-   worker pool that calls Triton.
-3. The framework re-injects `InferenceOutput` into the next pipeline stage.
+- A preprocessing `Processor` transforms raw input into tensor-ready data.
+- The inference `ProcessPoolProcessor` receives tensor data, calls Triton, returns results.
+- A postprocessing `Processor` transforms inference output into domain objects.
 
-This keeps user code free of Triton client dependencies — preprocessors just
-return an `InferenceInput` marker and the framework handles the rest.
+This keeps the architecture uniform — inference follows the same execution variant
+model as every other pipeline stage. Each process in the pool creates its own
+Triton gRPC client (connections are not fork-safe).
+
+---
+
+## Factory Pattern for Shared State
+
+By default, each instance in a pool variant has isolated state. Shared state is
+opt-in via a factory pattern:
+
+```
+create_shared() -> SharedContext
+create_processor(shared: SharedContext) -> Processor
+```
+
+- `create_shared()` runs once before pool workers start. Returns a context object
+  (model weights, lookup tables, configuration).
+- `create_processor(shared)` runs in each worker. Receives the shared context
+  and returns a configured processor instance.
+- The user is responsible for thread/process safety of `SharedContext`. For
+  `ProcessPoolProcessor`, the context must be picklable (or use shared memory).
+- For `ThreadPoolProcessor`, the context can use threading locks.
+
+---
+
+## Graph-Based Routing
+
+### Pipeline as DAG
+
+The pipeline is defined as a directed acyclic graph (DAG) of execution variants.
+Edges are inferred from type annotations:
+
+- `Source.__call__() -> EventA` connects to any `Processor.__call__(event: EventA)`.
+- `Processor.__call__(event: EventA) -> EventB` connects to next stage expecting `EventB`.
+- Union return types create multiple edges: `-> EventB | EventC` fans out to
+  handlers of both types.
+- `Processor.__call__(event) -> None` terminates the path (filtered out).
+
+### Graph Verification at Startup
+
+Before the pipeline runs, the framework verifies:
+
+1. **No orphan nodes** — every variant is reachable from at least one source.
+2. **All connected** — every non-sink output type has at least one consumer.
+3. **DAG property** — no cycles in the graph.
+4. **Type compatibility** — output types match input types on every edge.
+5. **Union fanout** — union return types create edges to ALL matching consumers.
+
+Verification failures are fatal — the pipeline refuses to start with a clear
+error message listing the broken constraints.
+
+---
+
+## Error Handling — Errors to Queues
+
+No primitive raises exceptions during normal operation. Instead:
+
+- Errors are wrapped in typed error events (e.g., `InferenceError`, `DecodeError`).
+- Error events are routed to dedicated error queues/sinks via the graph.
+- The graph can have error-handling sinks that log, retry, or dead-letter.
+- Only catastrophic failures (OOM, segfault) propagate as exceptions.
+- The main loop catches worker crashes and restarts parallel variants.
+
+---
+
+## Main Loop Architecture
+
+The main loop has three responsibilities:
+
+1. **Non-parallel dispatch** — calls inline `Source`, `Processor`, and `Sink`
+   variants sequentially. Routes events through the graph based on type.
+2. **Terminal event listening** — watches for a terminal event (e.g., `ShutdownEvent`)
+   that triggers graceful shutdown of all parallel variants.
+3. **Monitor and restart parallel** — monitors Thread/Process variants for crashes.
+   On crash: logs error, restarts the variant, re-wires queues.
+
+The main loop does NOT manage parallel variant internals — it only monitors their
+health and dispatches inline variants.
 
 ---
 
@@ -217,9 +325,8 @@ standalone. The shared `nms_postprocess` model is reused across all ensembles.
 - GIL constraint: CPU-bound work (image preprocessing, numpy operations) MUST
   use multiprocessing for true parallelism. Threads only help for I/O-bound work.
 - Redis I/O (XREADGROUP blocking calls): threads are fine (I/O-bound).
-- Triton gRPC calls: async client (`grpc.aio`) in event loop OR threads. Async
-  preferred for high concurrency.
-- Image decoding/preprocessing: ProcessPoolExecutor (CPU-bound).
+- Triton gRPC calls: use in ProcessPoolProcessor (each process gets own client).
+- Image decoding/preprocessing: ProcessPoolProcessor (CPU-bound).
 
 ### Queue Patterns — Mandatory Backpressure
 
@@ -263,8 +370,8 @@ standalone. The shared `nms_postprocess` model is reused across all ensembles.
   (not library-specific types) to keep layers decoupled.
 - Use `from __future__ import annotations` in all modules (PEP 604 union syntax,
   deferred evaluation for forward references).
-- The `__call__` pattern means protocols are minimal: `Source`, `Processor`, `Sink`
-  each define only `__call__` (and `stop` for Source). No multi-method interfaces.
+- Each execution variant defines `__call__` with its specific signature.
+  Parallel variants additionally expose `stop: threading.Event`.
 
 ---
 

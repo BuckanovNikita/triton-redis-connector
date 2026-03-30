@@ -24,16 +24,14 @@ Camera/Sensors → Redis Streams → [triton-redis-connector] → Triton Server
                                   (results, metrics)
 ```
 
-The connector is a multi-process, multi-threaded Python application.
+The connector is a graph-based pipeline framework where each node is a typed
+primitive (Source, Processor, Sink) with a user-chosen execution variant.
 
-- **Main process**: orchestrates sources, processors, sinks, queues, dispatch
-- **Inference worker pool**: N separate processes, each with its own Triton gRPC
-  client. Requests distributed via `multiprocessing.Queue`. Each worker uses
-  `async_infer` with callback-based retry internally for concurrency.
-- **Decoder pool**: configurable `ThreadPoolExecutor` or `ProcessPoolExecutor`
-  for CPU-bound image decoding (single decoder per config).
-- **Source threads**: blocking I/O (e.g. Redis XREADGROUP) in dedicated threads
-  within the main process.
+- **Main loop**: dispatches events for inline (non-parallel) nodes only
+- **Thread/Process variants**: self-contained — own their input/output queues,
+  framework wires queues during graph construction
+- **Graph verification at startup**: validates all edges, no orphans, no
+  disconnected nodes
 
 ---
 
@@ -56,7 +54,7 @@ packages/
     triton_redis_connector/
       __init__.py
       py.typed
-      protocols.py                  # Source, Processor, Sink protocols
+      protocols.py                  # Source, Processor, Sink — all execution variants
 
       config/
         __init__.py
@@ -65,28 +63,29 @@ packages/
 
       connectors/
         __init__.py
-        redis_stream.py             # RedisStreamSource, RedisStreamSink
+        redis_stream.py             # RedisStreamSource (ThreadSource), RedisStreamSink (ThreadSink)
         consumer_group.py           # Consumer group management, position tracking
 
       engine/
         __init__.py
         app.py                      # Application — main entry point
-        registry.py                 # Pipeline registry, type-annotation wiring
-        queue_bus.py                # Thread-safe queues connecting stages
+        registry.py                 # Pipeline registry, type-annotation wiring, graph verification
+        queue_bus.py                # Queue wiring between graph nodes
         event.py                    # Envelope[T] — timestamped event wrapper
         context.py                  # EventContext, current_context() via contextvars
+        graph.py                    # DAG construction, edge validation, topological sort
 
       inference/
         __init__.py
-        worker.py                   # InferenceWorkerPool, _inference_worker_main
-        request.py                  # InferenceInput / InferenceOutput models
+        triton_processor.py         # ProcessPoolProcessor wrapping Triton gRPC inference
+        request.py                  # InferenceInput / InferenceOutput event models
         model_registry.py           # ModelVersionTracker — rolling release (per-worker)
 
       preprocessing/
         __init__.py
         protocols.py                # ImageDecoder Protocol, ImagePreprocessor Protocol
         decoder.py                  # OpenCVDecoder, TurboJPEGDecoder
-        pool.py                     # DecoderPool — thread or process pool wrapper
+        image_decode_processor.py   # ThreadPoolProcessor / ProcessPoolProcessor for decoding
 
       metrics/
         __init__.py
@@ -98,7 +97,7 @@ packages/
       errors/
         __init__.py
         models.py                   # ConnectorError, InferenceError, PreprocessingError
-        handler.py                  # ErrorHandler — routes errors from error queue
+        handler.py                  # Error events flow through graph like any other event
 
     conf/                            # Hydra config directory
       config.yaml
@@ -161,62 +160,53 @@ triton_metrics_aggregator   — triton_shared_models, triton_redis_connector,
 └──────────────────────────┬───────────────────────────────────────────┘
                            │
 ┌──────────────────────────▼───────────────────────────────────────────┐
-│  MAIN PROCESS                                                        │
+│  APPLICATION PROCESS                                                  │
 │                                                                      │
 │  ┌────────────────────────────────────────────────────────────────┐  │
-│  │                    APPLICATION LAYER (engine/)                  │  │
-│  │  Application       PipelineRegistry       QueueBus             │  │
-│  │  (orchestrator)    (type-hint wiring)     (thread-safe queues) │  │
+│  │              GRAPH CONSTRUCTION & VERIFICATION                  │  │
+│  │  PipelineRegistry      ProcessingGraph      QueueBus           │  │
+│  │  (type-hint wiring)    (DAG from unions)    (queue wiring)     │  │
 │  └──┬────────────────────┬────────────────────────┬───────────────┘  │
 │     │                    │                        │                  │
 │  ┌──▼────────────────────▼────────────────────────▼───────────────┐  │
-│  │                    SOURCE / SINK LAYER                          │  │
-│  │  ┌─────────────────┐        ┌──────────────────┐              │  │
-│  │  │ Source[T]        │ Thread  │ Sink[T]           │ Thread      │  │
-│  │  │ (Redis XREAD)    │───────► │ (Redis XADD)      │              │  │
-│  │  └─────────────────┘ Queue  └──────────────────┘              │  │
-│  │  Protocol-based: Kafka can be added later.                     │  │
+│  │              MAIN LOOP (inline nodes only)                      │  │
+│  │                                                                │  │
+│  │  Source nodes → poll __call__() → route events by type          │  │
+│  │  Processor nodes → dispatch events → route outputs by type     │  │
+│  │  Sink nodes → dispatch events → side effects                   │  │
+│  │                                                                │  │
+│  │  Also: listen terminal events queue, monitor parallel health    │  │
 │  └────────────────────────────────────────────────────────────────┘  │
-│     │                                       ▲                        │
-│     │ Queue[Envelope[T]]                    │ Queue[T]               │
-│     ▼                                       │                        │
+│                                                                      │
 │  ┌────────────────────────────────────────────────────────────────┐  │
-│  │                    PROCESSING LAYER (user processors)           │  │
-│  │  Processor[TIn, TOut].__call__(event) wired by type annotations│  │
-│  │  Envelope hidden: runtime unwraps payload, wraps result        │  │
-│  │  Metadata access via current_context() contextvars             │  │
-│  └──────────────────────────┬─────────────────────────────────────┘  │
-│                              │ InferenceInput (type-based intercept) │
-│                              ▼ mp.request_queue                      │
+│  │              PARALLEL NODES (self-contained, own queues)        │  │
+│  │                                                                │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌───────────────────────┐  │  │
+│  │  │ ThreadSource │  │ ThreadSink  │  │ ThreadProcessor       │  │  │
+│  │  │ (e.g. Redis  │  │ (e.g. Redis │  │ owns input_queue      │  │  │
+│  │  │  XREADGROUP) │  │  XADD)      │  │ owns output_queue     │  │  │
+│  │  │ → output_q   │  │ ← input_q   │  │ reads/writes itself   │  │  │
+│  │  └─────────────┘  └─────────────┘  └───────────────────────┘  │  │
+│  │                                                                │  │
+│  │  ┌───────────────────────┐  ┌───────────────────────────────┐  │  │
+│  │  │ ThreadPoolProcessor   │  │ ProcessPoolProcessor          │  │  │
+│  │  │ N threads, shared     │  │ N processes, shared            │  │  │
+│  │  │ input_queue, fan-out  │  │ input_queue, fan-out           │  │  │
+│  │  └───────────────────────┘  └───────────────────────────────┘  │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+│                                                                      │
 │  ┌────────────────────────────────────────────────────────────────┐  │
 │  │                    METRICS LAYER (metrics/)                     │  │
 │  │  MetricBuffer → MetricEmitter → Redis Stream "metrics"         │  │
 │  │  TritonMetricsCollector | ErrorCollector | TimeWindowAggregator │  │
 │  └────────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────┬───────────────────────────────────────┘
-                               │ mp.request_queue
-    ┌──────────────────────────┼───────────────────────┐
-    ▼                          ▼                       ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  INFERENCE WORKER PROCESSES (N separate OS processes)                 │
-│                                                                      │
-│  Each worker has:                                                    │
-│  - Own gRPC InferenceServerClient (independent connection)           │
-│  - async_infer with callback-based retry (threading.Timer)           │
-│  - ModelVersionTracker (per-worker, polls independently)             │
-│  - Semaphore limiting concurrent in-flight requests                  │
-│                                                                      │
-│  Results → mp.result_queue → Main process                            │
-└──────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────────────────┐
-│  DECODER POOL (ThreadPoolExecutor or ProcessPoolExecutor, via config)│
-│                                                                      │
-│  Single decoder type per config (opencv or turbojpeg)               │
-│  Both release GIL during decode — ThreadPool is default             │
-│  Results (numpy arrays) returned to main process                     │
 └──────────────────────────────────────────────────────────────────────┘
 ```
+
+Key difference from old architecture: the main loop only dispatches events to
+inline (non-parallel) nodes. Thread/Process variants are self-contained — they
+read from their input queue and write to their output queue independently.
+The framework wires these queues during graph construction.
 
 ---
 
@@ -228,43 +218,45 @@ triton_metrics_aggregator   — triton_shared_models, triton_redis_connector,
 Step 1: Redis Stream "camera_images"
         XREADGROUP GROUP app_group consumer_1 COUNT 10 BLOCK 1000
 
-Step 2: RedisStreamSource (Thread-1)
+Step 2: RedisStreamSource (ThreadSource, dedicated thread)
+        - Blocks on XREADGROUP internally
         - Decodes Redis fields into pydantic model (CameraImageEvent)
-        - Wraps in Envelope[CameraImageEvent] with receive timestamp
-        - Calls emit(event) to push onto queue
+        - Returns CameraImageEvent (framework wraps in Envelope, routes to output queue)
         - Does NOT XACK yet (tracked in pending set)
 
-Step 3: Runtime unwraps Envelope, calls Processor.__call__(event)
-        - Registry resolved: CameraImageEvent → UserPreprocessor
-        - current_context() provides metadata if needed
+Step 3: Framework routes CameraImageEvent to matching Processor
+        - Graph edge: CameraImageEvent → ImageDecodeProcessor
+        - If processor is inline (Processor): main loop calls __call__(event)
+        - If processor is parallel (ThreadPoolProcessor/ProcessPoolProcessor):
+          event already on processor's input queue, worker picks it up
 
-Step 4: UserPreprocessor (user code, implements Processor[TIn, TOut])
-        - Extracts image bytes from event
-        - Submits to DecoderPool (single decoder type per config)
-        - Returns InferenceInput(raw_image=ndarray, model_name="yolo26s")
+Step 4: ImageDecodeProcessor (ThreadPoolProcessor or ProcessPoolProcessor)
+        - Worker reads CameraImageEvent from input queue
+        - Decodes image bytes using configured decoder (opencv|turbojpeg)
+        - Returns DecodedImageEvent (placed on processor's output queue)
 
-Step 5: Framework intercepts InferenceInput return type
-        - Pipeline is split at the InferenceInput boundary
-        - Puts InferenceInput onto mp.request_queue (non-blocking)
+Step 5: Framework routes DecodedImageEvent to TritonInferenceProcessor
+        - TritonInferenceProcessor is a ProcessPoolProcessor
+        - Each worker process has own gRPC InferenceServerClient
 
-Step 6: Inference worker process (one of N) picks up request
+Step 6: TritonInferenceProcessor worker picks up DecodedImageEvent
         - ModelVersionTracker resolves latest ready version (per-worker)
         - Builds tritonclient InferInput from ndarray
         - Calls async_infer() with callback
         - On failure: callback schedules retry via threading.Timer
           with exponential delay, re-calls async_infer with new callback
         - Semaphore released only on final success or final failure
-        - On success: puts InferenceOutput onto mp.result_queue
+        - On success: returns InferenceOutput (placed on output queue)
 
-Step 7: Main process drains mp.result_queue
-        - Framework wraps InferenceOutput in Envelope
-        - Feeds to next Processor in pipeline (post-inference stage)
+Step 7: Framework routes InferenceOutput to next Processor
+        - Graph edge: InferenceOutput → DetectionResultHandler
+        - DetectionResultHandler returns DetectionResult
 
-Step 8: Post-inference Processor returns result
-        - If output type matches a Sink, framework routes to Sink
+Step 8: Framework routes DetectionResult to Sink
+        - Graph edge: DetectionResult → RedisStreamSink
 
-Step 9: RedisStreamSink (Thread-2)
-        - Gets result from output queue
+Step 9: RedisStreamSink (ThreadSink, dedicated thread)
+        - Reads DetectionResult from its input queue
         - Serializes to Redis fields
         - XADD to output stream "detection_results"
 
@@ -429,60 +421,226 @@ sinks:
     maxlen: 50000
 
 processors:
-  - myapp.processors.CameraToInference
+  - myapp.processors.ImageDecodeProcessor
+  - myapp.processors.TritonInferenceProcessor
   - myapp.processors.DetectionResultHandler
 ```
 
 ---
 
-## 6. Protocols & Extension Points
+## 6. Protocols & Execution Variants
 
-All extension points use `typing.Protocol` with `@runtime_checkable`. Users implement
-these interfaces without inheriting from framework classes (structural subtyping).
+All extension points use `typing.Protocol` with `@runtime_checkable`. Users
+implement these interfaces via structural subtyping — no framework base classes.
 
-### 6.1 Core Pipeline Protocols (`protocols.py`)
+There are three primitives (Source, Processor, Sink), each with execution variants
+that control where the code runs. The framework wires queues during graph
+construction. All parallel variants own their queues. The `stop: threading.Event`
+field is a protocol contract on all Thread/Process variants — the framework creates
+it, assigns it before start, and calls `stop.set()` at shutdown.
 
-Three primitives define the user-facing pipeline:
+### 6.1 Source Variants (produce events, no input)
+
+Signature: `__call__(self) -> Event1 | Event2 | None`
+
+`None` means nothing ready right now. The framework loops the call.
 
 ```python
 @runtime_checkable
 class Source(Protocol[TOut]):
-    """Produces events. Runs in own thread, pushes events via emit().
+    """Inline source. Runs in main loop, polled by framework.
 
-    Framework creates the stop Event, assigns it before starting the
-    source thread, and calls source.stop.set() at shutdown.
+    Framework calls __call__() repeatedly. Return an event when one is
+    ready, None when nothing available. Non-blocking — must not sleep
+    or block internally.
+    """
+
+    def __call__(self) -> TOut | None: ...
+
+
+@runtime_checkable
+class ThreadSource(Protocol[TOut]):
+    """Threaded source. Runs in a dedicated thread, blocks internally.
+
+    Framework creates stop Event, assigns before starting the thread,
+    calls stop.set() at shutdown. Framework loops __call__() in the
+    thread — source blocks internally (e.g. XREADGROUP BLOCK) and
+    returns event when ready, None when nothing available.
+    Output goes to framework-wired output queue.
     """
 
     stop: threading.Event
 
-    def __call__(self, emit: Callable[[TOut], None]) -> None: ...
+    def __call__(self) -> TOut | None: ...
 
 
 @runtime_checkable
+class ProcessSource(Protocol[TOut]):
+    """Process source. Runs in a dedicated OS process.
+
+    Same contract as ThreadSource but in a separate process.
+    Output goes to framework-wired multiprocessing output queue.
+    stop is a multiprocessing.Event (duck-typed as threading.Event
+    in the protocol — both have .set(), .is_set(), .wait()).
+    """
+
+    stop: threading.Event
+
+    def __call__(self) -> TOut | None: ...
+```
+
+### 6.2 Processor Variants (transform events)
+
+Signature: `__call__(self, event: InputEvent) -> OutputEvent1 | OutputEvent2 | None`
+
+`None` means filter — this event is dropped. Union return types create multiple
+edges in the processing graph.
+
+```python
+@runtime_checkable
 class Processor(Protocol[TIn, TOut]):
-    """Transforms events. Return None to filter (skip this event).
+    """Inline processor. Runs in main loop, framework dispatches events.
 
     Runtime unwraps Envelope.payload before calling __call__,
     wraps result in new Envelope after return.
     Users access metadata via current_context() contextvars.
+    Return None to filter (skip this event).
     """
 
     def __call__(self, event: TIn) -> TOut | None: ...
 
 
 @runtime_checkable
-class Sink(Protocol[TIn]):
-    """Consumes events (terminal pipeline node)."""
+class ThreadProcessor(Protocol[TIn, TOut]):
+    """Threaded processor. Runs in a dedicated thread.
 
-    def __call__(self, event: TIn) -> None: ...
+    Owns input_queue and output_queue, wired by framework.
+    Reads events from input_queue, processes, writes to output_queue.
+    Framework loops __call__() — processor receives one event at a time.
+    """
+
+    stop: threading.Event
+
+    def __call__(self, event: TIn) -> TOut | None: ...
+
+
+@runtime_checkable
+class ThreadPoolProcessor(Protocol[TIn, TOut]):
+    """Thread pool processor. N threads in a pool, shared input queue.
+
+    Framework creates N instances (one per worker thread) and a shared
+    input queue. Each worker reads from the shared input queue and
+    writes to a shared output queue. Fan-out parallelism.
+    """
+
+    stop: threading.Event
+
+    def __call__(self, event: TIn) -> TOut | None: ...
+
+
+@runtime_checkable
+class ProcessPoolProcessor(Protocol[TIn, TOut]):
+    """Process pool processor. N processes in a pool, shared input queue.
+
+    Framework creates N instances (one per worker process) via factory.
+    Each worker process reads from shared mp.Queue input and writes to
+    shared mp.Queue output. True OS-level parallelism, no GIL.
+    Objects crossing the process boundary are serialized via pickle.
+    """
+
+    stop: threading.Event
+
+    def __call__(self, event: TIn) -> TOut | None: ...
 ```
 
-Envelope is hidden from users. The runtime:
-1. Unwraps `envelope.payload` before calling `Processor.__call__`
-2. Wraps the return value in a new Envelope inheriting metadata
-3. Sets `current_context()` via `contextvars` for opt-in metadata access
+### 6.3 Sink Variants (terminal side-effect, optional metric output)
 
-### 6.2 Image Protocols (`preprocessing/protocols.py`)
+Signature: `__call__(self, event: Event) -> MetricEvent1 | MetricEvent2 | None`
+
+`None` means no metric output. Sinks produce side effects (e.g. write to Redis).
+Optional return of metric events allows sinks to emit instrumentation data
+back into the graph.
+
+```python
+@runtime_checkable
+class Sink(Protocol[TIn]):
+    """Inline sink. Runs in main loop.
+
+    Terminal node — produces side effects. Can optionally return
+    metric events that flow back into the graph.
+    """
+
+    def __call__(self, event: TIn) -> Any | None: ...
+
+
+@runtime_checkable
+class ThreadSink(Protocol[TIn]):
+    """Threaded sink. Runs in a dedicated thread, owns input queue.
+
+    Framework wires input queue. Sink reads events and produces
+    side effects. Can optionally return metric events.
+    """
+
+    stop: threading.Event
+
+    def __call__(self, event: TIn) -> Any | None: ...
+```
+
+### 6.4 Factory Protocol for Shared State
+
+By default, framework creates N independent instances for pool variants
+(ThreadPoolProcessor, ProcessPoolProcessor). Each worker gets its own state,
+no locks needed.
+
+For opt-in shared state, implement a factory:
+
+```python
+@runtime_checkable
+class ProcessorFactory(Protocol[TShared, TProcessor]):
+    """Factory for creating processor instances with shared state.
+
+    Framework calls create_shared() once, then create_processor(shared)
+    N times — one per worker. User is responsible for thread/process
+    safety of the SharedContext.
+    """
+
+    def create_shared(self) -> TShared: ...
+
+    def create_processor(self, shared: TShared) -> TProcessor: ...
+```
+
+Contract by variant:
+
+- **ThreadPoolProcessor**: `SharedContext` can use `threading.Lock`-protected
+  structures, thread-safe collections, or immutable data.
+- **ProcessPoolProcessor**: `SharedContext` must contain process-safe objects
+  only — `multiprocessing.Queue`, `multiprocessing.Value`,
+  `multiprocessing.Manager` proxies, or immutable data.
+
+Framework documents the contract but does not validate safety — that
+responsibility belongs to the user.
+
+Example — Triton inference with shared model version cache:
+
+```python
+class TritonInferenceFactory:
+    def __init__(self, config: InferenceConfig) -> None:
+        self._config = config
+
+    def create_shared(self) -> multiprocessing.Manager:
+        manager = multiprocessing.Manager()
+        return manager
+
+    def create_processor(
+        self, shared: multiprocessing.Manager,
+    ) -> TritonInferenceProcessor:
+        return TritonInferenceProcessor(
+            config=self._config,
+            version_cache=shared.dict(),
+        )
+```
+
+### 6.5 Image Protocols (`preprocessing/protocols.py`)
 
 ```python
 @runtime_checkable
@@ -503,7 +661,7 @@ class ImagePreprocessorProtocol(Protocol):
     def to_bytes(self, tensor: npt.NDArray[np.float32]) -> bytes: ...
 ```
 
-### 6.3 Observer Protocol (`protocols.py`)
+### 6.6 Observer Protocol (`protocols.py`)
 
 ```python
 @runtime_checkable
@@ -513,7 +671,7 @@ class ObserverProtocol(Protocol[TEvent]):
     def observe(self, envelope: Envelope[TEvent]) -> None: ...
 ```
 
-### 6.4 Aggregation Rule Protocol (`protocols.py`)
+### 6.7 Aggregation Rule Protocol (`protocols.py`)
 
 ```python
 @runtime_checkable
@@ -537,16 +695,17 @@ class AggregationRuleProtocol(Protocol[TEvent]):
 
 ### 7.1 RedisStreamSource
 
-Implements `Source[T]`. Runs in a dedicated thread. Performs blocking
-`XREADGROUP` calls and pushes events via `emit()`.
+Implements `ThreadSource[T]`. Runs in a dedicated thread. Performs blocking
+`XREADGROUP` calls and returns events directly.
 
 ```python
 class RedisStreamSource:
     """Reads from a Redis Stream using consumer group semantics.
 
-    Runs in a dedicated thread. The framework assigns stop: Event
-    before starting the thread. Calls emit(event) for each decoded
-    message. Errors go to the error queue — source never crashes.
+    Implements ThreadSource. Runs in a dedicated thread. The framework
+    assigns stop: Event before starting the thread. Blocks on XREADGROUP
+    internally, returns event when ready, None when timeout. Errors are
+    returned as typed error events that flow through the graph.
     """
 
     stop: threading.Event
@@ -558,23 +717,29 @@ class RedisStreamSource:
         event_model_class: type[BaseModel],
     ) -> None: ...
 
-    def __call__(self, emit: Callable[[Any], None]) -> None:
-        """Main loop running in dedicated thread.
+    def __call__(self) -> CameraImageEvent | ConnectorError | None:
+        """Single iteration of the source loop.
+
+        Blocks on XREADGROUP (up to block_ms). Returns:
+        - Event on success
+        - ConnectorError on Redis/validation failure
+        - None on timeout (nothing available)
 
         while not self.stop.is_set():
             try:
                 messages = redis.xreadgroup(...)
+                if not messages:
+                    return None
                 for message_id, fields in messages:
                     try:
                         event = event_model_class.model_validate(fields)
-                        emit(event)
+                        return event
                     except ValidationError:
-                        error_queue.put(ConnectorError(...))
+                        return ConnectorError(...)
             except redis.ConnectionError:
-                error_queue.put(ConnectorError(...))
-                self.stop.wait(timeout=1.0)  # backoff
+                return ConnectorError(...)
             except redis.TimeoutError:
-                pass  # normal for BLOCK reads
+                return None  # normal for BLOCK reads
         """
 ```
 
@@ -602,34 +767,36 @@ class ConsumerGroupManager:
 
 ### 7.3 RedisStreamSink
 
-Implements `Sink[T]`. Runs in a dedicated thread. Reads from a queue and
-writes via `XADD`.
+Implements `ThreadSink[T]`. Runs in a dedicated thread. Reads from its
+framework-wired input queue and writes via `XADD`.
 
 ```python
 class RedisStreamSink:
     """Writes events to a Redis Stream.
 
-    Runs in a dedicated thread. On successful XADD, triggers
-    acknowledgment callback.
+    Implements ThreadSink. Runs in a dedicated thread. On successful
+    XADD, triggers acknowledgment callback. Can return metric events
+    for transit time tracking.
     """
 
     stop: threading.Event
 
-    def __call__(self, event: dict[str, str | bytes]) -> None:
-        """XADD to stream, trigger ack callback."""
+    def __call__(self, event: DetectionResult) -> MetricEvent | None:
+        """XADD to stream, trigger ack callback.
+        Returns MetricEvent with transit time on success, None on failure.
+        """
 ```
 
 ---
 
 ## 8. Inference Layer
 
-### 8.1 InferenceInput as Framework Intercept Marker
+### 8.1 Inference as a ProcessPoolProcessor
 
-`InferenceInput` is not a real Processor — it is a type-based intercept point.
-When a Processor returns `InferenceInput`, the framework intercepts it, routes
-to the worker pool via `mp.request_queue`. `InferenceOutput` comes back from
-`mp.result_queue`, and the framework feeds it to the next Processor in the
-pipeline. The pipeline is split at the `InferenceInput` boundary.
+Triton inference is a regular `ProcessPoolProcessor` node in the graph — no
+special intercept pattern. Each worker process creates its own gRPC client.
+The factory pattern provides shared state if needed (e.g. model version cache
+via `multiprocessing.Manager`).
 
 ```python
 class InferenceInput(BaseModel, arbitrary_types_allowed=True):
@@ -647,200 +814,141 @@ class InferenceOutput(BaseModel, arbitrary_types_allowed=True):
     inference_time_ms: float
 ```
 
-### 8.2 Multiprocessing Worker Pool
+These are regular event types flowing through the graph like any other event.
+`InferenceInput` is the input type and `InferenceOutput` is the output type
+of the `TritonInferenceProcessor`.
 
-Triton inference runs in a **pool of N worker processes**. Each worker process
-creates its own `tritonclient.grpc.InferenceServerClient` and uses
-`client.async_infer()` with callback-based retry. The main process distributes
-`InferenceInput` objects via `multiprocessing.Queue` and collects results via
-a separate result queue.
+### 8.2 TritonInferenceProcessor (ProcessPoolProcessor)
+
+Each worker process creates its own `tritonclient.grpc.InferenceServerClient`
+and uses `client.async_infer()` with callback-based retry. The framework
+creates N instances via a factory and distributes events across workers
+through a shared `multiprocessing.Queue`.
+
+```
+Framework-wired queues
+┌──────────────────┐               ┌─────────────────────────┐
+│                  │  input_queue   │  Worker-0               │
+│  Graph routing   │  (mp.Queue)   │  gRPC client (own conn) │
+│  places          │──────────────►│  async_infer + callback  │
+│  InferenceInput  │               │  retry via Timer         │
+│  on shared queue │               ├─────────────────────────┤
+│                  │               │  Worker-1               │
+│                  │               │  gRPC client (own conn) │
+│                  │◄──────────────│  async_infer + callback  │
+│  Graph routing   │  output_queue │  retry via Timer         │
+│  picks up        │  (mp.Queue)   ├─────────────────────────┤
+│  InferenceOutput │               │  Worker-N               │
+│                  │◄──────────────│  ...                     │
+└──────────────────┘  output_queue └─────────────────────────┘
+```
 
 This design avoids Python GIL contention for gRPC serialization/deserialization,
 allows true parallel utilization of Triton's gRPC endpoint, and isolates inference
 failures from the main orchestrator.
 
-```
-Main Process                        Worker Processes
-┌──────────────────┐               ┌─────────────────────────┐
-│                  │  request_queue │  Worker-0               │
-│  Application     │──────────────►│  gRPC client (own conn) │
-│  (orchestrator)  │               │  async_infer + callback  │
-│                  │  request_queue │  retry via Timer         │
-│                  │──────────────►├─────────────────────────┤
-│                  │               │  Worker-1               │
-│                  │◄──────────────│  gRPC client (own conn) │
-│                  │  result_queue  │  async_infer + callback  │
-│                  │◄──────────────│  retry via Timer         │
-│                  │  result_queue  ├─────────────────────────┤
-│                  │               │  Worker-N               │
-│                  │◄──────────────│  ...                     │
-└──────────────────┘  result_queue  └─────────────────────────┘
-```
-
 ```python
-class InferenceWorkerPool:
-    """Manages a pool of inference worker processes.
+class TritonInferenceProcessor:
+    """ProcessPoolProcessor for Triton gRPC inference.
 
-    Each worker has its own Triton gRPC client for true parallelism.
-    Requests/results flow through multiprocessing.Queue.
-    All queues have configurable maxsize.
+    Each instance runs in its own worker process with an independent
+    gRPC client. Uses async_infer with callback-based retry for
+    concurrency within the worker.
     """
 
-    def __init__(
-        self, config: InferenceConfig, queue_config: QueueConfig,
-    ) -> None:
-        self._request_queue: mp.Queue[InferenceInput] = mp.Queue(
-            maxsize=queue_config.maxsize,
-        )
-        self._result_queue: mp.Queue[InferenceOutput | InferenceError] = (
-            mp.Queue(maxsize=queue_config.maxsize)
-        )
-        self._workers: list[mp.Process] = []
+    stop: threading.Event
+
+    def __init__(self, config: InferenceConfig) -> None:
         self._config = config
-
-    def start(self) -> None:
-        """Spawn N worker processes."""
-        for i in range(self._config.num_inference_workers):
-            worker = mp.Process(
-                target=_inference_worker_main,
-                args=(
-                    i,
-                    self._config,
-                    self._request_queue,
-                    self._result_queue,
-                ),
-                daemon=True,
-            )
-            worker.start()
-            self._workers.append(worker)
-
-    def submit(self, request: InferenceInput) -> bool:
-        """Put request onto the shared request queue.
-        Returns False and logs + emits queue_overflow metric if full.
-        """
-        try:
-            self._request_queue.put_nowait(request)
-        except queue.Full:
-            logger.error(
-                "request_queue full, dropping InferenceInput for {}",
-                request.model_name,
-            )
-            return False
-        return True
-
-    def get_results(
-        self, timeout: float = 0.1,
-    ) -> list[InferenceOutput | InferenceError]:
-        """Drain available results from result queue (non-blocking)."""
-        results: list[InferenceOutput | InferenceError] = []
-        while True:
-            try:
-                results.append(self._result_queue.get_nowait())
-            except queue.Empty:
-                break
-        return results
-
-    def shutdown(self) -> None:
-        """Send poison pills and join workers."""
-        for _ in self._workers:
-            self._request_queue.put(None)  # sentinel
-        for worker in self._workers:
-            worker.join(timeout=10)
-```
-
-### 8.3 Inference Worker with Async Retry via Callback
-
-Each worker uses `client.async_infer()` (non-blocking). Retry happens inside
-the callback via `threading.Timer` — on failure, schedule retry with exponential
-delay, re-call `async_infer` with a new callback. The semaphore is released only
-on final success or final failure.
-
-```python
-def _inference_worker_main(
-    worker_id: int,
-    config: InferenceConfig,
-    request_queue: mp.Queue[InferenceInput | None],
-    result_queue: mp.Queue[InferenceOutput | InferenceError],
-) -> None:
-    """Entry point for each inference worker process.
-
-    Creates its own gRPC client. Reads requests from queue.
-    Uses async_infer with callback-based retry for concurrency.
-    """
-    client = tritonclient.grpc.InferenceServerClient(
-        url=config.grpc_url,
-    )
-    semaphore = threading.Semaphore(config.max_concurrent_per_worker)
-
-    def _make_callback(
-        req: InferenceInput,
-        attempt: int,
-        start_time_ns: int,
-    ) -> Callable:
-        def _on_complete(result, error):
-            if error is None:
-                elapsed_ms = (
-                    (time.monotonic_ns() - start_time_ns) / 1_000_000
-                )
-                result_queue.put(InferenceOutput(
-                    model_name=req.model_name,
-                    model_version=req.model_version,
-                    outputs=_extract_outputs(result, req.output_names),
-                    inference_time_ms=elapsed_ms,
-                ))
-                semaphore.release()
-                return
-
-            if attempt >= config.max_retry_attempts:
-                result_queue.put(InferenceError(
-                    model_name=req.model_name,
-                    model_version=req.model_version,
-                    error_type=type(error).__name__,
-                    error_message=str(error),
-                    retry_count=attempt,
-                    timestamp_ms=int(time.time() * 1000),
-                ))
-                semaphore.release()
-                return
-
-            delay = (
-                config.retry_base_delay_s
-                * config.retry_backoff_multiplier ** attempt
-            )
-
-            def _retry():
-                client.async_infer(
-                    model_name=req.model_name,
-                    model_version=req.model_version,
-                    inputs=_build_inputs(req),
-                    callback=_make_callback(
-                        req, attempt + 1, start_time_ns,
-                    ),
-                    outputs=_build_requested_outputs(req),
-                )
-
-            timer = threading.Timer(delay, _retry)
-            timer.start()
-
-        return _on_complete
-
-    while True:
-        request = request_queue.get()
-        if request is None:  # poison pill
-            break
-        semaphore.acquire()
-
-        start_ns = time.monotonic_ns()
-        client.async_infer(
-            model_name=request.model_name,
-            model_version=request.model_version,
-            inputs=_build_inputs(request),
-            callback=_make_callback(request, attempt=1, start_time_ns=start_ns),
-            outputs=_build_requested_outputs(request),
+        self._client = tritonclient.grpc.InferenceServerClient(
+            url=config.grpc_url,
         )
+        self._semaphore = threading.Semaphore(
+            config.max_concurrent_per_worker,
+        )
+        self._version_tracker = ModelVersionTracker(
+            client=self._client,
+            poll_interval_s=config.model_version_poll_interval_s,
+        )
+
+    def __call__(
+        self, event: InferenceInput,
+    ) -> InferenceOutput | InferenceError | None:
+        """Run inference on a single event.
+
+        Blocks until async_infer completes (via callback → threading.Event).
+        Returns InferenceOutput on success, InferenceError on final failure.
+        """
+        self._semaphore.acquire()
+        start_ns = time.monotonic_ns()
+
+        version = self._version_tracker.resolve_version(event.model_name)
+        result_holder: queue.Queue[InferenceOutput | InferenceError] = (
+            queue.Queue(maxsize=1)
+        )
+
+        def _make_callback(
+            attempt: int,
+        ) -> Callable:
+            def _on_complete(result, error):
+                if error is None:
+                    elapsed_ms = (
+                        (time.monotonic_ns() - start_ns) / 1_000_000
+                    )
+                    result_holder.put(InferenceOutput(
+                        model_name=event.model_name,
+                        model_version=version,
+                        outputs=_extract_outputs(
+                            result, event.output_names,
+                        ),
+                        inference_time_ms=elapsed_ms,
+                    ))
+                    self._semaphore.release()
+                    return
+
+                if attempt >= self._config.max_retry_attempts:
+                    result_holder.put(InferenceError(
+                        model_name=event.model_name,
+                        model_version=version,
+                        error_type=type(error).__name__,
+                        error_message=str(error),
+                        retry_count=attempt,
+                        timestamp_ms=int(time.time() * 1000),
+                    ))
+                    self._semaphore.release()
+                    return
+
+                delay = (
+                    self._config.retry_base_delay_s
+                    * self._config.retry_backoff_multiplier ** attempt
+                )
+
+                def _retry():
+                    self._client.async_infer(
+                        model_name=event.model_name,
+                        model_version=version,
+                        inputs=_build_inputs(event),
+                        callback=_make_callback(attempt + 1),
+                        outputs=_build_requested_outputs(event),
+                    )
+
+                timer = threading.Timer(delay, _retry)
+                timer.start()
+
+            return _on_complete
+
+        self._client.async_infer(
+            model_name=event.model_name,
+            model_version=version,
+            inputs=_build_inputs(event),
+            callback=_make_callback(attempt=1),
+            outputs=_build_requested_outputs(event),
+        )
+
+        return result_holder.get()  # blocks until callback fires
 ```
 
-### 8.4 Rolling Release — ModelVersionTracker (`inference/model_registry.py`)
+### 8.3 Rolling Release — ModelVersionTracker (`inference/model_registry.py`)
 
 Triton uses `model-control-mode=poll` with 10s interval. When a new model version
 appears in the repository, Triton loads it automatically.
@@ -935,46 +1043,56 @@ class TurboJPEGDecoder:
         return jpeg.decode(raw_bytes)  # returns BGR numpy array
 ```
 
-### 9.2 Configurable Decoder Pool
+### 9.2 Image Decoding as a Pool Processor
 
-The pool type is configurable: `decoder_pool_type: thread | process` in config,
+Image decoding is a `ThreadPoolProcessor` or `ProcessPoolProcessor` node in the
+graph. The pool type is configured per node (`decoder_pool_type: thread | process`),
 defaulting to `thread` since both OpenCV and TurboJPEG release GIL during decode.
-Uses `ThreadPoolExecutor` or `ProcessPoolExecutor` accordingly.
 
 ```python
-class DecoderPool:
-    """Configurable pool for image decoding.
+class ImageDecodeProcessor:
+    """ThreadPoolProcessor or ProcessPoolProcessor for image decoding.
 
-    Pool type (thread/process) and decoder type (opencv/turbojpeg)
-    determined by config. Decoded numpy arrays returned via Future.
+    Execution variant chosen by decoder_pool_type config. Each pool
+    worker has its own decoder instance. Receives raw image events,
+    returns decoded image events with numpy arrays.
 
-    Note: for ProcessPoolExecutor, raw_bytes (input) and ndarray (output)
+    For ProcessPoolProcessor: raw_bytes (input) and ndarray (output)
     are serialized across process boundary via pickle. For typical camera
     images (100KB-2MB in, ~3.7MB out at 640x640x3 uint8) this overhead
     is acceptable compared to decode time.
     """
 
+    stop: threading.Event
+
     def __init__(self, config: PreprocessingConfig) -> None:
-        executor_cls = (
-            ThreadPoolExecutor
-            if config.decoder_pool_type == DecoderPoolType.THREAD
-            else ProcessPoolExecutor
+        decoder_cls = (
+            OpenCVDecoder
+            if config.decoder == DecoderType.OPENCV
+            else TurboJPEGDecoder
         )
-        self._executor = executor_cls(
-            max_workers=config.decoder_pool_workers,
-        )
+        self._decoder = decoder_cls()
 
-    def decode(
-        self, raw_bytes: bytes,
-    ) -> Future[npt.NDArray[np.uint8]]:
-        """Submit decode to pool, return Future."""
-        return self._executor.submit(_decode_in_worker, raw_bytes)
-
-    def decode_batch(
-        self,
-        items: Sequence[bytes],
-    ) -> list[Future[npt.NDArray[np.uint8]]]:
-        """Submit multiple decodes, return list of Futures."""
+    def __call__(
+        self, event: CameraImageEvent,
+    ) -> DecodedImageEvent | PreprocessingError:
+        """Decode image bytes, return decoded event or error."""
+        try:
+            decoded = self._decoder.decode(event.image_data)
+            raw = decoded.astype(np.float32) / 255.0
+            return DecodedImageEvent(
+                camera=event.camera,
+                raw_image=raw,
+                timestamp=event.timestamp,
+            )
+        except cv2.error as exc:
+            return PreprocessingError(
+                message_id=current_context().message_id,
+                decoder_type=self._decoder.__class__.__name__,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+                timestamp_ms=int(time.time() * 1000),
+            )
 ```
 
 ### 9.3 DALI Ensemble Alternative
@@ -1208,23 +1326,28 @@ class PreprocessingError(BaseModel):
 
 ### 13.2 Error Flow
 
+No primitive ever raises — all errors are pushed as typed error events that flow
+through the graph like any other event. Processors return error types in their
+union return type. The graph routes errors to appropriate sinks or error-handling
+processors.
+
 ```
-Source Threads ──────► error_queue ──────────┐  (intra-process queue)
-                                             │
-Decoder Pool ────────► error_queue ──────────┤  (intra-process queue)
-                                             │
-Inference Workers ──► mp.result_queue ───────┤  (cross-process, InferenceError)
-  (errors returned as InferenceError         │
-   via multiprocessing result queue)         │
-                                             ▼
-                                      ErrorHandler (main thread)
-                                             │
-                                   ┌─────────┴──────────┐
-                                   ▼                     ▼
-                            ErrorCollector          logger.error()
-                            (buckets by type)       (immediate log)
+Source.__call__() returns ConnectorError  ─────┐
+                                                │
+Processor.__call__() returns ErrorType  ────────┤  typed error events
+                                                │  flow through graph
+InferenceProcessor returns InferenceError  ────┤
+                                                │
+DecodeProcessor returns PreprocessingError  ───┤
+                                                ▼
+                                         Graph routing by type
+                                                │
+                                   ┌────────────┴────────────┐
+                                   ▼                          ▼
+                            ErrorHandler               ErrorMetricsSink
+                            (Processor or Sink)        (aggregates, emits)
                                    │
-                                   ▼ (on flush interval)
+                                   ▼
                             MetricBuffer → MetricEmitter → Redis "metrics"
 ```
 
@@ -1247,13 +1370,12 @@ class ErrorCollector:
 
 ### 13.4 Source and Sink Resilience
 
-Sources and sinks catch specific exception types and route errors to the error
-queue. They **never crash**:
+Sources and sinks return error events instead of raising. They never crash:
 
-- `redis.ConnectionError` → error_queue + backoff sleep
-- `redis.TimeoutError` → normal for BLOCK reads, continue
-- `pydantic.ValidationError` → error_queue, skip message, continue
-- Any other specific exception → error_queue, continue
+- `redis.ConnectionError` → return `ConnectorError(...)` + backoff sleep
+- `redis.TimeoutError` → normal for BLOCK reads, return None
+- `pydantic.ValidationError` → return `ConnectorError(...)`, skip message
+- Any other specific exception → return typed error event, continue
 
 ---
 
@@ -1342,39 +1464,65 @@ def _combined_reader(
 
 ## 15. Process & Thread Model
 
-### 15.1 Process Map
+### 15.1 Execution Variant Mapping
+
+The process/thread model is defined by which execution variant the user picks
+for each node. The framework handles all lifecycle management.
+
+| Variant | Runs in | Queue ownership | Concurrency |
+|---|---|---|---|
+| `Source` | Main loop | None (returns directly) | Single-threaded |
+| `ThreadSource` | Dedicated thread | output_queue (threading.Queue) | Thread per source |
+| `ProcessSource` | Dedicated process | output_queue (mp.Queue) | Process per source |
+| `Processor` | Main loop | None (dispatched by framework) | Single-threaded |
+| `ThreadProcessor` | Dedicated thread | input_queue + output_queue | Thread per processor |
+| `ThreadPoolProcessor` | N threads | shared input_queue, shared output_queue | N threads |
+| `ProcessPoolProcessor` | N processes | shared input_queue (mp.Queue), shared output_queue (mp.Queue) | N processes |
+| `Sink` | Main loop | None (dispatched by framework) | Single-threaded |
+| `ThreadSink` | Dedicated thread | input_queue (threading.Queue) | Thread per sink |
+
+### 15.2 Process Map (Example Pipeline)
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│  MAIN PROCESS                                                          │
+│  APPLICATION PROCESS                                                    │
 │                                                                        │
-│  Main Thread:                                                          │
-│  - Application orchestrator                                            │
-│  - Queue reader (drains live + pending queues, interleave ratio)       │
-│  - Pipeline dispatch: unwrap Envelope → call Processor.__call__        │
-│  - Intercept InferenceInput → put onto mp.request_queue                │
-│  - Drain mp.result_queue → wrap in Envelope → feed next Processor      │
-│  - ErrorHandler (drains error queue)                                   │
-│  - current_context() set via contextvars before each __call__          │
+│  Main Thread (main loop):                                              │
+│  - Polls inline Source nodes                                           │
+│  - Dispatches events to inline Processor/Sink nodes                    │
+│  - Routes events between queues based on type graph                    │
+│  - Listens on terminal events queue for graceful shutdown              │
+│  - Monitors parallel variants health, restarts if crashed              │
+│  - current_context() set via contextvars before each inline __call__   │
 │                                                                        │
 │  ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐       │
-│  │ Thread: Source-1  │ │ Thread: Source-2  │ │ Thread: Sink-1   │       │
-│  │ XREADGROUP        │ │ XREADGROUP        │ │ XADD             │       │
-│  │ stream_a          │ │ stream_b          │ │ results_stream   │       │
-│  │ → emit(event)     │ │ → emit(event)     │ │ ← output_queue   │       │
+│  │ Thread:           │ │ Thread:           │ │ Thread:           │       │
+│  │ RedisStreamSource │ │ RedisStreamSource │ │ RedisStreamSink   │       │
+│  │ (ThreadSource)    │ │ (ThreadSource)    │ │ (ThreadSink)      │       │
+│  │ XREADGROUP        │ │ XREADGROUP        │ │ XADD              │       │
+│  │ stream_a          │ │ stream_b          │ │ results_stream    │       │
+│  │ → output_queue    │ │ → output_queue    │ │ ← input_queue     │       │
 │  └──────────────────┘ └──────────────────┘ └──────────────────┘       │
 │                                                                        │
 │  ┌──────────────────┐ ┌──────────────────┐                             │
-│  │ Thread: Sink-2    │ │ Timer: Metrics    │                             │
-│  │ XADD              │ │ - TritonMetrics   │                             │
-│  │ metrics_stream    │ │ - Error flush     │                             │
-│  │ ← metrics_queue   │ │ - Metric emit     │                             │
+│  │ Thread:           │ │ Timer: Metrics    │                             │
+│  │ RedisStreamSink   │ │ - TritonMetrics   │                             │
+│  │ (ThreadSink)      │ │ - Error flush     │                             │
+│  │ metrics_stream    │ │ - Metric emit     │                             │
+│  │ ← input_queue     │ │                   │                             │
 │  └──────────────────┘ └──────────────────┘                             │
+│                                                                        │
+│  ┌────────────────────────────────────────────────────────────────┐    │
+│  │  ThreadPoolProcessor: ImageDecodeProcessor                      │    │
+│  │  N threads, shared input_queue ← CameraImageEvent               │    │
+│  │  shared output_queue → DecodedImageEvent | PreprocessingError   │    │
+│  │  Single decoder type per config (opencv | turbojpeg)            │    │
+│  └────────────────────────────────────────────────────────────────┘    │
 └────────────────────────────────────────────────────────────────────────┘
-         │ mp.request_queue                    ▲ mp.result_queue
-         ▼                                     │
+         │ input_queue (mp.Queue)          ▲ output_queue (mp.Queue)
+         ▼                                 │
 ┌──────────────────────────────────────────────────────────────────────┐
-│  INFERENCE WORKER PROCESSES (N separate processes)                    │
+│  ProcessPoolProcessor: TritonInferenceProcessor (N worker processes)  │
 │                                                                      │
 │  ┌─────────────────────────┐  ┌─────────────────────────┐           │
 │  │  Worker-0                │  │  Worker-1                │           │
@@ -1385,36 +1533,29 @@ def _combined_reader(
 │  │  Semaphore(8)            │  │  Semaphore(8)            │           │
 │  └─────────────────────────┘  └─────────────────────────┘           │
 └──────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────────────────┐
-│  DECODER POOL (ThreadPoolExecutor default, ProcessPoolExecutor opt.) │
-│                                                                      │
-│  Single decoder type per config:                                     │
-│  - opencv: cv2.imdecode() — JPEG/PNG/AVIF/BMP                       │
-│  - turbojpeg: PyTurboJPEG — JPEG-only, faster                       │
-│                                                                      │
-│  Both release GIL → ThreadPool is default and sufficient             │
-│  (configurable via decoder_pool_type: thread | process)              │
-└──────────────────────────────────────────────────────────────────────┘
 ```
 
-### 15.2 Queue Topology
+### 15.3 Queue Topology
 
 All queues have configurable `maxsize` (via `QueueConfig`). When a queue is full,
 the item is dropped (not blocked), loguru logs an error, and a `queue_overflow`
 metric with the queue name tag is emitted.
 
-| Queue | Type | Boundary | maxsize | Producer | Consumer |
-|---|---|---|---|---|---|
-| `live_queue[stream]` | `Queue[Envelope[T]]` | intra | config | Source thread | Main thread |
-| `pending_queue[stream]` | `PriorityQueue[Envelope[T]]` | intra | config | Startup recovery | Main thread |
-| `output_queue[stream]` | `Queue[T]` | intra | config | Main thread | Sink thread |
-| `error_queue` | `Queue[Error]` | intra | config | All threads | Main thread |
-| `metric_buffer` | `MetricBuffer` | intra | config | All metric producers | MetricEmitter |
-| `request_queue` | `mp.Queue[InferenceInput]` | **cross** | config | Main process | Workers |
-| `result_queue` | `mp.Queue[InferenceOutput\|Error]` | **cross** | config | Workers | Main process |
+| Queue | Type | Boundary | Producer | Consumer |
+|---|---|---|---|---|
+| ThreadSource output | `Queue[Envelope[T]]` | intra | ThreadSource thread | Graph router (main) |
+| ProcessSource output | `mp.Queue[Envelope[T]]` | cross | ProcessSource process | Graph router (main) |
+| ThreadProcessor input | `Queue[Envelope[T]]` | intra | Graph router (main) | ThreadProcessor thread |
+| ThreadProcessor output | `Queue[Envelope[T]]` | intra | ThreadProcessor thread | Graph router (main) |
+| ThreadPoolProcessor input | `Queue[Envelope[T]]` | intra | Graph router (main) | N worker threads |
+| ThreadPoolProcessor output | `Queue[Envelope[T]]` | intra | N worker threads | Graph router (main) |
+| ProcessPoolProcessor input | `mp.Queue[Envelope[T]]` | cross | Graph router (main) | N worker processes |
+| ProcessPoolProcessor output | `mp.Queue[Envelope[T]]` | cross | N worker processes | Graph router (main) |
+| ThreadSink input | `Queue[Envelope[T]]` | intra | Graph router (main) | ThreadSink thread |
+| `pending_queue[stream]` | `PriorityQueue[Envelope[T]]` | intra | Startup recovery | Graph router (main) |
+| `metric_buffer` | `MetricBuffer` | intra | All metric producers | MetricEmitter |
 
-### 15.3 Backpressure: Drop on Full + Metrics
+### 15.4 Backpressure: Drop on Full + Metrics
 
 When any queue is full:
 1. Drop the item (never block the producer)
@@ -1424,7 +1565,7 @@ When any queue is full:
 This prevents cascading backpressure from stalling the entire pipeline. Dropped
 items are visible in metrics dashboards for capacity planning.
 
-### 15.4 Serialization Across Process Boundary
+### 15.5 Serialization Across Process Boundary
 
 Objects crossing the `multiprocessing.Queue` boundary are serialized via pickle:
 
@@ -1435,19 +1576,19 @@ Objects crossing the `multiprocessing.Queue` boundary are serialized via pickle:
   Same efficient numpy pickle.
 - **InferenceError**: contains only strings and ints — trivial to pickle.
 
-### 15.5 Phase 4C — Shared Memory IPC Optimization
+### 15.6 Phase 4C — Shared Memory IPC Optimization
 
 After Phase 5 benchmarks confirm pickle IPC is the bottleneck, optimize with
 `multiprocessing.shared_memory` for numpy arrays across the process boundary.
 This eliminates the pickle serialization overhead for large tensors by passing
 only a shared memory handle and metadata (shape, dtype) through the queue.
 
-### 15.6 Inference Concurrency (per worker)
+### 15.7 Inference Concurrency (per worker)
 
 Each worker process runs `tritonclient.grpc.InferenceServerClient.async_infer()`.
 This is non-blocking within the worker — it accepts a callback and returns
 immediately. The callback fires in a gRPC internal thread when the response arrives
-and puts the result onto the shared `result_queue` (multiprocessing-safe).
+and puts the result onto the worker's internal completion queue.
 A `threading.Semaphore` per worker limits concurrent in-flight requests
 (`max_concurrent_per_worker`, default 8).
 
@@ -1487,6 +1628,11 @@ class Envelope(Generic[T]):
         return self.priority < other.priority
 ```
 
+Envelope is hidden from user `__call__` methods. The runtime:
+1. Unwraps `envelope.payload` before calling `__call__`
+2. Wraps the return value in a new Envelope inheriting metadata via `derive()`
+3. Sets `current_context()` via `contextvars` for opt-in metadata access
+
 Priority calculation for newest-first:
 
 ```python
@@ -1503,68 +1649,138 @@ def message_id_to_priority(message_id: str, is_pending: bool) -> int:
 
 ### 17.1 How It Works
 
-When a user registers a Processor class, the registry:
+When a user registers a node (Source, Processor, Sink), the registry:
 
-1. Calls `typing.get_type_hints()` on the `__call__` method
-2. Extracts `event: X` parameter type
-3. Extracts return type `Y | None` (strips `None` — means filter)
-4. Builds directed graph: `X → Processor → Y`
-5. Connects Sources whose output type matches Processor input types
-6. Connects Processors whose output type matches Sink input types
-7. Recognizes `InferenceInput` output as the framework intercept point —
-   pipeline is split here, routed through worker pool
+1. Determines which execution variant the class satisfies (Source vs ThreadSource
+   vs ProcessSource, etc.) by checking protocol conformance
+2. Calls `typing.get_type_hints()` on the `__call__` method
+3. For Sources: extracts return type (union types stripped of None)
+4. For Processors: extracts `event: X` parameter type and return type `Y | Z | None`
+5. For Sinks: extracts `event: X` parameter type and optional return type
+6. **Union return types create multiple edges** in the graph. If a Processor
+   returns `InferenceOutput | InferenceError | None`, that creates two outgoing
+   edges — one for `InferenceOutput`, one for `InferenceError`
+7. Builds directed graph from all type edges
+8. Runs graph verification
 
 ```python
 class PipelineRegistry:
-    def register(self, processor_class: type) -> None:
-        hints = typing.get_type_hints(processor_class.__call__)
-        input_type = hints["event"]
-        output_type = hints["return"]
-        # Strip None from Optional/Union for wiring
-        if typing.get_origin(output_type) is types.UnionType:
-            output_type = next(
-                a for a in typing.get_args(output_type) if a is not type(None)
-            )
-        self._graph.add_node(processor_class, input_type, output_type)
+    def register(self, node_class: type) -> None:
+        variant = self._detect_variant(node_class)
+        hints = typing.get_type_hints(node_class.__call__)
 
-    def build_graph(self) -> ProcessingGraph:
-        """Wire processors, sources, sinks.
-        Raises ValueError on missing sources, cycles, or dangling outputs.
+        if variant in SOURCE_VARIANTS:
+            output_types = self._extract_union_types(
+                hints["return"], exclude={type(None)},
+            )
+            for out_type in output_types:
+                self._graph.add_edge(node_class, out_type)
+
+        elif variant in PROCESSOR_VARIANTS:
+            input_type = hints["event"]
+            output_types = self._extract_union_types(
+                hints["return"], exclude={type(None)},
+            )
+            self._graph.add_edge(input_type, node_class)
+            for out_type in output_types:
+                self._graph.add_edge(node_class, out_type)
+
+        elif variant in SINK_VARIANTS:
+            input_type = hints["event"]
+            self._graph.add_edge(input_type, node_class)
+            output_types = self._extract_union_types(
+                hints.get("return"), exclude={type(None)},
+            )
+            for out_type in output_types:
+                self._graph.add_edge(node_class, out_type)
+
+    def _extract_union_types(
+        self,
+        annotation: type | None,
+        exclude: set[type],
+    ) -> list[type]:
+        """Extract individual types from a union annotation.
+        A | B | None → [A, B]. Handles both typing.Union and | syntax.
+        """
+        if annotation is None:
+            return []
+        origin = typing.get_origin(annotation)
+        if origin is types.UnionType or origin is typing.Union:
+            return [
+                a for a in typing.get_args(annotation) if a not in exclude
+            ]
+        if annotation not in exclude:
+            return [annotation]
+        return []
+
+    def build_and_verify(self) -> ProcessingGraph:
+        """Wire all nodes and run graph verification.
+        Raises ValueError on violations (see 17.3).
         """
 ```
 
-### 17.2 Wiring Example
+### 17.2 Graph Verification at Startup
+
+The full DAG is verified before the pipeline starts. Validation errors
+at startup prevent running a broken graph:
+
+1. **Every output type must have a consumer.** If a Processor emits type X and
+   no other node accepts type X as input, the graph is invalid.
+2. **Every input type must have a producer.** If a Processor expects type X but
+   no Source or Processor produces type X, the graph is invalid.
+3. **No orphan nodes.** Every registered node must have at least one edge.
+4. **No disconnected subgraphs.** The entire graph must be reachable from at
+   least one Source.
+5. **No type ambiguity.** If two Processors accept the same input type,
+   the graph is ambiguous and must be resolved (future: explicit routing config).
+6. **Sources have no input edges.** Sinks have no output edges (metric returns
+   are wired separately if present).
+
+### 17.3 Wiring Example
 
 ```
-SourceConfig(event_model=CameraImageEvent)
+RedisStreamSource (ThreadSource)
+    │  __call__() → CameraImageEvent | ConnectorError | None
     │
-    │  Source.__call__(emit) pushes CameraImageEvent
-    ▼
-CameraToInference: Processor[CameraImageEvent, InferenceInput]
+    ├─ CameraImageEvent edge
+    │  ▼
+    │  ImageDecodeProcessor (ThreadPoolProcessor)
+    │      __call__(CameraImageEvent) → DecodedImageEvent | PreprocessingError
+    │      │
+    │      ├─ DecodedImageEvent edge
+    │      │  ▼
+    │      │  TritonInferenceProcessor (ProcessPoolProcessor)
+    │      │      __call__(DecodedImageEvent) → InferenceOutput | InferenceError
+    │      │      │
+    │      │      ├─ InferenceOutput edge
+    │      │      │  ▼
+    │      │      │  DetectionResultHandler (Processor, inline)
+    │      │      │      __call__(InferenceOutput) → DetectionResult
+    │      │      │      │
+    │      │      │      └─ DetectionResult edge
+    │      │      │         ▼
+    │      │      │         RedisStreamSink (ThreadSink)
+    │      │      │             __call__(DetectionResult) → MetricEvent | None
+    │      │      │
+    │      │      └─ InferenceError edge ──► ErrorHandlerSink
+    │      │
+    │      └─ PreprocessingError edge ──► ErrorHandlerSink
     │
-    │  Framework intercepts InferenceInput → mp.request_queue
-    ║  ═══════════════ process boundary ═══════════════
-    │
-    ▼
-InferenceWorkerPool (Worker-N picks up request)
-    │  gRPC async_infer + callback → InferenceOutput
-    │
-    ║  ═══════════════ process boundary ═══════════════
-    │  mp.result_queue
-    ▼
-DetectionResultHandler: Processor[InferenceOutput, DetectionResult]
-    │
-    │  type match: DetectionResult → Sink
-    ▼
-SinkConfig(stream_name="detection_results")
+    └─ ConnectorError edge ──► ErrorHandlerSink
 ```
 
-### 17.3 Example User Code
+### 17.4 Example User Code
 
 ```python
 class CameraImageEvent(BaseModel):
     camera: str
     image_data: bytes
+    timestamp: int
+
+
+class DecodedImageEvent(BaseModel, arbitrary_types_allowed=True):
+    camera: str
+    raw_image: npt.NDArray[np.float32]
     timestamp: int
 
 
@@ -1574,30 +1790,32 @@ class DetectionResult(BaseModel):
     timestamp: int
 
 
-class CameraToInference:
-    """Implements Processor[CameraImageEvent, InferenceInput]."""
+class ImageDecodeProcessor:
+    """ThreadPoolProcessor[CameraImageEvent, DecodedImageEvent | PreprocessingError]."""
 
-    def __init__(self, decoder_pool: DecoderPool) -> None:
-        self._decoder_pool = decoder_pool
+    stop: threading.Event
+
+    def __init__(self, config: PreprocessingConfig) -> None:
+        self._decoder = OpenCVDecoder()
 
     def __call__(
         self, event: CameraImageEvent,
-    ) -> InferenceInput:
-        future = self._decoder_pool.decode(event.image_data)
-        decoded = future.result()     # block until decoded
+    ) -> DecodedImageEvent | PreprocessingError:
+        decoded = self._decoder.decode(event.image_data)
         raw = decoded.astype(np.float32) / 255.0
-        return InferenceInput(
-            model_name="yolo26s", raw_image=raw,
+        return DecodedImageEvent(
+            camera=event.camera,
+            raw_image=raw,
+            timestamp=event.timestamp,
         )
 
 
 class DetectionResultHandler:
-    """Implements Processor[InferenceOutput, DetectionResult]."""
+    """Processor[InferenceOutput, DetectionResult] — inline."""
 
     def __call__(
         self, event: InferenceOutput,
     ) -> DetectionResult:
-        # Extract detections from model output tensors
         detections = _parse_detections(event.outputs)
         ctx = current_context()
         return DetectionResult(
@@ -1619,36 +1837,39 @@ class Application:
     def run(self) -> None:
         """Main run sequence:
         1. Create Redis connections
-        2. Create InferenceWorkerPool (spawns N worker processes)
-        3. Create DecoderPool (Thread or ProcessPoolExecutor per config)
-        4. Import and register user processors (from config.processors)
-        5. Build processing graph via PipelineRegistry
-        6. Create consumer groups for sources
-        7. Load pending messages (newest-first, drop stale via TTL)
+        2. Import and register user nodes (from config.processors, sources, sinks)
+        3. Detect execution variants for each registered node
+        4. Build processing graph via PipelineRegistry
+        5. Verify graph (all edges resolved, no orphans, no ambiguity)
+        6. Wire queues between nodes (QueueBus):
+           - threading.Queue for intra-process edges
+           - multiprocessing.Queue for cross-process edges
+        7. Create consumer groups for Redis sources
+        8. Load pending messages (newest-first, drop stale via TTL)
            into pending queues
-        8. Create stop Events, assign to each Source/Sink
-        9. Start source threads (each Source.__call__(emit) in own thread)
-        10. Start sink threads
-        11. Start inference worker pool (worker processes)
-        12. Start timer threads:
+        9. Create stop Events, assign to each Thread/Process variant node
+        10. Start ThreadSource threads
+        11. Start ProcessSource processes
+        12. Start ThreadProcessor threads
+        13. Start ThreadPoolProcessor thread pools
+        14. Start ProcessPoolProcessor process pools (via factories)
+        15. Start ThreadSink threads
+        16. Start timer threads:
             - TritonMetricsCollector (periodic)
             - ErrorCollector flush (periodic)
             - MetricEmitter (periodic)
-        13. Run main loop:
-            - Combined reader: drain live + pending queues
-              (interleave ratio, TTL check)
-            - Unwrap Envelope → set current_context() → Processor.__call__
-            - Intercept InferenceInput → submit to worker pool
-            - Drain results from worker pool (mp.result_queue)
-            - Wrap InferenceOutput in Envelope → feed next Processor
-            - Route final output to Sink queue
-            - Handle errors
-        14. On shutdown signal (SIGINT/SIGTERM):
-            - Call source.stop.set() for each Source
-            - Call sink.stop.set() for each Sink
+        17. Run main loop:
+            - Poll inline Source nodes
+            - Route events from parallel node output queues by type
+            - Dispatch events to inline Processor/Sink nodes
+            - Route inline node outputs to next node's input queue
+            - Listen on terminal events queue for shutdown signals
+            - Monitor parallel variant health, restart crashed workers
+        18. On shutdown signal (SIGINT/SIGTERM):
+            - Call stop.set() for all Thread/Process variant nodes
+            - Wait for parallel nodes to drain their queues
             - Drain remaining queue items
-            - Shutdown inference worker pool (poison pills + join)
-            - Shutdown decoder pool
+            - Join all threads and processes
             - Flush final metrics
             - Close Redis connections
         """

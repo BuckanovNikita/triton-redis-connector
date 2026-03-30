@@ -90,15 +90,80 @@ Follow the checklist below, section by section.
 
 ## Architecture Contract Verification
 
-### `__call__` Pattern Compliance
+### Execution Variant Compliance (9 Variants)
 
-- Components implement one of three primitives: `Source[TOut]`, `Processor[TIn, TOut]`,
-  `Sink[TIn]` — each via `__call__`.
-- Sources have a `stop: threading.Event` protocol field.
-- Processors are pure transforms: `__call__(self, item: TIn) -> TOut`.
-- Sinks consume data: `__call__(self, item: TIn) -> None`.
-- No multi-method component interfaces (no `.process()`, `.handle()`, `.run()` on
-  components — only `__call__`).
+The framework defines 9 execution variants across 3 primitive roles:
+
+| Role | Variants | Signature |
+|---|---|---|
+| **Source** | `Source`, `ThreadSource`, `ProcessSource` | `__call__(self) -> Event \| None` |
+| **Processor** | `Processor`, `ThreadProcessor`, `ThreadPoolProcessor`, `ProcessPoolProcessor` | `__call__(self, event) -> Event \| None` |
+| **Sink** | `Sink`, `ThreadSink` | `__call__(self, event) -> MetricEvent \| None` |
+
+Verify each component:
+
+- **Sources** return `Event | None` directly — no `emit` callback, no `yield`, no
+  pushing to queues. Flag any source that calls an external callback to emit events.
+- **Processors** accept an event and return `Event | None`. The `None` return
+  filters (drops) the event. Flag processors that call sinks or sources directly.
+- **Sinks** accept an event and return `MetricEvent | None`. Flag sinks that
+  return arbitrary event types (only `MetricEvent` or `None` allowed).
+- **No multi-method interfaces**: only `__call__` on components. Flag `.process()`,
+  `.handle()`, `.run()`, `.emit()` methods on any execution variant.
+
+### Parallel Variant Stop Protocol
+
+- **Thread/Process variants** (`ThreadSource`, `ProcessSource`, `ThreadProcessor`,
+  `ThreadSink`) **MUST** have a `stop: threading.Event` field.
+- Flag any Thread/Process variant that uses a different stop mechanism (boolean flag,
+  custom signal, `None` sentinel on queue).
+- The `stop` event must be checked in the variant's main loop or before blocking
+  operations. Flag variants that ignore `stop`.
+
+### Process-Safe Shared State
+
+- **`ProcessPoolProcessor`** shared state MUST use process-safe primitives:
+  `multiprocessing.Queue`, `multiprocessing.Value`, `multiprocessing.Array`,
+  `multiprocessing.Manager` — NOT `threading.Lock`, `threading.Event`, or
+  plain Python objects.
+- Flag any `threading.Lock` or `threading.Event` used as shared state in a
+  `ProcessPoolProcessor` or its factory's `SharedContext`.
+- The factory pattern (`create_shared() -> SharedContext`,
+  `create_processor(shared) -> Processor`) is the opt-in mechanism for shared
+  state. By default, each pool instance has isolated state.
+
+### No Primitive Raises
+
+- **CRITICAL**: Execution variants (Source, Processor, Sink) must NOT raise
+  exceptions during normal operation. Errors must be sent to error queues as
+  typed `ErrorEvent` objects.
+- Flag any `raise` statement inside a `__call__` method of an execution variant
+  (except for programming errors like `TypeError` / `NotImplementedError` in
+  abstract base classes).
+- Verify error queue usage: errors should include the original event context,
+  error type, and a descriptive message.
+
+### Graph Verification
+
+- The pipeline graph is verified at startup as a DAG from type annotations.
+- **Fully connected**: no orphan nodes (components with no input or output
+  edges, except sources/sinks at graph boundaries). Flag any disconnected nodes.
+- **Union return types = multiple edges**: if a processor returns
+  `HighConfEvent | LowConfEvent`, both types must have downstream consumers.
+  Flag any union return type where one or more member types have no consumer.
+- **No cycles**: the graph must be a DAG. Flag any cycle detected in the
+  type-annotation-derived edges.
+
+### Inference is ProcessPoolProcessor
+
+- Inference is a user-defined `ProcessPoolProcessor` (e.g. `TritonInferenceProcessor`)
+  — there is NO framework-level intercept pattern, no magic `InferenceInput` return
+  convention.
+- Flag any preprocessor that returns an `InferenceInput` type expecting
+  framework-level interception. Preprocessors return their output event type
+  directly; the next node in the graph handles inference.
+- Flag any direct `triton_client.infer()` or `triton_client.async_infer()`
+  call from outside a ProcessPoolProcessor's `__call__`.
 
 ### Envelope Must Not Leak
 
@@ -119,6 +184,9 @@ Follow the checklist below, section by section.
   3. Emit `queue_overflow` metric
 - Flag any `queue.put()` without `block=False` or `put_nowait()` as a
   potential blocking producer.
+- Parallel variants own their queues; the framework wires them at graph build.
+  Flag any component that creates its own internal queue for cross-component
+  communication.
 
 ### Config Naming
 
@@ -191,7 +259,8 @@ Follow the checklist below, section by section.
 ### Python-Specific
 
 - **GIL contention**: CPU-bound work in threads blocks all threads. Must use
-  multiprocessing for CPU work (image decoding, numpy operations).
+  `ProcessPoolProcessor` or `ProcessSource` for CPU work (image decoding,
+  numpy operations). Flag CPU-bound logic in `ThreadProcessor` or `ThreadSource`.
 - **Unnecessary numpy copies**: `np.array(x)` copies; `np.asarray(x)` avoids
   copy when possible. Check for redundant `.copy()` calls.
 - **Large object pickle**: passing large numpy arrays through `multiprocessing.Queue`
@@ -203,6 +272,9 @@ Follow the checklist below, section by section.
   proper async alternatives.
 - **Blocking producers**: any `queue.put()` that blocks when full creates
   cascading backpressure. Must use non-blocking put with drop policy.
+- **Wrong variant for workload**: IO-bound work should use Thread variants;
+  CPU-bound work should use Process variants. Flag mismatched variant selection
+  (e.g., `ThreadPoolProcessor` doing numpy/image processing).
 
 ### Redis-Specific
 
@@ -217,16 +289,10 @@ Follow the checklist below, section by section.
 
 - **Single-request inference**: sending one image at a time wastes GPU parallelism.
   Verify batching is used (either client-side or via dynamic_batching in config).
-- **Sync client in async code**: using `tritonclient.grpc` (sync) inside an
-  async function blocks the event loop. Must use `tritonclient.grpc.aio`.
-- **Sync retry wrapping async_infer**: do not wrap synchronous retry logic
-  around `async_infer`. Use callback-based retry with `threading.Timer` instead.
-
-### Inference Interception
-
-- Preprocessors should return `InferenceInput`, not call Triton directly.
-  Flag any direct `triton_client.infer()` or `triton_client.async_infer()` call
-  from user-facing processor code (framework handles Triton calls).
+- **Sync client in process pool**: using `tritonclient.grpc.aio` (async) inside
+  a `ProcessPoolProcessor` adds unnecessary complexity. The sync
+  `tritonclient.grpc` client is appropriate inside process pool workers since
+  each worker has its own process with no event loop concern.
 
 ---
 
