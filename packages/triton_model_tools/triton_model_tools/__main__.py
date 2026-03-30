@@ -85,6 +85,7 @@ def _run_export(args: argparse.Namespace) -> None:
     exported_dirs = export_all_models(
         repository_root=repository_root,
         model_names=model_names,
+        fmt=export_format,  # type: ignore[arg-type]
     )
 
     if generate_dali:

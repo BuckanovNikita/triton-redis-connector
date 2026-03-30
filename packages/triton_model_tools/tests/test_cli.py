@@ -128,6 +128,7 @@ class TestMainEntryPoint:
         mock_export.assert_called_once_with(
             repository_root=Path(repo_dir).resolve(),
             model_names=None,
+            fmt="onnx",
         )
 
     def test_main_handles_value_error(self, tmp_path: Path) -> None:
