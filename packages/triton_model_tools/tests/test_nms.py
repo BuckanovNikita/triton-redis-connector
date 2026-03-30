@@ -6,11 +6,11 @@ import ast
 from typing import TYPE_CHECKING
 
 from triton_model_tools.nms import (
+    _NMS_SCRIPT_PATH,
     NMS_MODEL_NAME,
     NmsModelConfig,
     build_nms_model_config,
     build_nms_model_directory,
-    generate_nms_model_script,
 )
 
 if TYPE_CHECKING:
@@ -49,70 +49,50 @@ class TestNmsModelConfig:
         assert config_max.iou_threshold == 1.0
 
 
-class TestGenerateNmsModelScript:
-    def test_produces_valid_python(self) -> None:
-        config = NmsModelConfig()
-        script = generate_nms_model_script(config)
-        ast.parse(script)
+class TestNmsScript:
+    def test_script_file_exists(self) -> None:
+        assert _NMS_SCRIPT_PATH.exists()
+
+    def test_script_is_valid_python(self) -> None:
+        ast.parse(_NMS_SCRIPT_PATH.read_text())
 
     def test_contains_nms_operations(self) -> None:
-        config = NmsModelConfig()
-        script = generate_nms_model_script(config)
+        script = _NMS_SCRIPT_PATH.read_text()
         assert "nms" in script.lower()
         assert "torchvision.ops.nms" in script
 
     def test_contains_triton_python_model_class(self) -> None:
-        config = NmsModelConfig()
-        script = generate_nms_model_script(config)
+        script = _NMS_SCRIPT_PATH.read_text()
         assert "class TritonPythonModel" in script
 
     def test_contains_initialize_and_execute(self) -> None:
-        config = NmsModelConfig()
-        script = generate_nms_model_script(config)
+        script = _NMS_SCRIPT_PATH.read_text()
         assert "def initialize" in script
         assert "def execute" in script
 
-    def test_contains_confidence_threshold(self) -> None:
-        config = NmsModelConfig(confidence_threshold=0.3)
-        script = generate_nms_model_script(config)
-        assert "0.3" in script
-
-    def test_contains_iou_threshold(self) -> None:
-        config = NmsModelConfig(iou_threshold=0.5)
-        script = generate_nms_model_script(config)
-        assert "0.5" in script
-
-    def test_contains_max_detections(self) -> None:
-        config = NmsModelConfig(max_detections=200)
-        script = generate_nms_model_script(config)
-        assert "200" in script
+    def test_reads_parameters_from_model_config(self) -> None:
+        script = _NMS_SCRIPT_PATH.read_text()
+        assert 'params["confidence_threshold"]' in script
+        assert 'params["iou_threshold"]' in script
+        assert 'params["max_detections"]' in script
 
     def test_contains_numpy_fallback(self) -> None:
-        config = NmsModelConfig()
-        script = generate_nms_model_script(config)
+        script = _NMS_SCRIPT_PATH.read_text()
         assert "_numpy_nms" in script
         assert "ImportError" in script
 
     def test_contains_xywh_to_xyxy_conversion(self) -> None:
-        config = NmsModelConfig()
-        script = generate_nms_model_script(config)
+        script = _NMS_SCRIPT_PATH.read_text()
         assert "_xywh_to_xyxy" in script
 
     def test_uses_pb_utils(self) -> None:
-        config = NmsModelConfig()
-        script = generate_nms_model_script(config)
+        script = _NMS_SCRIPT_PATH.read_text()
         assert "pb_utils" in script
         assert "get_input_tensor_by_name" in script
         assert "InferenceResponse" in script
 
-    def test_script_has_no_unused_json_import(self) -> None:
-        config = NmsModelConfig()
-        script = generate_nms_model_script(config)
-        assert "import json" not in script
-
     def test_script_has_no_finalize(self) -> None:
-        config = NmsModelConfig()
-        script = generate_nms_model_script(config)
+        script = _NMS_SCRIPT_PATH.read_text()
         assert "finalize" not in script
 
 
@@ -159,6 +139,21 @@ class TestBuildNmsModelConfig:
         assert 'backend: "python"' in pbtxt
         assert "platform:" not in pbtxt
 
+    def test_parameters_contain_config_values(self) -> None:
+        config = NmsModelConfig(confidence_threshold=0.3, iou_threshold=0.5, max_detections=200)
+        model_config = build_nms_model_config(config)
+        assert model_config.parameters["confidence_threshold"] == "0.3"
+        assert model_config.parameters["iou_threshold"] == "0.5"
+        assert model_config.parameters["max_detections"] == "200"
+
+    def test_pbtxt_renders_parameters(self) -> None:
+        config = NmsModelConfig()
+        model_config = build_nms_model_config(config)
+        pbtxt = model_config.to_pbtxt()
+        assert 'key: "confidence_threshold"' in pbtxt
+        assert 'key: "iou_threshold"' in pbtxt
+        assert 'key: "max_detections"' in pbtxt
+
 
 class TestBuildNmsModelDirectory:
     def test_creates_model_directory(self, tmp_path: Path) -> None:
@@ -189,6 +184,13 @@ class TestBuildNmsModelDirectory:
         content = config_path.read_text()
         assert 'backend: "python"' in content
         assert f'name: "{NMS_MODEL_NAME}"' in content
+
+    def test_config_pbtxt_contains_parameters(self, tmp_path: Path) -> None:
+        config = NmsModelConfig(confidence_threshold=0.5)
+        build_nms_model_directory(tmp_path, config)
+        content = (tmp_path / NMS_MODEL_NAME / "config.pbtxt").read_text()
+        assert 'key: "confidence_threshold"' in content
+        assert 'string_value: "0.5"' in content
 
     def test_returns_model_directory_path(self, tmp_path: Path) -> None:
         config = NmsModelConfig()

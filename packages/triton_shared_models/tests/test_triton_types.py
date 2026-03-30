@@ -492,3 +492,69 @@ class TestPbtxtCombinedFields:
         assert 'model_name: "preprocess"' in pbtxt
         assert 'model_name: "inference"' in pbtxt
         assert "instance_group" not in pbtxt
+
+    def test_warmup_each_input_in_own_block(self) -> None:
+        config = _make_simple_config(
+            model_warmup=[
+                ModelWarmupConfig(
+                    name="warmup_multi",
+                    batch_size=1,
+                    inputs={
+                        "input_a": WarmupInputSpec(
+                            data_type=TritonDataType.TYPE_FP32,
+                            dims=[3, 224, 224],
+                        ),
+                        "input_b": WarmupInputSpec(
+                            data_type=TritonDataType.TYPE_INT32,
+                            dims=[1],
+                        ),
+                    },
+                ),
+            ],
+        )
+        pbtxt = config.to_pbtxt()
+        blocks = pbtxt.split("inputs {")
+        assert len(blocks) == 3
+        assert 'key: "input_a"' in blocks[1]
+        assert 'key: "input_b"' in blocks[2]
+
+    def test_ensemble_steps_separated_by_comma(self) -> None:
+        config = _make_simple_config(
+            ensemble_scheduling=[
+                EnsembleStep(model_name="step_a"),
+                EnsembleStep(model_name="step_b"),
+            ],
+        )
+        pbtxt = config.to_pbtxt()
+        assert "}," in pbtxt
+        assert not pbtxt.rstrip().endswith("},")
+
+
+class TestParametersRendering:
+    def test_renders_parameters(self) -> None:
+        config = _make_simple_config(
+            parameters={"threshold": "0.5", "max_count": "100"},
+        )
+        pbtxt = config.to_pbtxt()
+        assert 'key: "threshold"' in pbtxt
+        assert 'string_value: "0.5"' in pbtxt
+        assert 'key: "max_count"' in pbtxt
+        assert 'string_value: "100"' in pbtxt
+
+    def test_no_parameters_when_empty(self) -> None:
+        pbtxt = _make_simple_config().to_pbtxt()
+        assert "parameters" not in pbtxt
+
+    def test_each_parameter_in_own_block(self) -> None:
+        config = _make_simple_config(
+            parameters={"a": "1", "b": "2", "c": "3"},
+        )
+        pbtxt = config.to_pbtxt()
+        assert pbtxt.count("parameters {") == 3
+
+    def test_parameters_in_pbtxt_structure(self) -> None:
+        config = _make_simple_config(parameters={"key1": "val1"})
+        pbtxt = config.to_pbtxt()
+        assert "parameters {" in pbtxt
+        assert 'key: "key1"' in pbtxt
+        assert 'value: { string_value: "val1" }' in pbtxt

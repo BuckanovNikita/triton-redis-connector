@@ -38,12 +38,14 @@ ignore = [
     "RUF001",   # ambiguous-unicode-character - project uses Russian strings
     "PERF203",  # try-except-in-loop - false positive in Python 3.11+
     "PLR2004",  # magic-value-comparison
+    "S701",     # jinja2-autoescape-false - not rendering HTML
 ]
 fixable = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "ANN401", "PLR2004", "PLC0415", "D101", "D102", "D103", "D104", "INP001", "S311", "SLF001", "TC002"]
 "**/tests/**" = ["S101", "S105", "S106", "ANN401", "PLR2004", "PLC0415", "D101", "D102", "D103", "D104", "INP001", "S311", "SLF001", "TC002"]
+"**/scripts/**" = ["ALL"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -63,6 +65,7 @@ exclude = [
     "packages/triton_redis_connector/tests/",
     "packages/triton_model_tools/tests/",
     "packages/triton_shared_models/tests/",
+    "packages/triton_model_tools/triton_model_tools/scripts/",
 ]
 
 [[tool.mypy.overrides]]

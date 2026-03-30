@@ -15,6 +15,7 @@ dependencies = [
     "tritonclient[all]>=2.66.0",
     "pydantic>=2.10.0",
     "loguru>=0.7.3",
+    "jinja2>=3.1.0",
     "numpy>=1.26.0",
     "Pillow>=10.0.0",
 ]

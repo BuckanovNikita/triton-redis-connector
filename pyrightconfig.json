@@ -9,7 +9,8 @@
         "**/__pycache__",
         ".venv",
         "build",
-        "dist"
+        "dist",
+        "packages/triton_model_tools/triton_model_tools/scripts"
     ],
     "reportMissingTypeStubs": "warning"
 }

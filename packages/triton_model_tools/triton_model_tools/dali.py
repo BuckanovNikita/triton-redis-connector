@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import textwrap
-from typing import TYPE_CHECKING
+from pathlib import Path
 
+from jinja2 import Environment, FileSystemLoader
 from loguru import logger
 from pydantic import BaseModel
 
@@ -17,8 +17,13 @@ from triton_model_tools.models import (
     TritonTensorSpec,
 )
 
-if TYPE_CHECKING:
-    from pathlib import Path
+_TEMPLATE_DIR = Path(__file__).parent / "templates"
+_JINJA_ENV = Environment(
+    loader=FileSystemLoader(_TEMPLATE_DIR),
+    keep_trailing_newline=True,
+    autoescape=False,
+)
+_DALI_TEMPLATE = _JINJA_ENV.get_template("dali_preprocess.py.j2")
 
 DALI_PREPROCESS_SUFFIX = "_dali_preprocess"
 DALI_ENSEMBLE_SUFFIX = "_dali_ensemble"
@@ -52,69 +57,13 @@ def generate_dali_pipeline_script(config: DaliPipelineConfig) -> str:
 
     """
     target_h, target_w = config.target_size
-    return textwrap.dedent(f"""\
-        import nvidia.dali.fn as fn
-        import nvidia.dali.types as types
-        from nvidia.dali.pipeline import pipeline_def
-
-
-        @pipeline_def(batch_size=1, num_threads=4, device_id=0)
-        def pipe():
-            encoded = fn.external_source(device="cpu", name="INPUT_0")
-            images = fn.decoders.image(encoded, device="mixed", output_type=types.BGR)
-
-            shapes = fn.peek_image_shape(encoded)
-            orig_h = fn.slice(shapes, 0, 1, axes=[0])
-            orig_w = fn.slice(shapes, 1, 1, axes=[0])
-
-            target_h = {target_h}
-            target_w = {target_w}
-
-            scale_h = target_h / fn.cast(orig_h, dtype=types.FLOAT)
-            scale_w = target_w / fn.cast(orig_w, dtype=types.FLOAT)
-            scale = fn.min(scale_h, scale_w)
-
-            new_h = fn.cast(fn.cast(orig_h, dtype=types.FLOAT) * scale, dtype=types.INT32)
-            new_w = fn.cast(fn.cast(orig_w, dtype=types.FLOAT) * scale, dtype=types.INT32)
-
-            resized = fn.resize(
-                images,
-                resize_x=new_w,
-                resize_y=new_h,
-                interp_type=types.INTERP_LINEAR,
-            )
-
-            pad_top = fn.cast((target_h - new_h) / 2, dtype=types.INT32)
-            pad_left = fn.cast((target_w - new_w) / 2, dtype=types.INT32)
-
-            padded = fn.paste(
-                resized,
-                paste_x=fn.cast(pad_left, dtype=types.FLOAT) / {target_w},
-                paste_y=fn.cast(pad_top, dtype=types.FLOAT) / {target_h},
-                ratio=1.0,
-                fill_value=({config.pad_value}, {config.pad_value}, {config.pad_value}),
-                min_canvas_size=({target_h}, {target_w}),
-            )
-            padded = fn.crop(
-                padded,
-                crop_h={target_h},
-                crop_w={target_w},
-                crop_pos_x=0.0,
-                crop_pos_y=0.0,
-            )
-
-            rgb = fn.color_space_conversion(padded, image_type=types.BGR, output_type=types.RGB)
-
-            normalized = fn.crop_mirror_normalize(
-                rgb,
-                mean=[0.0, 0.0, 0.0],
-                std=[{config.normalize_div}, {config.normalize_div}, {config.normalize_div}],
-                output_layout="{config.output_layout}",
-                dtype=types.FLOAT,
-            )
-
-            return normalized
-    """)
+    return _DALI_TEMPLATE.render(
+        target_h=target_h,
+        target_w=target_w,
+        pad_value=config.pad_value,
+        normalize_div=config.normalize_div,
+        output_layout=config.output_layout,
+    )
 
 
 def build_dali_model_config(
