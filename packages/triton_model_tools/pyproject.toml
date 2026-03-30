@@ -23,4 +23,4 @@ dependencies = [
 triton-shared-models = { workspace = true }
 
 [project.scripts]
-triton-model-export = "triton_model_tools.__main__:main"
+triton-model-tools = "triton_model_tools.__main__:main"
