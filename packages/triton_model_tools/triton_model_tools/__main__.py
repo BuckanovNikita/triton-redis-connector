@@ -222,6 +222,161 @@ def _run_infer(args: argparse.Namespace) -> None:
             )
 
 
+def _build_download_coco_parser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+) -> None:
+    download_parser = subparsers.add_parser(
+        "download-coco",
+        help="Download COCO val2017 images for benchmarking",
+    )
+    download_parser.add_argument(
+        "--target-dir",
+        type=Path,
+        default=Path("data"),
+        help="Target directory for COCO dataset (default: ./data)",
+    )
+    download_parser.add_argument(
+        "--max-images",
+        type=int,
+        default=None,
+        help="Limit number of extracted images (for quick testing)",
+    )
+    download_parser.set_defaults(func=_run_download_coco)
+
+
+def _run_download_coco(args: argparse.Namespace) -> None:
+    from triton_model_tools.dataset import download_coco_val  # noqa: PLC0415
+
+    target_dir: Path = args.target_dir.resolve()
+    max_images: int | None = args.max_images
+
+    logger.info("COCO val2017 Downloader")
+    logger.info("Target directory: {}", target_dir)
+    if max_images is not None:
+        logger.info("Max images: {}", max_images)
+
+    image_dir = download_coco_val(target_dir, max_images=max_images)
+    logger.info("Images available at: {}", image_dir)
+
+
+def _build_benchmark_parser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+) -> None:
+    bench_parser = subparsers.add_parser(
+        "benchmark",
+        help="Run inference benchmark on images via Triton",
+    )
+    bench_parser.add_argument(
+        "--image-dir",
+        type=Path,
+        required=True,
+        help="Directory containing images to benchmark with",
+    )
+    bench_parser.add_argument(
+        "-m",
+        "--model",
+        type=str,
+        required=True,
+        help="Triton model name (e.g. yolo11s)",
+    )
+    bench_parser.add_argument(
+        "--backend",
+        choices=["onnx", "tensorrt"],
+        default="onnx",
+        help="Model backend (default: onnx)",
+    )
+    bench_parser.add_argument(
+        "--triton-url",
+        type=str,
+        default="localhost:8001",
+        help="Triton gRPC URL (default: localhost:8001)",
+    )
+    bench_parser.add_argument(
+        "--target-size",
+        type=int,
+        default=640,
+        help="Model input size (default: 640)",
+    )
+    bench_parser.add_argument(
+        "--num-images",
+        type=int,
+        default=100,
+        help="Number of images to benchmark (default: 100)",
+    )
+    bench_parser.add_argument(
+        "--warmup-runs",
+        type=int,
+        default=5,
+        help="Number of warmup iterations (default: 5)",
+    )
+    bench_parser.add_argument(
+        "--end2end",
+        action="store_true",
+        default=False,
+        help="Model uses end2end NMS output format",
+    )
+    bench_parser.add_argument(
+        "--output",
+        "-o",
+        type=Path,
+        default=None,
+        help="Output file path (JSON or CSV based on extension)",
+    )
+    bench_parser.set_defaults(func=_run_benchmark)
+
+
+def _run_benchmark(args: argparse.Namespace) -> None:
+    from triton_model_tools.benchmark import (  # noqa: PLC0415
+        BenchmarkConfig,
+        BenchmarkSuite,
+        run_benchmark,
+        save_benchmark_output,
+    )
+
+    image_dir: Path = args.image_dir.resolve()
+    model_name: str = args.model
+    backend: str = args.backend
+    triton_url: str = args.triton_url
+    target_size: int = args.target_size
+    num_images: int = args.num_images
+    warmup_runs: int = args.warmup_runs
+    end2end: bool = args.end2end
+    output_path: Path | None = args.output
+
+    logger.info("Triton Benchmark")
+    logger.info("Image dir: {}", image_dir)
+    logger.info("Model: {} (backend: {})", model_name, backend)
+
+    config = BenchmarkConfig(
+        model_name=model_name,
+        backend=backend,  # type: ignore[arg-type]
+        triton_url=triton_url,
+        target_size=target_size,
+        num_images=num_images,
+        warmup_runs=warmup_runs,
+        end2end=end2end,
+    )
+
+    result = run_benchmark(config, image_dir)
+    suite = BenchmarkSuite(results=[result])
+
+    logger.info(
+        "Results: {} images, avg={:.2f}ms, throughput={:.1f}fps",
+        result.num_images,
+        result.avg_latency_ms,
+        result.throughput_fps,
+    )
+    logger.info(
+        "Latencies: p50={:.2f}ms p95={:.2f}ms p99={:.2f}ms",
+        result.p50_latency_ms,
+        result.p95_latency_ms,
+        result.p99_latency_ms,
+    )
+
+    if output_path is not None:
+        save_benchmark_output(suite, output_path.resolve())
+
+
 def main() -> None:
     """Entry point for triton-model-tools CLI."""
     parser = argparse.ArgumentParser(
@@ -232,6 +387,8 @@ def main() -> None:
 
     _build_export_parser(subparsers)
     _build_infer_parser(subparsers)
+    _build_download_coco_parser(subparsers)
+    _build_benchmark_parser(subparsers)
 
     args = parser.parse_args()
 
