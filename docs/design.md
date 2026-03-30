@@ -410,6 +410,11 @@ class AppConfig(BaseModel):
     metrics: MetricsConfig = MetricsConfig()
 ```
 
+`AppConfig` и все sub-config модели становятся dishka-provided зависимостями
+в APP scope. Поток данных: Hydra YAML → `OmegaConf.to_container()` →
+`AppConfig(**dict)` → dishka `ConfigProvider.app_config()` → все остальные
+провайдеры получают конфиги через инъекцию. См. секцию 5A.
+
 ### 5.3 Example Main Config (`conf/config.yaml`)
 
 ```yaml
@@ -445,6 +450,128 @@ processors:
   - myapp.processors.ImageDecodeProcessor
   - myapp.processors.TritonInferenceProcessor
   - myapp.processors.DetectionResultHandler
+```
+
+---
+
+## 5A. Dependency Injection (dishka)
+
+### 5A.1 Зачем dishka
+
+Проект использует [dishka](https://github.com/reagento/dishka) — современный
+Python DI-фреймворк с поддержкой async, scope-менеджментом и высокой
+производительностью (в ~20 раз быстрее dependency-injector).
+
+Dishka заменяет ручное создание зависимостей в `Application.from_config()`
+декларативными провайдерами. Это делает стартовую последовательность тестируемой
+(подмена провайдеров для тестов) и расширяемой (новые провайдеры для новых слоёв
+без изменения Application).
+
+### 5A.2 Маппинг скоупов
+
+| Dishka Scope | Время жизни | Объекты | Обоснование |
+|---|---|---|---|
+| `APP` | Время жизни приложения (singleton) | `AppConfig`, Redis connection pool, `PipelineRegistry`, `ProcessingGraph`, `QueueBus`, `MetricBuffer` | Создаются один раз при старте, разделяются между inline и thread-нодами |
+| `REQUEST` | Один цикл обработки события | `EventContext`, метаданные события | Скоуп для inline `Processor` и `Sink` — один event dispatch cycle |
+| `WORKER` (кастомный) | Один worker-процесс `ProcessPoolProcessor` | `InferenceServerClient`, `redis.Redis`, `ModelVersionTracker` | Соединения не fork-safe — каждый worker создаёт свои |
+
+### 5A.3 Организация провайдеров
+
+Провайдеры следуют иерархии слоёв import-linter. Каждый провайдер соответствует
+одному архитектурному слою:
+
+```
+providers/
+  scopes.py                # Кастомный WORKER scope
+  config_provider.py       # config слой: AppConfig, sub-configs
+  engine_provider.py       # engine слой: PipelineRegistry, ProcessingGraph, QueueBus
+  connector_provider.py    # connectors слой: Redis connection pool, ConsumerGroupManager
+  inference_provider.py    # inference слой: worker container factory
+  preprocessing_provider.py # preprocessing слой: decoder instances
+  metrics_provider.py      # metrics слой: MetricBuffer, MetricEmitter, collectors
+```
+
+Провайдер может зависеть от объектов провайдеров нижних слоёв (по правилам
+import-linter), но никогда от верхних слоёв или сиблинг-модулей домена.
+
+### 5A.4 Жизненный цикл контейнера
+
+```
+1. Hydra загружает config → OmegaConf.to_container()
+2. Создаётся AppConfig (pydantic)
+3. Создаются экземпляры Provider, AppConfig передаётся в ConfigProvider
+4. make_container(ConfigProvider, EngineProvider, ConnectorProvider, ...) → container
+5. Container входит в APP scope (создаёт singletons: Redis pool, registry и т.д.)
+6. Main loop: для каждого inline event dispatch входит в REQUEST scope
+7. ProcessPoolProcessor workers: создают child container с WORKER scope
+8. Shutdown: container.close() — teardown APP scope (закрытие соединений)
+```
+
+### 5A.5 DI для ProcessPoolProcessor workers
+
+Каждый worker-процесс получает фабричную функцию (picklable), которая создаёт
+свежий dishka-контейнер с WORKER scope. Фабрика захватывает только сериализуемый
+конфиг (pydantic-модели, которые picklable). В init worker'а:
+
+```python
+def _worker_init(config: InferenceConfig) -> TritonInferenceProcessor:
+    worker_container = make_container(WorkerProvider(config))
+    return worker_container.get(TritonInferenceProcessor)
+```
+
+Это заменяет ручное создание зависимостей в worker init. Контейнер worker'а
+закрывается при завершении процесса.
+
+### 5A.6 Связь с factory pattern
+
+Dishka и factory pattern — взаимодополняющие механизмы:
+
+- **Framework-internal wiring** (registry, graph, queues, connections) → dishka
+- **User-defined shared state** (`create_shared`/`create_processor`) → factory
+  pattern (остаётся без изменений)
+
+Для продвинутых пользователей: dishka-провайдер может реализовать factory protocol
+изнутри, делая `create_shared` методом провайдера, а `create_processor` — scoped
+зависимостью.
+
+### 5A.7 Интеграция Hydra → Dishka
+
+```python
+class ConfigProvider(Provider):
+    scope = Scope.APP
+
+    @provide
+    def app_config(self) -> AppConfig:
+        return self._config  # передан через __init__ из Hydra
+
+    @provide
+    def redis_config(self, config: AppConfig) -> RedisConnectionConfig:
+        return config.redis
+
+    @provide
+    def inference_config(self, config: AppConfig) -> InferenceConfig:
+        return config.inference
+```
+
+Точка входа:
+
+```python
+@hydra.main(version_base=None, config_path="conf", config_name="config")
+def main(cfg: DictConfig) -> None:
+    app_config = AppConfig(**OmegaConf.to_container(cfg, resolve=True))
+    container = make_container(
+        ConfigProvider(app_config),
+        EngineProvider(),
+        ConnectorProvider(),
+        InferenceProvider(),
+        PreprocessingProvider(),
+        MetricsProvider(),
+    )
+    app = container.get(Application)
+    try:
+        app.run()
+    finally:
+        container.close()
 ```
 
 ---
@@ -660,6 +787,19 @@ class TritonInferenceFactory:
             version_cache=shared.dict(),
         )
 ```
+
+#### Связь с dishka
+
+Factory pattern и dishka — взаимодополняющие механизмы:
+
+- **Framework-internal wiring** (registry, graph, queues, connections) использует dishka
+- **User-defined shared state** (`create_shared`/`create_processor`) остаётся
+  как есть — factory pattern для пользовательского кода
+
+Dishka управляет тем, КАК создаются зависимости фреймворка. Factory pattern
+управляет тем, КАК пользователь делит состояние между worker'ами.
+Для продвинутых пользователей: dishka-провайдер может реализовать factory protocol
+изнутри. См. секцию 5A.6.
 
 ### 6.5 Image Protocols (`preprocessing/protocols.py`)
 
@@ -1850,14 +1990,24 @@ class DetectionResultHandler:
 
 ## 18. Application Bootstrap
 
+С dishka DI, `Application` резолвится из контейнера вместо ручного
+`Application.from_config()`. Контейнер строит полное дерево зависимостей
+декларативно через провайдеры.
+
 ```python
 class Application:
-    @classmethod
-    def from_config(cls, config: AppConfig) -> Application: ...
+    def __init__(
+        self,
+        config: AppConfig,
+        registry: PipelineRegistry,
+        graph: ProcessingGraph,
+        queue_bus: QueueBus,
+        # ... другие зависимости инжектятся dishka
+    ) -> None: ...
 
     def run(self) -> None:
         """Main run sequence:
-        1. Create Redis connections
+        1. (dishka уже создал зависимости при резолве Application)
         2. Import and register user nodes (from config.processors, sources, sinks)
         3. Detect execution variants for each registered node
         4. Build processing graph via PipelineRegistry
@@ -1873,7 +2023,9 @@ class Application:
         11. Start ProcessSource processes
         12. Start ThreadProcessor threads
         13. Start ThreadPoolProcessor thread pools
-        14. Start ProcessPoolProcessor process pools (via factories)
+        14. Start ProcessPoolProcessor process pools:
+            - Каждый worker создаёт свой WORKER-scope dishka-контейнер
+            - Worker получает picklable config, создаёт контейнер в init
         15. Start ThreadSink threads
         16. Start timer threads:
             - TritonMetricsCollector (periodic)
@@ -1881,6 +2033,7 @@ class Application:
             - MetricEmitter (periodic)
         17. Run main loop:
             - Poll inline Source nodes
+            - Enter REQUEST scope for each inline dispatch cycle
             - Route events from parallel node output queues by type
             - Dispatch events to inline Processor/Sink nodes
             - Route inline node outputs to next node's input queue
@@ -1892,7 +2045,7 @@ class Application:
             - Drain remaining queue items
             - Join all threads and processes
             - Flush final metrics
-            - Close Redis connections
+            - container.close() — teardown APP scope (закрытие соединений)
         """
 
     def shutdown(self) -> None: ...
@@ -1904,8 +2057,19 @@ class Application:
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     app_config = AppConfig(**OmegaConf.to_container(cfg, resolve=True))
-    app = Application.from_config(app_config)
-    app.run()
+    container = make_container(
+        ConfigProvider(app_config),
+        EngineProvider(),
+        ConnectorProvider(),
+        InferenceProvider(),
+        PreprocessingProvider(),
+        MetricsProvider(),
+    )
+    app = container.get(Application)
+    try:
+        app.run()
+    finally:
+        container.close()
 ```
 
 ---
@@ -1918,4 +2082,5 @@ def main(cfg: DictConfig) -> None:
 hydra-core>=1.3.0
 PyTurboJPEG>=1.7.0
 opencv-python-headless>=4.9.0
+dishka>=1.7.0
 ```

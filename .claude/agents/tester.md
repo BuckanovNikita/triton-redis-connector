@@ -941,6 +941,147 @@ Key validation points:
 
 ---
 
+## Testing with Dishka
+
+### Override Providers for Testing
+
+Dishka supports provider overriding for tests. Create test-specific providers that
+replace real dependencies with fakes:
+
+```python
+from dishka import Provider, Scope, provide, make_container
+
+
+class TestConfigProvider(Provider):
+    scope = Scope.APP
+
+    @provide
+    def app_config(self) -> AppConfig:
+        return AppConfig(
+            redis=RedisConnectionConfig(host="localhost", port=6379),
+            inference=InferenceConfig(grpc_url="localhost:8001"),
+        )
+
+
+class TestConnectorProvider(Provider):
+    scope = Scope.APP
+
+    @provide
+    def redis_pool(self) -> FakeRedisStreamReader:
+        return FakeRedisStreamReader()
+
+
+def test_application_resolves_from_container() -> None:
+    container = make_container(
+        TestConfigProvider(),
+        EngineProvider(),
+        TestConnectorProvider(),
+        InferenceProvider(),
+        PreprocessingProvider(),
+        MetricsProvider(),
+    )
+    app = container.get(Application)
+    assert app is not None
+    container.close()
+```
+
+### Test Container Fixture
+
+```python
+import pytest
+from collections.abc import Iterator
+from dishka import Container, make_container
+
+
+@pytest.fixture
+def test_container() -> Iterator[Container]:
+    container = make_container(
+        TestConfigProvider(),
+        TestEngineProvider(),
+        TestConnectorProvider(),
+    )
+    yield container
+    container.close()
+
+
+def test_registry_provided(test_container: Container) -> None:
+    registry = test_container.get(PipelineRegistry)
+    assert registry is not None
+```
+
+### Verifying Scope Lifecycle
+
+```python
+from triton_redis_connector.providers.scopes import WORKER
+
+
+def test_worker_scope_creates_independent_instances() -> None:
+    container = make_container(TestConfigProvider(), WorkerProvider(test_config))
+
+    async with container(scope=WORKER) as worker_1:
+        client_1 = worker_1.get(InferenceServerClient)
+    async with container(scope=WORKER) as worker_2:
+        client_2 = worker_2.get(InferenceServerClient)
+
+    assert client_1 is not client_2
+
+
+def test_app_scope_returns_same_instance() -> None:
+    container = make_container(TestConfigProvider(), EngineProvider())
+
+    registry_1 = container.get(PipelineRegistry)
+    registry_2 = container.get(PipelineRegistry)
+
+    assert registry_1 is registry_2
+    container.close()
+```
+
+### Verifying Container Cleanup
+
+```python
+from collections.abc import Iterator
+
+
+def test_container_close_calls_cleanup() -> None:
+    cleanup_called = False
+
+    class TrackingProvider(Provider):
+        scope = Scope.APP
+
+        @provide
+        def resource(self) -> Iterator[SomeResource]:
+            resource = SomeResource()
+            yield resource
+            nonlocal cleanup_called
+            cleanup_called = True
+
+    container = make_container(TrackingProvider())
+    _ = container.get(SomeResource)
+    container.close()
+
+    assert cleanup_called
+```
+
+### Mocking Dependencies via Provider Override
+
+Instead of `unittest.mock`, prefer creating test providers that return protocol-
+compliant fakes. This preserves type safety:
+
+```python
+class FakeInferenceProvider(Provider):
+    scope = WORKER
+
+    @provide
+    def triton_client(self) -> FakeTritonClient:
+        return FakeTritonClient(
+            responses={"yolo11s": make_fake_infer_result({"output0": fake_output})},
+        )
+```
+
+This follows the project's preference for protocol-based fakes over mocks.
+
+---
+
 ## Constraints
 
 - Tests MUST pass with `-n auto` (parallel safe)

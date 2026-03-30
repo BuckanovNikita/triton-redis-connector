@@ -226,6 +226,37 @@ Hydra init, default YAML files under `conf/`. Add `hydra-core` dep to connector.
 
 `ConnectorError`, `InferenceError`, `PreprocessingError`, `InferenceRequest`, `InferenceResult`, `MetricEvent`.
 
+#### 1.7 Dependency injection с dishka (`providers/`)
+
+Добавить `dishka>=1.7.0` в зависимости `triton_redis_connector`.
+
+Создать пакет провайдеров, следующих иерархии слоёв import-linter:
+
+| Провайдер | Слой | Scope | Предоставляет |
+|---|---|---|---|
+| `ConfigProvider` | config | APP | `AppConfig`, `RedisConnectionConfig`, `InferenceConfig` и т.д. |
+| `EngineProvider` | engine | APP | `PipelineRegistry`, `ProcessingGraph`, `QueueBus` |
+| `ConnectorProvider` | connectors | APP | Redis connection pool, `ConsumerGroupManager` |
+| `InferenceProvider` | inference | APP + WORKER | Worker container factory для `ProcessPoolProcessor` |
+| `PreprocessingProvider` | preprocessing | APP | Decoder instances |
+| `MetricsProvider` | metrics | APP | `MetricBuffer`, `MetricEmitter`, collectors |
+
+Определить кастомный `WORKER` scope для per-process зависимостей. Жизненный цикл контейнера:
+- `make_container()` при старте с APP scope
+- REQUEST scope при каждом inline event dispatch
+- WORKER scope для каждого worker init `ProcessPoolProcessor`
+- `container.close()` при shutdown
+
+Целевые файлы:
+- `packages/triton_redis_connector/triton_redis_connector/providers/__init__.py`
+- `packages/triton_redis_connector/triton_redis_connector/providers/scopes.py`
+- `packages/triton_redis_connector/triton_redis_connector/providers/config_provider.py`
+- `packages/triton_redis_connector/triton_redis_connector/providers/engine_provider.py`
+- `packages/triton_redis_connector/triton_redis_connector/providers/connector_provider.py`
+- `packages/triton_redis_connector/triton_redis_connector/providers/inference_provider.py`
+- `packages/triton_redis_connector/triton_redis_connector/providers/preprocessing_provider.py`
+- `packages/triton_redis_connector/triton_redis_connector/providers/metrics_provider.py`
+
 ### Tests
 
 - All pydantic models (config, errors, events, metric event)
@@ -233,10 +264,14 @@ Hydra init, default YAML files under `conf/`. Add `hydra-core` dep to connector.
 - `triton_model_tools` tests pass after shared model extraction
 - Hydra config loading tests
 - Protocol `runtime_checkable` isinstance checks on dummy impls for all 9 variants
+- Dishka container creation и APP scope resolution
+- Provider dependency chain (ConfigProvider → EngineProvider → domain providers)
+- WORKER scope создаёт независимые экземпляры (mock Redis client per worker)
+- Container close triggers cleanup
 
 ### Architecture contracts
 
-Once Phase 1 modules are created, the `connector-layers` import-linter contract (configured in Phase 0.3) automatically activates. Verify that all new modules respect the layer hierarchy: `connectors|inference|preprocessing|metrics` → `engine` → `config|errors` → `protocols`. After all domain modules exist, add the explicit `independence` contract to prevent cross-imports between sibling domain modules.
+Once Phase 1 modules are created, the `connector-layers` import-linter contract (configured in Phase 0.3) automatically activates. Verify that all new modules respect the layer hierarchy: `connectors|inference|preprocessing|metrics|providers` → `engine` → `config|errors` → `protocols`. After all domain modules exist, add the explicit `independence` contract to prevent cross-imports between sibling domain modules.
 
 ### Verification
 
@@ -354,7 +389,9 @@ Built-in `RedisStreamSource[T]` (ThreadSource variant, runs XREADGROUP in own th
 
 #### 3A.5 Application skeleton (`engine/app.py`)
 
-`Application.from_config()` and `run()`. Main loop role:
+`Application` резолвится из dishka-контейнера (deliverable 1.7). `from_config()` становится dishka-провайдером, который строит `Application` со всеми зависимостями через инъекцию. Main loop входит в REQUEST scope при каждом inline event dispatch cycle.
+
+Main loop role:
 - **Dispatches non-parallel nodes only** — `Processor` and `Sink` (without Thread/Process prefix) run in the main loop.
 - **Listens for terminal shutdown events** — typed events that signal graceful shutdown.
 - **Monitors parallel variant health** — detects crashed Thread/Process/Pool workers, restarts them.
@@ -440,6 +477,8 @@ class InferenceProcessorFactory:
 ```
 
 Workers use `async_infer` (non-blocking). A semaphore limits concurrent in-flight requests per worker. The semaphore is released only on final success or final failure (after all retries exhausted).
+
+Каждый worker-процесс создаёт свежий dishka-контейнер с WORKER scope через фабричную функцию. Фабрика захватывает только picklable config (pydantic-модели). Worker container предоставляет: `InferenceServerClient`, `ModelVersionTracker`, `Semaphore` — все per-process singletons в рамках WORKER scope.
 
 #### 4A.2 Async retry in callback (`inference/retry.py`)
 

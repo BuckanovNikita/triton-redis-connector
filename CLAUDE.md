@@ -43,7 +43,7 @@ uv run vulture                         # dead code detection
 pyproject.toml                          — virtual workspace root (no build-system)
 packages/
   triton_redis_connector/               — core connector
-    pyproject.toml                      — deps: redis, tritonclient, pydantic, loguru
+    pyproject.toml                      — deps: redis, tritonclient, pydantic, loguru, dishka
     triton_redis_connector/             — source code
     tests/                              — tests
   triton_model_tools/                   — model tools

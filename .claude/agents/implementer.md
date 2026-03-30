@@ -728,3 +728,165 @@ with ProcessPoolExecutor(max_workers=4) as pool:
 - Use `if __name__ == "__main__":` guard or `multiprocessing.set_start_method("spawn")`
   to avoid fork-related issues on Linux.
 - Never pass Redis clients, gRPC channels, or file handles through Queues.
+
+---
+
+## Dishka DI Patterns
+
+### Provider Definition
+
+```python
+from __future__ import annotations
+
+from dishka import Provider, Scope, provide
+
+from triton_redis_connector.config.schema import AppConfig, RedisConnectionConfig
+
+
+class ConfigProvider(Provider):
+    scope = Scope.APP
+
+    def __init__(self, config: AppConfig) -> None:
+        super().__init__()
+        self._config = config
+
+    @provide
+    def app_config(self) -> AppConfig:
+        return self._config
+
+    @provide
+    def redis_config(self, config: AppConfig) -> RedisConnectionConfig:
+        return config.redis
+```
+
+### Container Creation
+
+```python
+from dishka import make_container
+
+container = make_container(
+    ConfigProvider(app_config),
+    EngineProvider(),
+    ConnectorProvider(),
+    InferenceProvider(),
+    PreprocessingProvider(),
+    MetricsProvider(),
+)
+
+registry = container.get(PipelineRegistry)
+
+container.close()
+```
+
+### Custom WORKER Scope
+
+```python
+from dishka import Scope, new_scope
+
+WORKER = new_scope("WORKER", Scope.APP)
+```
+
+### Worker Process Container Factory
+
+Each `ProcessPoolProcessor` worker creates a fresh container. The factory captures
+only picklable config (pydantic models):
+
+```python
+from __future__ import annotations
+
+from dishka import Provider, make_container, provide
+
+from triton_redis_connector.providers.scopes import WORKER
+
+
+class WorkerProvider(Provider):
+    scope = WORKER
+
+    def __init__(self, config: InferenceConfig) -> None:
+        super().__init__()
+        self._config = config
+
+    @provide
+    def triton_client(self) -> tritonclient.grpc.InferenceServerClient:
+        import tritonclient.grpc as grpcclient  # noqa: PLC0415
+        return grpcclient.InferenceServerClient(url=self._config.grpc_url)
+
+    @provide
+    def version_tracker(
+        self, client: tritonclient.grpc.InferenceServerClient,
+    ) -> ModelVersionTracker:
+        return ModelVersionTracker(
+            client=client,
+            poll_interval_s=self._config.model_version_poll_interval_s,
+        )
+```
+
+### Hydra → Dishka Integration
+
+```python
+@hydra.main(version_base=None, config_path="conf", config_name="config")
+def main(cfg: DictConfig) -> None:
+    app_config = AppConfig(**OmegaConf.to_container(cfg, resolve=True))
+    container = make_container(
+        ConfigProvider(app_config),
+        EngineProvider(),
+        ConnectorProvider(),
+        InferenceProvider(),
+        PreprocessingProvider(),
+        MetricsProvider(),
+    )
+    app = container.get(Application)
+    try:
+        app.run()
+    finally:
+        container.close()
+```
+
+### Pydantic Integration
+
+Pydantic `BaseModel` instances are regular Python objects that dishka provides and
+injects without any special adapter. Config models (`AppConfig`, sub-configs) are
+provided via `ConfigProvider` and injected into other providers by type.
+
+### Provider Layer Rules
+
+Providers must respect the import-linter layer hierarchy:
+- `ConfigProvider` depends on nothing (leaf layer)
+- `EngineProvider` depends on `ConfigProvider` outputs
+- Domain providers (`ConnectorProvider`, `InferenceProvider`, `PreprocessingProvider`,
+  `MetricsProvider`) depend on `ConfigProvider` and `EngineProvider` outputs
+- Domain providers do NOT depend on each other (matching the sibling independence rule)
+
+### Container Lifecycle in Application
+
+```
+Startup:
+  make_container() → APP scope created
+  container.get(Application) → resolves full dependency tree
+  app.run() → enters main loop
+
+Main loop (inline dispatch):
+  async with container() as request_scope:  # REQUEST scope
+      context = request_scope.get(EventContext)
+      # dispatch inline nodes with context
+
+ProcessPoolProcessor worker init:
+  worker_container = make_container(WorkerProvider(config))
+  processor = worker_container.get(TritonInferenceProcessor)
+
+Shutdown:
+  container.close() → APP scope teardown
+  - Redis connections closed
+  - MetricBuffer flushed
+  - Timer threads stopped
+```
+
+### Gotchas
+
+- Dishka containers are NOT picklable — pass only config to workers, create
+  container inside the worker process.
+- `@provide` methods should be pure factories — no side effects, no logging,
+  no metric emission during dependency creation.
+- Do not use the container as a service locator (passing it to components).
+  Components declare dependencies via constructor injection.
+- APP-scope objects must be thread-safe (shared across inline + thread variants).

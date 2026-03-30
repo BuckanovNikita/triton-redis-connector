@@ -132,3 +132,5 @@ uv run pytest && uv run pre-commit run --all-files
 - The plan has ~821 lines across 7 phases with internal sub-deliverables
 - Phase 4C (shared memory IPC) is explicitly deferred until after Phase 5 benchmarks confirm it is needed
 - The LetterBox preprocessing correctness constraint spans Phases 2, 3A, and 3B — flag this cross-cutting concern when any of these phases are active
+- Phase 1 deliverable 1.7 (dishka DI) is a prerequisite for Phase 3A Application skeleton (3A.5) since Application is resolved from the dishka container
+- When generating task briefs for Phase 3A+, reference dishka patterns from `.claude/agents/implementer.md` "Dishka DI Patterns" section

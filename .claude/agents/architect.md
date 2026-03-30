@@ -378,6 +378,80 @@ standalone. The shared `nms_postprocess` model is reused across all ensembles.
 
 ---
 
+## Dependency Injection Architecture (dishka)
+
+### Scope Design Principles
+
+The project uses dishka for framework-internal dependency injection. Three scopes
+map to the execution variant lifecycle:
+
+- **APP scope** — Application-lifetime singletons: `AppConfig`, Redis connection pools,
+  `PipelineRegistry`, `ProcessingGraph`, `QueueBus`, `MetricBuffer`. Created once at
+  startup, shared across all inline and thread-based nodes. Closed at shutdown.
+- **REQUEST scope** — Per-event processing context for inline nodes. Entered by the
+  main loop before dispatching events to inline `Processor` and `Sink` nodes. Provides
+  `EventContext` and per-event metadata. Exited after the inline dispatch chain completes.
+- **WORKER scope** (custom) — Per worker process in `ProcessPoolProcessor`. Each worker
+  creates a fresh container with WORKER scope in its init function. Provides
+  `InferenceServerClient`, `redis.Redis`, `ModelVersionTracker` — all of which are
+  not fork-safe and must be created per-process.
+
+### Provider Organization
+
+Providers follow the import-linter layer hierarchy. Each provider corresponds to one
+architectural layer:
+
+| Provider | Layer | What it provides |
+|---|---|---|
+| `ConfigProvider` | config | `AppConfig`, all sub-config models |
+| `EngineProvider` | engine | `PipelineRegistry`, `ProcessingGraph`, `QueueBus` |
+| `ConnectorProvider` | connectors | Redis connection pool, `ConsumerGroupManager` |
+| `InferenceProvider` | inference | Worker container factory |
+| `PreprocessingProvider` | preprocessing | Decoder instances |
+| `MetricsProvider` | metrics | `MetricBuffer`, collectors, emitter |
+
+A provider may depend on objects from providers in lower layers (matching import-linter
+contracts) but never from higher layers or sibling domain modules.
+
+### ProcessPoolProcessor DI Strategy
+
+`ProcessPoolProcessor` workers cannot share the APP-scope container (connections are
+not fork-safe). Strategy:
+
+1. APP-scope container creates a **worker factory function** that captures only
+   picklable config (pydantic models are picklable).
+2. The factory is passed to each worker process via the multiprocessing start mechanism.
+3. Each worker calls the factory in its `__init__`, creating a fresh WORKER-scope
+   container with its own connections.
+4. Worker container is closed when the worker process exits.
+
+This replaces manual constructor wiring in worker init functions. The existing
+user-facing factory pattern (`create_shared`/`create_processor`) is unaffected —
+dishka handles framework internals only.
+
+### Dishka Replaces Manual Factory for Framework Wiring
+
+Before dishka, `Application.from_config()` manually constructed every dependency.
+With dishka, `Application` is resolved from the container — the full dependency tree
+is built declaratively via providers. This makes the startup sequence testable
+(swap providers for testing) and extensible (add new providers for new layers
+without modifying Application).
+
+### Scope Selection Guide
+
+| Resource type | Scope | Reason |
+|---|---|---|
+| Config objects (pydantic) | APP | Immutable after creation |
+| Redis connection pool | APP | Thread-safe, shared |
+| Individual Redis connection | WORKER | Not fork-safe |
+| `PipelineRegistry`, `ProcessingGraph` | APP | Built once at startup |
+| `EventContext` | REQUEST | Per-event metadata |
+| `tritonclient.grpc.InferenceServerClient` | WORKER | gRPC channel not fork-safe |
+| `ModelVersionTracker` | WORKER | Per-process polling |
+| `MetricBuffer` | APP | Thread-safe accumulator |
+
+---
+
 ## Docker Compose Topology Design
 
 - Services communicate by hostname (service name). Redis is at `redis:6379`,
