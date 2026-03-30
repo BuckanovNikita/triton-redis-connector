@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 from typing import TYPE_CHECKING, cast
 
 from loguru import logger  # pyright: ignore[reportMissingImports]
@@ -124,7 +125,7 @@ class RedisStreamSource:
         self.stop = threading.Event()
         self._connector = connector
         self._config = config
-        self._pending_buffer: list[Envelope[bytes]] = []
+        self._pending_buffer: deque[Envelope[bytes]] = deque()
         self._live_count_since_pending: int = 0
         self._recovery_done = False
         self._pending_ttl_s = config.pending_ttl_s
@@ -179,7 +180,7 @@ class RedisStreamSource:
     def _next_pending(self) -> Envelope[bytes] | None:
         if not self._pending_buffer:
             return None
-        return self._pending_buffer.pop(0)
+        return self._pending_buffer.popleft()
 
     def _read_live(self) -> Envelope[bytes] | None:
         results = self._connector.read_new(

@@ -168,11 +168,19 @@ class Application:
                     new_thread.start()
 
     def _get_stop_event(self, instance: object) -> threading.Event | None:
-        """Safely retrieve the stop event from a parallel variant instance."""
-        try:
-            stop = instance.stop  # type: ignore[attr-defined]
-        except AttributeError:
-            return None
-        if isinstance(stop, threading.Event):
-            return stop
+        """Retrieve the stop event from a parallel variant using protocol isinstance checks."""
+        from triton_redis_connector.protocols import (  # noqa: PLC0415
+            ProcessPoolProcessor,
+            ProcessSource,
+            ThreadPoolProcessor,
+            ThreadProcessor,
+            ThreadSink,
+            ThreadSource,
+        )
+
+        if isinstance(
+            instance,
+            (ThreadSource, ProcessSource, ThreadProcessor, ThreadPoolProcessor, ProcessPoolProcessor, ThreadSink),
+        ):
+            return instance.stop
         return None

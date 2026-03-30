@@ -77,31 +77,16 @@ class PipelineRegistry:
         call_method = node.__call__  # type: ignore[operator]
         hints = typing.get_type_hints(call_method)  # pyright: ignore[reportUnknownArgumentType]
 
-        if variant in SOURCE_VARIANTS:
-            output_types = self._extract_union_types(hints.get("return"), exclude={type(None)})
-            graph_node.output_types = set(output_types)
-            for out_type in output_types:
-                self._type_producers.setdefault(out_type, []).append(name)
-
-        elif variant in SINK_VARIANTS:
+        if variant not in SOURCE_VARIANTS:
             input_type = self._get_input_type(hints)
             if input_type is not None:
                 graph_node.input_types = {input_type}
                 self._type_consumers.setdefault(input_type, []).append(name)
-            output_types = self._extract_union_types(hints.get("return"), exclude={type(None)})
-            graph_node.output_types = set(output_types)
-            for out_type in output_types:
-                self._type_producers.setdefault(out_type, []).append(name)
 
-        else:
-            input_type = self._get_input_type(hints)
-            if input_type is not None:
-                graph_node.input_types = {input_type}
-                self._type_consumers.setdefault(input_type, []).append(name)
-            output_types = self._extract_union_types(hints.get("return"), exclude={type(None)})
-            graph_node.output_types = set(output_types)
-            for out_type in output_types:
-                self._type_producers.setdefault(out_type, []).append(name)
+        output_types = self._extract_union_types(hints.get("return"), exclude={type(None)})
+        graph_node.output_types = set(output_types)
+        for out_type in output_types:
+            self._type_producers.setdefault(out_type, []).append(name)
 
         self._nodes[name] = graph_node
         logger.debug(
@@ -247,14 +232,20 @@ class PipelineRegistry:
         return ExecutionVariant.PROCESSOR
 
     def _has_stop_event(self, node: object) -> bool:
-        """Check if a node has a threading.Event stop attribute."""
-        import threading  # noqa: PLC0415
+        """Check if a node has a threading.Event stop attribute via protocol checks."""
+        from triton_redis_connector.protocols import (  # noqa: PLC0415
+            ProcessPoolProcessor,
+            ProcessSource,
+            ThreadPoolProcessor,
+            ThreadProcessor,
+            ThreadSink,
+            ThreadSource,
+        )
 
-        try:
-            stop = node.stop  # type: ignore[attr-defined]
-        except AttributeError:
-            return False
-        return isinstance(stop, threading.Event)
+        return isinstance(
+            node,
+            (ThreadSource, ProcessSource, ThreadProcessor, ThreadPoolProcessor, ProcessPoolProcessor, ThreadSink),
+        )
 
     def _extract_union_types(
         self,
