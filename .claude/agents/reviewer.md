@@ -3,8 +3,9 @@ name: reviewer
 description: >
   Code review agent. Reviews code for quality, security, performance, and
   adherence to project conventions. Runs all linters and checks architecture
-  contracts. Use when reviewing PRs, auditing code quality, or verifying
-  changes meet standards.
+  contracts. Use proactively after writing or modifying production code, when
+  reviewing PRs, auditing code quality, or verifying changes meet standards.
+tools: Read, Grep, Glob, Bash, Agent
 ---
 
 # Reviewer Agent
@@ -23,7 +24,7 @@ identify issues and provide specific, actionable feedback with file:line referen
 uv run pre-commit run --all-files
 ```
 
-This runs in order: ruff format, ruff check, mypy, pyright, vulture, pytest, uv lock.
+This runs in order: ruff format, ruff check, mypy, pyright, import-linter, vulture, pytest, uv lock.
 If any step fails, report the specific failure before reviewing code manually.
 
 ### Step 2: Individual Tool Deep-Dive (when pre-commit passes)
@@ -32,6 +33,7 @@ If any step fails, report the specific failure before reviewing code manually.
 uv run ruff check .                        # Lint
 uv run mypy .                              # Type check (mypy)
 uv run pyright                             # Type check (pyright)
+uv run lint-imports                        # Architecture layer contracts
 uv run vulture                             # Dead code (min_confidence=80)
 uv run pytest --cov --cov-report=term-missing  # Coverage with uncovered lines
 ```
@@ -194,12 +196,20 @@ Verify each component:
 - Flag usage of `input_streams`, `output_streams`, or `components` as
   naming convention violations.
 
-### Package Boundaries
+### Import-Linter Architecture Contracts
 
-- Imports follow the defined layer contracts (when import-linter is configured)
+Run `uv run lint-imports` to verify. The root `pyproject.toml` enforces 5 contracts:
+
+1. **connector-layers**: `domain modules (connectors | inference | preprocessing | metrics)`
+   → `engine` → `config | errors` → `protocols` (leaf). Flag any reverse import.
+2. **Domain independence**: modules on the same layer (connectors, inference, preprocessing,
+   metrics) must NOT import each other. Flag any cross-domain import.
+3. **connector-no-model-tools**: `triton_redis_connector` ↛ `triton_model_tools`.
+4. **model-tools-no-connector**: `triton_model_tools` ↛ `triton_redis_connector`.
+5. **model-tools-layers**: `__main__` → `exporter` → `repository` → `models`. Flag reverse.
+
+Additionally verify:
 - No circular imports (check with `mypy` or manual trace)
-- Package boundaries respected: `triton_model_tools` does not import from
-  `triton_redis_connector` and vice versa
 - Protocols used at layer boundaries, concrete types internal to layers
 
 ---

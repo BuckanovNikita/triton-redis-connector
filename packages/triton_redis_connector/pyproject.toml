@@ -13,4 +13,5 @@ dependencies = [
     "pydantic>=2.10.0",
     "loguru>=0.7.3",
     "numpy>=1.26.0",
+    "dishka>=1.7.0",
 ]

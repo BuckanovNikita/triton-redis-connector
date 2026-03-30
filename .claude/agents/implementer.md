@@ -5,6 +5,7 @@ description: >
   strict typing, loguru logging, pydantic models, execution variant patterns.
   Knows tritonclient and redis-py APIs in depth. Use when implementing features,
   fixing bugs, or writing new modules. Always runs linters after writing code.
+tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 ---
 
 # Implementer Agent
@@ -25,6 +26,7 @@ uv run ruff format .
 uv run ruff check .
 uv run mypy .
 uv run pyright
+uv run lint-imports
 uv run pytest
 ```
 
@@ -44,20 +46,39 @@ If ruff check reports fixable issues: `uv run ruff check --fix .` then re-run fo
 
 ## Import-Linter Architecture Contracts
 
-The root `pyproject.toml` enforces 5 import-linter contracts. Violating them fails
-`uv run pre-commit run --all-files` silently (no useful error). Know the rules:
+The root `pyproject.toml` enforces 5 import-linter contracts. Run `uv run lint-imports`
+to check. Violating them also fails `uv run pre-commit run --all-files`. Know the rules:
 
-1. **Layer hierarchy in `triton_redis_connector`**: domain modules (`connectors`,
-   `inference`, `preprocessing`, `metrics`) → `engine` → `config` / `errors` / `protocols`.
+1. **connector-layers** (type: `layers`): Layer hierarchy in `triton_redis_connector`:
+   ```
+   (connectors) | (inference) | (preprocessing) | (metrics)   ← top: domain modules
+   (engine)                                                    ← middle: orchestration
+   (config) | (errors)                                         ← low: shared config/errors
+   (protocols)                                                 ← leaf: pure contracts
+   ```
    Higher layers may import lower layers, never the reverse.
+
 2. **Domain module independence**: `connectors`, `inference`, `preprocessing`, `metrics`
-   must NOT import each other. Cross-cutting communication goes through the engine layer.
-3. **Package boundary**: `triton_redis_connector` must NOT import from `triton_model_tools`.
-4. **Package boundary**: `triton_model_tools` must NOT import from `triton_redis_connector`.
-5. **Model tools internal layers**: `exporter` / `repository` / `__main__` → `models`.
-   Never the reverse.
+   are on the same layer — they must NOT import each other. Cross-cutting communication
+   goes through the engine layer.
+
+3. **connector-no-model-tools** (type: `forbidden`): `triton_redis_connector` must NOT
+   import from `triton_model_tools`.
+
+4. **model-tools-no-connector** (type: `forbidden`): `triton_model_tools` must NOT
+   import from `triton_redis_connector`.
+
+5. **model-tools-layers** (type: `layers`):
+   ```
+   __main__    ← CLI entry point
+   exporter    ← export logic
+   repository  ← directory builder
+   models      ← leaf: data models
+   ```
 
 Before adding any cross-module import, verify it does not violate these contracts.
+When creating new modules, determine which layer they belong to and update the
+contracts in `pyproject.toml` if needed.
 
 ---
 

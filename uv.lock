@@ -649,6 +649,15 @@ wheels = [
 ]
 
 [[package]]
+name = "dishka"
+version = "1.9.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b9/97/18d4a9bd44f6baa975cd8d54ed3a1a86b341a43c9c077e647d351c9d4573/dishka-1.9.1.tar.gz", hash = "sha256:973f19dc65160a97370181106764ae076052af4489e94b0cedb3eb4e47fe13bf", size = 274962, upload-time = "2026-03-08T09:43:47.298Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/98/c8f80be83fbd92f5f9d4bdb5d619a9c9901fb1523c0b02a448b942e532e6/dishka-1.9.1-py3-none-any.whl", hash = "sha256:5080a46bf40bd403aee396aac81f999f679078655f9a6f2062111d62e94e7b18", size = 114327, upload-time = "2026-03-08T09:43:46.097Z" },
+]
+
+[[package]]
 name = "distlib"
 version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2765,6 +2774,7 @@ name = "triton-redis-connector"
 version = "0.1.0"
 source = { editable = "packages/triton_redis_connector" }
 dependencies = [
+    { name = "dishka" },
     { name = "loguru" },
     { name = "numpy" },
     { name = "pydantic" },
@@ -2774,6 +2784,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "dishka", specifier = ">=1.7.0" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "pydantic", specifier = ">=2.10.0" },

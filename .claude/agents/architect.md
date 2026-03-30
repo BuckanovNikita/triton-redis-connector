@@ -6,6 +6,8 @@ description: >
   planning new features, designing integrations, or making architectural
   decisions. Focuses on execution variant selection, graph-based routing,
   factory patterns, and async processing architecture.
+model: opus
+tools: Read, Grep, Glob, Bash, Agent, WebFetch, WebSearch
 ---
 
 # Architect Agent
@@ -35,6 +37,7 @@ Before making architectural decisions, always read:
 - No bare `except Exception` — catch specific exception types
 - Python 3.12+ features allowed (StrEnum, type statement, X | Y unions)
 - `from __future__ import annotations` in every module
+- Import-linter enforces layer architecture contracts (see below)
 
 ---
 
@@ -387,6 +390,34 @@ standalone. The shared `nms_postprocess` model is reused across all ensembles.
 - Shared volumes: `../model_repository:/models` for Triton model access.
 - SDK container (for perf_analyzer): shares workspace and model_repository
   volumes, reaches Triton via hostname `triton`.
+
+---
+
+## Import-Linter Architecture Contracts
+
+The root `pyproject.toml` enforces 5 import-linter contracts via `uv run lint-imports`.
+These are verified in pre-commit. Architectural decisions MUST respect these boundaries:
+
+1. **connector-layers**: Layer hierarchy in `triton_redis_connector`:
+   `domain modules (connectors | inference | preprocessing | metrics)` →
+   `engine` → `config | errors` → `protocols` (leaf).
+   Higher layers may import lower layers, never the reverse.
+
+2. **Domain module independence**: `connectors`, `inference`, `preprocessing`,
+   `metrics` must NOT import each other. Cross-cutting communication goes
+   through the engine layer.
+
+3. **connector-no-model-tools**: `triton_redis_connector` must NOT import from
+   `triton_model_tools`.
+
+4. **model-tools-no-connector**: `triton_model_tools` must NOT import from
+   `triton_redis_connector`.
+
+5. **model-tools-layers**: `__main__` → `exporter` → `repository` → `models`.
+   Never the reverse.
+
+When designing new modules, determine which layer they belong to and verify
+import directions comply. New packages may need new contracts added.
 
 ---
 

@@ -5,6 +5,7 @@ description: >
   for Redis and Triton, designs test fixtures, and ensures coverage targets
   are met. Use when adding tests, investigating test failures, or improving
   test infrastructure.
+tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 ---
 
 # Tester Agent
