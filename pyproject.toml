@@ -119,7 +119,8 @@ id = "connector-layers"
 name = "triton_redis_connector layer architecture"
 type = "layers"
 layers = [
-    "(triton_redis_connector.connectors) | (triton_redis_connector.inference) | (triton_redis_connector.preprocessing) | (triton_redis_connector.metrics) | (triton_redis_connector.providers)",
+    "(triton_redis_connector.providers)",
+    "(triton_redis_connector.connectors) | (triton_redis_connector.inference) | (triton_redis_connector.preprocessing) | (triton_redis_connector.metrics)",
     "(triton_redis_connector.engine)",
     "(triton_redis_connector.config) | (triton_redis_connector.errors)",
     "(triton_redis_connector.protocols)",
@@ -177,8 +178,8 @@ name = "triton_model_tools layer architecture"
 type = "layers"
 layers = [
     "triton_model_tools.__main__",
-    "triton_model_tools.folder_inference",
-    "triton_model_tools.exporter | triton_model_tools.dali | triton_model_tools.nms | triton_model_tools.inference",
+    "triton_model_tools.folder_inference | triton_model_tools.benchmark",
+    "triton_model_tools.exporter | triton_model_tools.dali | triton_model_tools.nms | triton_model_tools.inference | triton_model_tools.dataset | triton_model_tools.perf_analyzer",
     "triton_model_tools.repository",
     "triton_model_tools.models | triton_model_tools.detection",
 ]
