@@ -28,6 +28,21 @@ Limitations:
 - No prediction comparison
 - `repository.py` hardcodes `model.onnx` filename
 - `TritonModelConfig.platform` defaults to `"onnxruntime_onnx"`
+- Config generation is minimal (missing many optional fields)
+
+### Strict Model Config
+
+Triton runs with `--strict-model-config=true`. This means every config.pbtxt must
+be complete — Triton will not infer missing fields from the model file. All generated
+configs must include:
+
+- `name`, `platform` (or `backend`), `max_batch_size`
+- Full `input` / `output` specs with `name`, `data_type`, `dims`, `is_shape_tensor`
+- `instance_group` with `count`, `kind`, and optionally `gpus`
+- `default_model_filename`
+- `dynamic_batching` (even if empty `{}` to enable default batching)
+- `optimization` section where applicable (TensorRT acceleration, CUDA graphs)
+- `model_warmup` section for production readiness
 
 ---
 
@@ -107,12 +122,50 @@ EXPORT_FORMAT_TO_FILENAME: dict[ExportFormat, str] = {
 
 Extend `YoloModelVariant` with `export_formats: tuple[ExportFormat, ...] = (ExportFormat.ONNX,)`.
 
-### 1.2 Generalize `repository.py`
+### 1.2 Expand `TritonModelConfig` for strict mode
+
+`to_pbtxt()` must generate maximally complete configs. Add fields to the model:
+
+```python
+class TritonModelConfig(BaseModel):
+    name: str
+    platform: str                                 # required, no default
+    max_batch_size: int = 0
+    inputs: list[TritonTensorSpec]
+    outputs: list[TritonTensorSpec]
+    instance_count: int = 1
+    instance_kind: TritonInstanceKind = TritonInstanceKind.KIND_GPU
+    default_model_filename: str = "model.onnx"
+    dynamic_batching: bool = True                 # enable dynamic batching
+    optimization: TritonOptimization | None = None
+    model_warmup: list[TritonModelWarmup] = []
+
+class TritonOptimization(BaseModel):
+    cuda_graphs: bool = False
+    tensorrt_acceleration: bool = False           # for ONNX backend with TRT accel
+
+class TritonModelWarmup(BaseModel):
+    name: str
+    batch_size: int = 1
+    inputs: dict[str, TritonWarmupInput]
+
+class TritonWarmupInput(BaseModel):
+    data_type: TritonDataType
+    dims: list[int]
+    zero_data: bool = True                        # use zero-filled tensor
+```
+
+`TritonTensorSpec` extended with `is_shape_tensor: bool = False`.
+
+`to_pbtxt()` renders all these fields including `default_model_filename`,
+`dynamic_batching {}`, `optimization {}`, and `model_warmup []` sections.
+
+### 1.3 Generalize `repository.py`
 
 Rename parameter: `onnx_source: Path` → `model_source: Path`, add `model_filename: str`.
 Copies `model_source` to `version_dir / model_filename` instead of hardcoded `model.onnx`.
 
-### 1.3 TensorRT export in `exporter.py`
+### 1.4 TensorRT export in `exporter.py`
 
 Strategy: ultralytics `model.export(format="engine")` internally goes through ONNX,
 so we can inspect the intermediate ONNX for tensor specs, then use them for the
@@ -127,7 +180,7 @@ Add `export_format: ExportFormat` parameter to `export_model()` and `export_all_
 
 **Model naming**: `yolo11s` (ONNX), `yolo11s_trt` (TensorRT). Both coexist in repository.
 
-### 1.4 Update `__main__.py`
+### 1.5 Update `__main__.py`
 
 Restructure to subcommand CLI (`argparse` subparsers). First subcommand: `export`.
 

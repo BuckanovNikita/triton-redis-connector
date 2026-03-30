@@ -51,7 +51,7 @@ services:
         --model-control-mode=poll
         --repository-poll-secs=10
         --exit-on-error=false
-        --strict-model-config=false
+        --strict-model-config=true
     healthcheck:
       test: curl -f http://localhost:8000/v2/health/ready || exit 1
       interval: 10s
