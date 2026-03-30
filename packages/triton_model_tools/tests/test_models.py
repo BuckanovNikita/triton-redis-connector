@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 from triton_model_tools.models import (
+    EXPORT_FORMAT_TO_FILENAME,
+    EXPORT_FORMAT_TO_PLATFORM,
     YOLO_MODELS,
+    DynamicBatchingConfig,
+    ExportFormat,
+    ModelWarmupConfig,
+    OptimizationConfig,
     TritonDataType,
     TritonInstanceKind,
     TritonModelConfig,
     TritonTensorSpec,
+    WarmupInputSpec,
     YoloModelVariant,
 )
 
@@ -22,6 +29,14 @@ class TestTritonTensorSpec:
         assert spec.name == "images"
         assert spec.data_type == TritonDataType.TYPE_FP32
         assert spec.dims == [1, 3, 640, 640]
+
+    def test_is_shape_tensor_default(self) -> None:
+        spec = TritonTensorSpec(
+            name="data",
+            data_type=TritonDataType.TYPE_FP32,
+            dims=[1],
+        )
+        assert spec.is_shape_tensor is False
 
 
 class TestTritonModelConfig:
@@ -124,6 +139,55 @@ class TestTritonModelConfig:
         assert config.max_batch_size == 0
         assert config.instance_count == 1
         assert config.instance_kind == TritonInstanceKind.KIND_GPU
+        assert config.default_model_filename == ""
+        assert config.dynamic_batching is None
+        assert config.optimization is None
+        assert config.model_warmup is None
+
+
+class TestExportFormatReexports:
+    def test_export_format_accessible(self) -> None:
+        assert ExportFormat.ONNX == "onnx"
+        assert ExportFormat.TENSORRT == "tensorrt"
+
+    def test_platform_mapping_accessible(self) -> None:
+        assert EXPORT_FORMAT_TO_PLATFORM[ExportFormat.ONNX] == "onnxruntime_onnx"
+
+    def test_filename_mapping_accessible(self) -> None:
+        assert EXPORT_FORMAT_TO_FILENAME[ExportFormat.ONNX] == "model.onnx"
+
+
+class TestNewConfigModelsReexports:
+    def test_dynamic_batching_config(self) -> None:
+        config = DynamicBatchingConfig(
+            max_queue_delay_microseconds=100,
+            preferred_batch_size=[1, 4],
+        )
+        assert config.max_queue_delay_microseconds == 100
+
+    def test_optimization_config(self) -> None:
+        config = OptimizationConfig(graph_level=2, cuda_graphs=True)
+        assert config.graph_level == 2
+
+    def test_warmup_input_spec(self) -> None:
+        spec = WarmupInputSpec(
+            data_type=TritonDataType.TYPE_FP32,
+            dims=[3, 640, 640],
+        )
+        assert spec.zero_data is True
+
+    def test_model_warmup_config(self) -> None:
+        warmup = ModelWarmupConfig(
+            name="warmup",
+            batch_size=1,
+            inputs={
+                "images": WarmupInputSpec(
+                    data_type=TritonDataType.TYPE_FP32,
+                    dims=[3, 640, 640],
+                ),
+            },
+        )
+        assert warmup.batch_size == 1
 
 
 class TestYoloModelVariant:

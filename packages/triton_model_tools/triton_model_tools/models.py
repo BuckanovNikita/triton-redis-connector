@@ -5,19 +5,35 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import BaseModel
-from triton_shared_models.triton_config import TritonModelConfig
+from triton_shared_models.triton_config import (
+    DynamicBatchingConfig,
+    ModelWarmupConfig,
+    OptimizationConfig,
+    TritonModelConfig,
+    WarmupInputSpec,
+)
 from triton_shared_models.triton_types import (
+    EXPORT_FORMAT_TO_FILENAME,
+    EXPORT_FORMAT_TO_PLATFORM,
+    ExportFormat,
     TritonDataType,
     TritonInstanceKind,
     TritonTensorSpec,
 )
 
 __all__ = [
+    "EXPORT_FORMAT_TO_FILENAME",
+    "EXPORT_FORMAT_TO_PLATFORM",
     "YOLO_MODELS",
+    "DynamicBatchingConfig",
+    "ExportFormat",
+    "ModelWarmupConfig",
+    "OptimizationConfig",
     "TritonDataType",
     "TritonInstanceKind",
     "TritonModelConfig",
     "TritonTensorSpec",
+    "WarmupInputSpec",
     "YoloModelVariant",
 ]
 

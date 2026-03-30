@@ -114,7 +114,7 @@ def export_model(variant: YoloModelVariant, repository_root: Path) -> Path:
         outputs=outputs,
     )
 
-    model_dir = build_model_directory(repository_root, config, onnx_path)
+    model_dir = build_model_directory(repository_root, config, model_source=onnx_path)
 
     onnx_path.unlink()
     logger.info("Cleaned up intermediate ONNX file: {}", onnx_path)
