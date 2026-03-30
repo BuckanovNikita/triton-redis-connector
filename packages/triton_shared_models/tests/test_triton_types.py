@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from triton_shared_models.triton_config import (
     DynamicBatchingConfig,
+    EnsembleStep,
+    EnsembleStepMapping,
     ModelWarmupConfig,
     OptimizationConfig,
     TritonModelConfig,
@@ -439,3 +441,54 @@ class TestPbtxtCombinedFields:
         assert "optimization {" in pbtxt
         assert "graph_level: 2" in pbtxt
         assert "model_warmup [" in pbtxt
+
+    def test_to_pbtxt_renders_multiple_warmup_inputs(self) -> None:
+        config = _make_simple_config(
+            model_warmup=[
+                ModelWarmupConfig(
+                    name="warmup_multi",
+                    batch_size=1,
+                    inputs={
+                        "images": WarmupInputSpec(
+                            data_type=TritonDataType.TYPE_FP32,
+                            dims=[3, 640, 640],
+                        ),
+                        "shapes": WarmupInputSpec(
+                            data_type=TritonDataType.TYPE_INT32,
+                            dims=[2],
+                            zero_data=False,
+                        ),
+                    },
+                ),
+            ],
+        )
+        pbtxt = config.to_pbtxt()
+        assert pbtxt.count("inputs {") == 2
+        assert 'key: "images"' in pbtxt
+        assert 'key: "shapes"' in pbtxt
+        assert "random_data {}" in pbtxt
+        assert "zero_data {}" in pbtxt
+
+    def test_ensemble_scheduling_single_step_block(self) -> None:
+        config = _make_simple_config(
+            ensemble_scheduling=[
+                EnsembleStep(
+                    model_name="preprocess",
+                    model_version=-1,
+                    input_map=[EnsembleStepMapping(key="INPUT_0", value="RAW")],
+                    output_map=[EnsembleStepMapping(key="OUTPUT_0", value="PROCESSED")],
+                ),
+                EnsembleStep(
+                    model_name="inference",
+                    model_version=-1,
+                    input_map=[EnsembleStepMapping(key="images", value="PROCESSED")],
+                    output_map=[EnsembleStepMapping(key="output0", value="RESULT")],
+                ),
+            ],
+        )
+        pbtxt = config.to_pbtxt()
+        assert pbtxt.count("step [") == 1
+        assert "ensemble_scheduling {" in pbtxt
+        assert 'model_name: "preprocess"' in pbtxt
+        assert 'model_name: "inference"' in pbtxt
+        assert "instance_group" not in pbtxt

@@ -172,23 +172,23 @@ def _render_model_warmup(warmup: ModelWarmupConfig) -> list[str]:
         "  {",
         f'    name: "{warmup.name}"',
         f"    batch_size: {warmup.batch_size}",
-        "    inputs {",
     ]
     for input_name, spec in warmup.inputs.items():
         dims_str = ", ".join(str(d) for d in spec.dims)
         lines.extend(
             [
+                "    inputs {",
                 f'      key: "{input_name}"',
                 "      value {",
                 f"        data_type: {spec.data_type.value}",
                 f"        dims: [ {dims_str} ]",
                 f"        {'zero_data' if spec.zero_data else 'random_data'} {{}}",
                 "      }",
+                "    }",
             ]
         )
     lines.extend(
         [
-            "    }",
             "  }",
             "]",
         ]
@@ -197,9 +197,8 @@ def _render_model_warmup(warmup: ModelWarmupConfig) -> list[str]:
 
 
 def _render_ensemble_scheduling(steps: list[EnsembleStep]) -> list[str]:
-    lines = ["ensemble_scheduling {"]
-    for step in steps:
-        lines.append("  step [")
+    lines = ["ensemble_scheduling {", "  step ["]
+    for idx, step in enumerate(steps):
         lines.append("    {")
         lines.append(f'      model_name: "{step.model_name}"')
         lines.append(f"      model_version: {step.model_version}")
@@ -213,7 +212,7 @@ def _render_ensemble_scheduling(steps: list[EnsembleStep]) -> list[str]:
             lines.append(f'        key: "{mapping.key}"')
             lines.append(f'        value: "{mapping.value}"')
             lines.append("      }")
-        lines.append("    }")
-        lines.append("  ]")
-    lines.append("}")
+        trailing = "," if idx < len(steps) - 1 else ""
+        lines.append("    }" + trailing)
+    lines.extend(["  ]", "}"])
     return lines

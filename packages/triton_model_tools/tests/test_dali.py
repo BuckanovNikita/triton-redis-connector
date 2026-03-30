@@ -7,9 +7,11 @@ from typing import TYPE_CHECKING
 
 from triton_model_tools.dali import (
     DALI_ENSEMBLE_SUFFIX,
+    DALI_NMS_ENSEMBLE_SUFFIX,
     DALI_PREPROCESS_SUFFIX,
     DaliPipelineConfig,
     build_dali_model_config,
+    build_dali_nms_ensemble_config,
     build_ensemble_config,
     build_ensemble_directory,
     generate_dali_pipeline_script,
@@ -56,11 +58,22 @@ class TestGenerateDaliPipelineScript:
         script = generate_dali_pipeline_script(config)
         assert "fn.resize" in script
 
-    def test_contains_letterbox_pad_with_114(self) -> None:
+    def test_contains_centered_letterbox_paste_with_114(self) -> None:
         config = DaliPipelineConfig()
         script = generate_dali_pipeline_script(config)
-        assert "fn.pad" in script
-        assert "fill_value=114" in script
+        assert "fn.paste" in script
+        assert "(114, 114, 114)" in script
+
+    def test_contains_centered_padding_offsets(self) -> None:
+        config = DaliPipelineConfig()
+        script = generate_dali_pipeline_script(config)
+        assert "pad_top" in script
+        assert "pad_left" in script
+
+    def test_contains_crop_to_target_size(self) -> None:
+        config = DaliPipelineConfig()
+        script = generate_dali_pipeline_script(config)
+        assert "fn.crop" in script
 
     def test_contains_bgr_to_rgb_conversion(self) -> None:
         config = DaliPipelineConfig()
@@ -89,7 +102,7 @@ class TestGenerateDaliPipelineScript:
     def test_custom_pad_value_in_script(self) -> None:
         config = DaliPipelineConfig(pad_value=128)
         script = generate_dali_pipeline_script(config)
-        assert "fill_value=128" in script
+        assert "(128, 128, 128)" in script
 
     def test_custom_target_size_in_script(self) -> None:
         config = DaliPipelineConfig(target_size=(320, 320))
@@ -269,3 +282,78 @@ class TestBuildEnsembleDirectory:
         assert version_dir.is_dir()
         children = list(version_dir.iterdir())
         assert len(children) == 0
+
+    def test_creates_nms_ensemble_when_nms_provided(self, tmp_path: Path) -> None:
+        config = DaliPipelineConfig()
+        result = build_ensemble_directory(
+            tmp_path,
+            "yolo11s",
+            config,
+            nms_model_name="nms_postprocess",
+        )
+        assert result == tmp_path / f"yolo11s{DALI_NMS_ENSEMBLE_SUFFIX}"
+        config_path = result / "config.pbtxt"
+        assert config_path.exists()
+        content = config_path.read_text()
+        assert 'model_name: "nms_postprocess"' in content
+        assert "ensemble_scheduling" in content
+
+    def test_creates_standard_ensemble_when_nms_absent(self, tmp_path: Path) -> None:
+        config = DaliPipelineConfig()
+        result = build_ensemble_directory(tmp_path, "yolo11s", config)
+        assert result == tmp_path / f"yolo11s{DALI_ENSEMBLE_SUFFIX}"
+        config_path = result / "config.pbtxt"
+        content = config_path.read_text()
+        assert "nms_postprocess" not in content
+
+
+class TestBuildDaliNmsEnsembleConfig:
+    def test_returns_ensemble_platform(self) -> None:
+        model_config = build_dali_nms_ensemble_config(
+            model_name="yolo11s_dali_nms_ensemble",
+            preprocess_name="yolo11s_dali_preprocess",
+            inference_name="yolo11s",
+            nms_name="nms_postprocess",
+        )
+        assert model_config.platform == "ensemble"
+
+    def test_has_three_steps(self) -> None:
+        model_config = build_dali_nms_ensemble_config(
+            model_name="yolo11s_dali_nms_ensemble",
+            preprocess_name="yolo11s_dali_preprocess",
+            inference_name="yolo11s",
+            nms_name="nms_postprocess",
+        )
+        assert model_config.ensemble_scheduling is not None
+        assert len(model_config.ensemble_scheduling) == 3
+
+    def test_steps_chain_correctly(self) -> None:
+        model_config = build_dali_nms_ensemble_config(
+            model_name="yolo11s_dali_nms_ensemble",
+            preprocess_name="yolo11s_dali_preprocess",
+            inference_name="yolo11s",
+            nms_name="nms_postprocess",
+        )
+        assert model_config.ensemble_scheduling is not None
+        preprocess_step = model_config.ensemble_scheduling[0]
+        inference_step = model_config.ensemble_scheduling[1]
+        nms_step = model_config.ensemble_scheduling[2]
+
+        assert preprocess_step.model_name == "yolo11s_dali_preprocess"
+        assert inference_step.model_name == "yolo11s"
+        assert nms_step.model_name == "nms_postprocess"
+
+        assert preprocess_step.output_map[0].value == inference_step.input_map[0].value
+        assert inference_step.output_map[0].value == nms_step.input_map[0].value
+
+    def test_input_output_tensor_specs(self) -> None:
+        model_config = build_dali_nms_ensemble_config(
+            model_name="yolo11s_dali_nms_ensemble",
+            preprocess_name="yolo11s_dali_preprocess",
+            inference_name="yolo11s",
+            nms_name="nms_postprocess",
+        )
+        assert len(model_config.inputs) == 1
+        assert model_config.inputs[0].name == "INPUT_IMAGE"
+        assert len(model_config.outputs) == 1
+        assert model_config.outputs[0].name == "OUTPUT_DETECTIONS"

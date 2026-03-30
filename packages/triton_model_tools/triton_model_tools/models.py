@@ -49,6 +49,7 @@ class YoloModelVariant(BaseModel):
     ultralytics_model: str
     export_kwargs: dict[str, Any] = {}
     imgsz: int = 640
+    end2end_export: bool = False
 
 
 YOLO_MODELS: tuple[YoloModelVariant, ...] = (
@@ -56,6 +57,7 @@ YOLO_MODELS: tuple[YoloModelVariant, ...] = (
         name="yolo26s",
         ultralytics_model="yolo26s.pt",
         export_kwargs={"end2end": True},
+        end2end_export=True,
     ),
     YoloModelVariant(
         name="yolo11s",

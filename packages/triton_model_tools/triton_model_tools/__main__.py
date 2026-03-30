@@ -88,22 +88,10 @@ def _run_export(args: argparse.Namespace) -> None:
         fmt=export_format,  # type: ignore[arg-type]
     )
 
-    if generate_dali:
-        from triton_model_tools.dali import (  # noqa: PLC0415
-            DaliPipelineConfig,
-            build_ensemble_directory,
-        )
-
-        dali_config = DaliPipelineConfig()
-        for model_dir in exported_dirs:
-            build_ensemble_directory(
-                repository_root=repository_root,
-                model_name=model_dir.name,
-                config=dali_config,
-            )
-
+    nms_model_name: str | None = None
     if generate_nms:
         from triton_model_tools.nms import (  # noqa: PLC0415
+            NMS_MODEL_NAME,
             NmsModelConfig,
             build_nms_model_directory,
         )
@@ -112,6 +100,24 @@ def _run_export(args: argparse.Namespace) -> None:
             repository_root=repository_root,
             config=NmsModelConfig(),
         )
+        nms_model_name = NMS_MODEL_NAME
+
+    if generate_dali:
+        from triton_model_tools.dali import (  # noqa: PLC0415
+            DaliPipelineConfig,
+            build_ensemble_directory,
+        )
+
+        end2end_names = {v.name for v in YOLO_MODELS if v.end2end_export}
+        dali_config = DaliPipelineConfig()
+        for model_dir in exported_dirs:
+            effective_nms = None if model_dir.name in end2end_names else nms_model_name
+            build_ensemble_directory(
+                repository_root=repository_root,
+                model_name=model_dir.name,
+                config=dali_config,
+                nms_model_name=effective_nms,
+            )
 
 
 def main() -> None:

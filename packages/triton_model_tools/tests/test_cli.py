@@ -140,3 +140,85 @@ class TestMainEntryPoint:
             pytest.raises(SystemExit, match="1"),
         ):
             main()
+
+    def test_main_handles_keyboard_interrupt(self, tmp_path: Path) -> None:
+        repo_dir = str(tmp_path / "models")
+        mock_export = MagicMock(side_effect=KeyboardInterrupt)
+        with (
+            patch("sys.argv", ["triton-model-tools", "export", "-r", repo_dir]),
+            patch("triton_model_tools.exporter.export_all_models", mock_export),
+            pytest.raises(SystemExit, match="130"),
+        ):
+            main()
+
+    def test_run_export_with_explicit_models(self, tmp_path: Path) -> None:
+        repo_dir = str(tmp_path / "models")
+        mock_export = MagicMock(return_value=[tmp_path / "models" / "yolo11s"])
+        with (
+            patch("sys.argv", ["triton-model-tools", "export", "-r", repo_dir, "-m", "yolo11s"]),
+            patch("triton_model_tools.exporter.export_all_models", mock_export),
+        ):
+            main()
+
+        mock_export.assert_called_once_with(
+            repository_root=Path(repo_dir).resolve(),
+            model_names=["yolo11s"],
+            fmt="onnx",
+        )
+
+    def test_run_export_with_dali_ensemble(self, tmp_path: Path) -> None:
+        repo_dir = str(tmp_path / "models")
+        model_dir = tmp_path / "models" / "yolo11s"
+        model_dir.mkdir(parents=True)
+        mock_export = MagicMock(return_value=[model_dir])
+        mock_build_ensemble = MagicMock()
+        with (
+            patch("sys.argv", ["triton-model-tools", "export", "-r", repo_dir, "--dali-ensemble"]),
+            patch("triton_model_tools.exporter.export_all_models", mock_export),
+            patch("triton_model_tools.dali.build_ensemble_directory", mock_build_ensemble),
+        ):
+            main()
+
+        mock_build_ensemble.assert_called_once()
+        call_kwargs = mock_build_ensemble.call_args
+        assert call_kwargs.kwargs["model_name"] == "yolo11s"
+
+    def test_run_export_with_nms(self, tmp_path: Path) -> None:
+        repo_dir = str(tmp_path / "models")
+        mock_export = MagicMock(return_value=[tmp_path / "models" / "yolo11s"])
+        mock_build_nms = MagicMock()
+        with (
+            patch("sys.argv", ["triton-model-tools", "export", "-r", repo_dir, "--nms"]),
+            patch("triton_model_tools.exporter.export_all_models", mock_export),
+            patch("triton_model_tools.nms.build_nms_model_directory", mock_build_nms),
+        ):
+            main()
+
+        mock_build_nms.assert_called_once()
+
+    def test_run_export_dali_nms_skips_end2end(self, tmp_path: Path) -> None:
+        repo_dir = str(tmp_path / "models")
+        e2e_dir = tmp_path / "models" / "yolo26s"
+        e2e_dir.mkdir(parents=True)
+        std_dir = tmp_path / "models" / "yolo11s"
+        std_dir.mkdir(parents=True)
+        mock_export = MagicMock(return_value=[e2e_dir, std_dir])
+        mock_build_ensemble = MagicMock()
+        mock_build_nms = MagicMock()
+        with (
+            patch(
+                "sys.argv",
+                ["triton-model-tools", "export", "-r", repo_dir, "--dali-ensemble", "--nms"],
+            ),
+            patch("triton_model_tools.exporter.export_all_models", mock_export),
+            patch("triton_model_tools.dali.build_ensemble_directory", mock_build_ensemble),
+            patch("triton_model_tools.nms.build_nms_model_directory", mock_build_nms),
+        ):
+            main()
+
+        assert mock_build_ensemble.call_count == 2
+        calls = mock_build_ensemble.call_args_list
+        e2e_call = next(c for c in calls if c.kwargs["model_name"] == "yolo26s")
+        std_call = next(c for c in calls if c.kwargs["model_name"] == "yolo11s")
+        assert e2e_call.kwargs["nms_model_name"] is None
+        assert std_call.kwargs["nms_model_name"] == "nms_postprocess"

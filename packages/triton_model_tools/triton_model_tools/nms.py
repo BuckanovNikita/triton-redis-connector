@@ -47,8 +47,6 @@ def generate_nms_model_script(config: NmsModelConfig) -> str:
 
     """
     return textwrap.dedent(f"""\
-        import json
-
         import numpy as np
         import triton_python_backend_utils as pb_utils
 
@@ -138,7 +136,6 @@ def generate_nms_model_script(config: NmsModelConfig) -> str:
 
         class TritonPythonModel:
             def initialize(self, args):
-                model_config = json.loads(args["model_config"])
                 self.confidence_threshold = {config.confidence_threshold}
                 self.iou_threshold = {config.iou_threshold}
                 self.max_detections = {config.max_detections}
@@ -160,13 +157,10 @@ def generate_nms_model_script(config: NmsModelConfig) -> str:
                     response = pb_utils.InferenceResponse(output_tensors=[output_tensor])
                     responses.append(response)
                 return responses
-
-            def finalize(self):
-                pass
     """)
 
 
-def build_nms_model_config(config: NmsModelConfig) -> TritonModelConfig:
+def build_nms_model_config(config: NmsModelConfig) -> TritonModelConfig:  # noqa: ARG001
     """Build a TritonModelConfig for the NMS postprocessing model.
 
     Args:
@@ -191,7 +185,7 @@ def build_nms_model_config(config: NmsModelConfig) -> TritonModelConfig:
             TritonTensorSpec(
                 name="OUTPUT_0",
                 data_type=TritonDataType.TYPE_FP32,
-                dims=[1, config.max_detections, 6],
+                dims=[1, -1, 6],
             ),
         ],
         instance_kind=TritonInstanceKind.KIND_CPU,

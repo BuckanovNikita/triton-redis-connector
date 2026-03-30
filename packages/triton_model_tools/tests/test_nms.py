@@ -105,6 +105,16 @@ class TestGenerateNmsModelScript:
         assert "get_input_tensor_by_name" in script
         assert "InferenceResponse" in script
 
+    def test_script_has_no_unused_json_import(self) -> None:
+        config = NmsModelConfig()
+        script = generate_nms_model_script(config)
+        assert "import json" not in script
+
+    def test_script_has_no_finalize(self) -> None:
+        config = NmsModelConfig()
+        script = generate_nms_model_script(config)
+        assert "finalize" not in script
+
 
 class TestBuildNmsModelConfig:
     def test_returns_python_backend(self) -> None:
@@ -130,12 +140,12 @@ class TestBuildNmsModelConfig:
         assert len(model_config.outputs) == 1
         assert model_config.outputs[0].data_type.value == "TYPE_FP32"
         assert model_config.outputs[0].name == "OUTPUT_0"
-        assert model_config.outputs[0].dims == [1, 300, 6]
+        assert model_config.outputs[0].dims == [1, -1, 6]
 
-    def test_output_dims_reflect_max_detections(self) -> None:
+    def test_output_dims_always_dynamic(self) -> None:
         config = NmsModelConfig(max_detections=100)
         model_config = build_nms_model_config(config)
-        assert model_config.outputs[0].dims == [1, 100, 6]
+        assert model_config.outputs[0].dims == [1, -1, 6]
 
     def test_runs_on_cpu(self) -> None:
         config = NmsModelConfig()

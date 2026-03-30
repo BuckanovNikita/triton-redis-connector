@@ -32,7 +32,8 @@ uv run ruff check .                     # линтер
 uv run mypy .                           # проверка типов
 uv run pyright                          # проверка типов (pyright)
 uv run vulture                          # поиск мёртвого кода
-uv run pytest                           # тесты
+uv run pytest                           # юнит-тесты
+uv run pytest -m integration -n 0      # интеграционные тесты (требует Docker)
 ```
 
 ## Инфраструктура

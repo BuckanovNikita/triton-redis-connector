@@ -198,6 +198,7 @@ class TestYoloModelVariant:
         )
         assert variant.export_kwargs == {}
         assert variant.imgsz == 640
+        assert variant.end2end_export is False
 
     def test_creates_variant_with_kwargs(self) -> None:
         variant = YoloModelVariant(
@@ -206,6 +207,14 @@ class TestYoloModelVariant:
             export_kwargs={"end2end": True},
         )
         assert variant.export_kwargs == {"end2end": True}
+
+    def test_creates_variant_with_end2end_export(self) -> None:
+        variant = YoloModelVariant(
+            name="yolo26s",
+            ultralytics_model="yolo26s.pt",
+            end2end_export=True,
+        )
+        assert variant.end2end_export is True
 
 
 class TestYoloModelsRegistry:
@@ -219,6 +228,16 @@ class TestYoloModelsRegistry:
     def test_yolo26s_has_end2end(self) -> None:
         yolo26s = next(v for v in YOLO_MODELS if v.name == "yolo26s")
         assert yolo26s.export_kwargs.get("end2end") is True
+
+    def test_yolo26s_has_end2end_export_true(self) -> None:
+        yolo26s = next(v for v in YOLO_MODELS if v.name == "yolo26s")
+        assert yolo26s.end2end_export is True
+
+    def test_non_end2end_models_have_end2end_export_false(self) -> None:
+        non_e2e = [v for v in YOLO_MODELS if v.name != "yolo26s"]
+        assert len(non_e2e) > 0
+        for variant in non_e2e:
+            assert variant.end2end_export is False
 
     def test_all_models_use_pt_extension(self) -> None:
         for variant in YOLO_MODELS:

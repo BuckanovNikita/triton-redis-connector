@@ -83,7 +83,8 @@ testpaths = [
     "packages/triton_model_tools/tests",
     "packages/triton_shared_models/tests",
 ]
-addopts = ["-v", "--tb=short", "-n", "auto"]
+addopts = ["-v", "--tb=short", "-n", "auto", "-m", "not integration"]
+markers = ["integration: tests requiring Docker services (Redis, Triton)"]
 
 [tool.vulture]
 min_confidence = 80

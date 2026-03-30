@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 DALI_PREPROCESS_SUFFIX = "_dali_preprocess"
 DALI_ENSEMBLE_SUFFIX = "_dali_ensemble"
+DALI_NMS_ENSEMBLE_SUFFIX = "_dali_nms_ensemble"
 
 
 class DaliPipelineConfig(BaseModel):
@@ -83,11 +84,23 @@ def generate_dali_pipeline_script(config: DaliPipelineConfig) -> str:
                 interp_type=types.INTERP_LINEAR,
             )
 
-            padded = fn.pad(
+            pad_top = fn.cast((target_h - new_h) / 2, dtype=types.INT32)
+            pad_left = fn.cast((target_w - new_w) / 2, dtype=types.INT32)
+
+            padded = fn.paste(
                 resized,
-                axis_names="HW",
-                shape=[target_h, target_w],
-                fill_value={config.pad_value},
+                paste_x=fn.cast(pad_left, dtype=types.FLOAT) / {target_w},
+                paste_y=fn.cast(pad_top, dtype=types.FLOAT) / {target_h},
+                ratio=1.0,
+                fill_value=({config.pad_value}, {config.pad_value}, {config.pad_value}),
+                min_canvas_size=({target_h}, {target_w}),
+            )
+            padded = fn.crop(
+                padded,
+                crop_h={target_h},
+                crop_w={target_w},
+                crop_pos_x=0.0,
+                crop_pos_y=0.0,
             )
 
             rgb = fn.color_space_conversion(padded, image_type=types.BGR, output_type=types.RGB)
@@ -203,30 +216,90 @@ def build_ensemble_config(
     )
 
 
+def build_dali_nms_ensemble_config(
+    model_name: str,
+    preprocess_name: str,
+    inference_name: str,
+    nms_name: str,
+) -> TritonModelConfig:
+    """Build a 3-step ensemble: DALI preprocess -> inference -> NMS postprocess.
+
+    Args:
+        model_name: Name for the ensemble model.
+        preprocess_name: Name of the DALI preprocessing model.
+        inference_name: Name of the inference model.
+        nms_name: Name of the NMS postprocess model.
+
+    Returns:
+        TritonModelConfig with ensemble platform and 3-step scheduling.
+
+    """
+    return TritonModelConfig(
+        name=model_name,
+        platform="ensemble",
+        max_batch_size=0,
+        inputs=[
+            TritonTensorSpec(
+                name="INPUT_IMAGE",
+                data_type=TritonDataType.TYPE_UINT8,
+                dims=[-1],
+            ),
+        ],
+        outputs=[
+            TritonTensorSpec(
+                name="OUTPUT_DETECTIONS",
+                data_type=TritonDataType.TYPE_FP32,
+                dims=[-1],
+            ),
+        ],
+        ensemble_scheduling=[
+            EnsembleStep(
+                model_name=preprocess_name,
+                model_version=-1,
+                input_map=[EnsembleStepMapping(key="INPUT_0", value="INPUT_IMAGE")],
+                output_map=[EnsembleStepMapping(key="OUTPUT_0", value="preprocessed_tensor")],
+            ),
+            EnsembleStep(
+                model_name=inference_name,
+                model_version=-1,
+                input_map=[EnsembleStepMapping(key="images", value="preprocessed_tensor")],
+                output_map=[EnsembleStepMapping(key="output0", value="raw_detections")],
+            ),
+            EnsembleStep(
+                model_name=nms_name,
+                model_version=-1,
+                input_map=[EnsembleStepMapping(key="INPUT_0", value="raw_detections")],
+                output_map=[EnsembleStepMapping(key="OUTPUT_0", value="OUTPUT_DETECTIONS")],
+            ),
+        ],
+    )
+
+
 def build_ensemble_directory(
     repository_root: Path,
     model_name: str,
     config: DaliPipelineConfig,
+    nms_model_name: str | None = None,
 ) -> Path:
-    """Create the full Triton model repository directory structure for a DALI ensemble.
+    """Create the full Triton model repository directory for a DALI ensemble.
 
-    Creates two model directories:
-    - {model_name}_dali_preprocess/1/model.dali (pipeline script)
-    - {model_name}_dali_preprocess/config.pbtxt
-    - {model_name}_dali_ensemble/1/ (empty, ensemble has no model file)
-    - {model_name}_dali_ensemble/config.pbtxt
+    When ``nms_model_name`` is provided, creates a 3-step ensemble
+    (preprocess -> inference -> NMS). Otherwise creates a 2-step ensemble
+    (preprocess -> inference).
 
     Args:
         repository_root: Root of the Triton model repository.
         model_name: Base model name (e.g. "yolo11s").
         config: DALI pipeline configuration.
+        nms_model_name: If provided, include NMS step in the ensemble.
 
     Returns:
         Path to the ensemble model directory.
 
     """
     preprocess_name = f"{model_name}{DALI_PREPROCESS_SUFFIX}"
-    ensemble_name = f"{model_name}{DALI_ENSEMBLE_SUFFIX}"
+    ensemble_suffix = DALI_NMS_ENSEMBLE_SUFFIX if nms_model_name else DALI_ENSEMBLE_SUFFIX
+    ensemble_name = f"{model_name}{ensemble_suffix}"
 
     preprocess_dir = repository_root / preprocess_name
     preprocess_version_dir = preprocess_dir / "1"
@@ -246,11 +319,19 @@ def build_ensemble_directory(
     ensemble_version_dir = ensemble_dir / "1"
     ensemble_version_dir.mkdir(parents=True, exist_ok=True)
 
-    ensemble_config = build_ensemble_config(
-        model_name=ensemble_name,
-        preprocess_name=preprocess_name,
-        inference_name=model_name,
-    )
+    if nms_model_name:
+        ensemble_config = build_dali_nms_ensemble_config(
+            model_name=ensemble_name,
+            preprocess_name=preprocess_name,
+            inference_name=model_name,
+            nms_name=nms_model_name,
+        )
+    else:
+        ensemble_config = build_ensemble_config(
+            model_name=ensemble_name,
+            preprocess_name=preprocess_name,
+            inference_name=model_name,
+        )
     ensemble_config_path = ensemble_dir / "config.pbtxt"
     ensemble_config_path.write_text(ensemble_config.to_pbtxt())
     logger.info("Wrote ensemble config to {}", ensemble_config_path)
