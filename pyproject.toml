@@ -91,7 +91,7 @@ markers = ["integration: tests requiring Docker services (Redis, Triton)"]
 
 [tool.vulture]
 min_confidence = 80
-ignore_names = ["event", "shared", "envelope", "count", "new_payload", "block_ms", "data", "image", "raw", "message_id", "target_size"]
+ignore_names = ["event", "shared", "envelope", "count", "new_payload", "block_ms", "data", "image", "raw", "message_id", "target_size", "timeout_s", "consumer_group", "input_stream", "output_stream", "end2end"]
 paths = [
     "packages/triton_redis_connector/triton_redis_connector",
     "packages/triton_model_tools/triton_model_tools",
@@ -178,7 +178,7 @@ name = "triton_model_tools layer architecture"
 type = "layers"
 layers = [
     "triton_model_tools.__main__",
-    "triton_model_tools.folder_inference | triton_model_tools.benchmark",
+    "triton_model_tools.folder_inference | triton_model_tools.benchmark | triton_model_tools.e2e_test",
     "triton_model_tools.exporter | triton_model_tools.dali | triton_model_tools.nms | triton_model_tools.inference | triton_model_tools.dataset | triton_model_tools.perf_analyzer",
     "triton_model_tools.repository",
     "triton_model_tools.models | triton_model_tools.detection",
