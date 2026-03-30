@@ -1,0 +1,4 @@
+output_stream: metrics
+triton_poll_interval_s: 10.0
+error_flush_interval_s: 30.0
+transit_time_enabled: true

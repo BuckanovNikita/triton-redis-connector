@@ -1,0 +1,22 @@
+defaults:
+  - inference: default
+  - preprocessing: default
+  - metrics: default
+  - _self_
+
+app_name: ${oc.env:APP_NAME,triton-connector}
+
+redis:
+  host: ${oc.env:REDIS_HOST,localhost}
+  port: ${oc.env:REDIS_PORT,6379}
+  db: 0
+  decode_responses: false
+
+sources: []
+
+sinks: []
+
+processors: []
+
+queues:
+  maxsize: 1000

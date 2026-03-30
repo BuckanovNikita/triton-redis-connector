@@ -1,0 +1,6 @@
+decoder: opencv
+decoder_pool_type: thread
+decoder_pool_workers: 4
+default_target_size:
+  - 640
+  - 640
