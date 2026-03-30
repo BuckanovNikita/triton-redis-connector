@@ -87,6 +87,7 @@ addopts = ["-v", "--tb=short", "-n", "auto"]
 
 [tool.vulture]
 min_confidence = 80
+ignore_names = ["event", "shared", "envelope", "count", "new_payload"]
 paths = [
     "packages/triton_redis_connector/triton_redis_connector",
     "packages/triton_model_tools/triton_model_tools",
