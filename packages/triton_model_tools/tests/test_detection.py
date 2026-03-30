@@ -43,9 +43,9 @@ class TestDetection:
         with pytest.raises(ValidationError):
             Detection(x1=0, y1=0, x2=1, y2=1, confidence=0.5, class_id=-1)
 
-    def test_rejects_confidence_above_one(self) -> None:
-        with pytest.raises(ValidationError):
-            Detection(x1=0, y1=0, x2=1, y2=1, confidence=1.5, class_id=0)
+    def test_accepts_confidence_above_one(self) -> None:
+        det = Detection(x1=0, y1=0, x2=1, y2=1, confidence=1.5, class_id=0)
+        assert det.confidence == 1.5
 
     def test_rejects_confidence_below_zero(self) -> None:
         with pytest.raises(ValidationError):

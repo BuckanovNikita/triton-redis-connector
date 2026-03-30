@@ -14,7 +14,7 @@ class Detection(BaseModel):
     y1: float
     x2: float
     y2: float
-    confidence: float = Field(ge=0.0, le=1.0)
+    confidence: float = Field(ge=0.0)
     class_id: int = Field(ge=0)
     class_name: str = ""
 

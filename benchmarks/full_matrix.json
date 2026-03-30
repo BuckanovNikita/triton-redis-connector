@@ -1,0 +1,259 @@
+{
+  "results": [
+    {
+      "config": {
+        "model_name": "yolo11s",
+        "backend": "onnx",
+        "preprocess_mode": "raw",
+        "triton_url": "triton:8001",
+        "target_size": 640,
+        "num_images": 20,
+        "warmup_runs": 3,
+        "end2end": false,
+        "conf_threshold": 0.25,
+        "iou_threshold": 0.45
+      },
+      "total_time_s": 0.33734508699853905,
+      "avg_latency_ms": 16.867254349926952,
+      "throughput_fps": 59.28647183792131,
+      "p50_latency_ms": 16.80588200179045,
+      "p95_latency_ms": 19.27281785356172,
+      "p99_latency_ms": 19.815394771649153,
+      "num_images": 20
+    },
+    {
+      "config": {
+        "model_name": "yolo11s",
+        "backend": "onnx",
+        "preprocess_mode": "dali",
+        "triton_url": "triton:8001",
+        "target_size": 640,
+        "num_images": 20,
+        "warmup_runs": 3,
+        "end2end": false,
+        "conf_threshold": 0.25,
+        "iou_threshold": 0.45
+      },
+      "total_time_s": 0.32984866800688906,
+      "avg_latency_ms": 16.492433400344453,
+      "throughput_fps": 60.63386619339718,
+      "p50_latency_ms": 16.756353001255775,
+      "p95_latency_ms": 18.40531685265887,
+      "p99_latency_ms": 18.58541937333939,
+      "num_images": 20
+    },
+    {
+      "config": {
+        "model_name": "yolo11s",
+        "backend": "tensorrt",
+        "preprocess_mode": "raw",
+        "triton_url": "triton:8001",
+        "target_size": 640,
+        "num_images": 20,
+        "warmup_runs": 3,
+        "end2end": false,
+        "conf_threshold": 0.25,
+        "iou_threshold": 0.45
+      },
+      "total_time_s": 0.3347816440000315,
+      "avg_latency_ms": 16.739082200001576,
+      "throughput_fps": 59.74043188579992,
+      "p50_latency_ms": 16.933930997765856,
+      "p95_latency_ms": 19.03859090161859,
+      "p99_latency_ms": 19.228102978522656,
+      "num_images": 20
+    },
+    {
+      "config": {
+        "model_name": "yolo11s",
+        "backend": "tensorrt",
+        "preprocess_mode": "dali",
+        "triton_url": "triton:8001",
+        "target_size": 640,
+        "num_images": 20,
+        "warmup_runs": 3,
+        "end2end": false,
+        "conf_threshold": 0.25,
+        "iou_threshold": 0.45
+      },
+      "total_time_s": 0.3106730589934159,
+      "avg_latency_ms": 15.533652949670795,
+      "throughput_fps": 64.37635778525572,
+      "p50_latency_ms": 15.594956996210385,
+      "p95_latency_ms": 17.810497651953483,
+      "p99_latency_ms": 17.932563528447645,
+      "num_images": 20
+    },
+    {
+      "config": {
+        "model_name": "yolo26s",
+        "backend": "onnx",
+        "preprocess_mode": "raw",
+        "triton_url": "triton:8001",
+        "target_size": 640,
+        "num_images": 20,
+        "warmup_runs": 3,
+        "end2end": false,
+        "conf_threshold": 0.25,
+        "iou_threshold": 0.45
+      },
+      "total_time_s": 0.45888890798960347,
+      "avg_latency_ms": 22.944445399480173,
+      "throughput_fps": 43.58353329484512,
+      "p50_latency_ms": 22.081815997808008,
+      "p95_latency_ms": 30.763692003165488,
+      "p99_latency_ms": 30.899671200095327,
+      "num_images": 20
+    },
+    {
+      "config": {
+        "model_name": "yolo26s",
+        "backend": "onnx",
+        "preprocess_mode": "dali",
+        "triton_url": "triton:8001",
+        "target_size": 640,
+        "num_images": 20,
+        "warmup_runs": 3,
+        "end2end": false,
+        "conf_threshold": 0.25,
+        "iou_threshold": 0.45
+      },
+      "total_time_s": 0.43465408301563,
+      "avg_latency_ms": 21.7327041507815,
+      "throughput_fps": 46.013602037832015,
+      "p50_latency_ms": 22.168809002323542,
+      "p95_latency_ms": 28.266523952333955,
+      "p99_latency_ms": 29.82017599031678,
+      "num_images": 20
+    },
+    {
+      "config": {
+        "model_name": "yolo26s",
+        "backend": "tensorrt",
+        "preprocess_mode": "raw",
+        "triton_url": "triton:8001",
+        "target_size": 640,
+        "num_images": 20,
+        "warmup_runs": 3,
+        "end2end": false,
+        "conf_threshold": 0.25,
+        "iou_threshold": 0.45
+      },
+      "total_time_s": 0.4232958770080586,
+      "avg_latency_ms": 21.16479385040293,
+      "throughput_fps": 47.24827499233886,
+      "p50_latency_ms": 20.673200000601355,
+      "p95_latency_ms": 29.00062060070923,
+      "p99_latency_ms": 32.12921532307518,
+      "num_images": 20
+    },
+    {
+      "config": {
+        "model_name": "yolo26s",
+        "backend": "tensorrt",
+        "preprocess_mode": "dali",
+        "triton_url": "triton:8001",
+        "target_size": 640,
+        "num_images": 20,
+        "warmup_runs": 3,
+        "end2end": false,
+        "conf_threshold": 0.25,
+        "iou_threshold": 0.45
+      },
+      "total_time_s": 0.4622695409852895,
+      "avg_latency_ms": 23.113477049264475,
+      "throughput_fps": 43.264801650940804,
+      "p50_latency_ms": 23.902556498796912,
+      "p95_latency_ms": 28.772184852277864,
+      "p99_latency_ms": 31.59340896992944,
+      "num_images": 20
+    },
+    {
+      "config": {
+        "model_name": "yolo12s",
+        "backend": "onnx",
+        "preprocess_mode": "raw",
+        "triton_url": "triton:8001",
+        "target_size": 640,
+        "num_images": 20,
+        "warmup_runs": 3,
+        "end2end": false,
+        "conf_threshold": 0.25,
+        "iou_threshold": 0.45
+      },
+      "total_time_s": 0.3281257859998732,
+      "avg_latency_ms": 16.40628929999366,
+      "throughput_fps": 60.95223494567943,
+      "p50_latency_ms": 16.58587349811569,
+      "p95_latency_ms": 19.7643697483727,
+      "p99_latency_ms": 20.00099954639154,
+      "num_images": 20
+    },
+    {
+      "config": {
+        "model_name": "yolo12s",
+        "backend": "onnx",
+        "preprocess_mode": "dali",
+        "triton_url": "triton:8001",
+        "target_size": 640,
+        "num_images": 20,
+        "warmup_runs": 3,
+        "end2end": false,
+        "conf_threshold": 0.25,
+        "iou_threshold": 0.45
+      },
+      "total_time_s": 0.3311806370038539,
+      "avg_latency_ms": 16.559031850192696,
+      "throughput_fps": 60.39000401997313,
+      "p50_latency_ms": 16.97850550408475,
+      "p95_latency_ms": 18.602100400312338,
+      "p99_latency_ms": 19.362790480081458,
+      "num_images": 20
+    },
+    {
+      "config": {
+        "model_name": "yolo12s",
+        "backend": "tensorrt",
+        "preprocess_mode": "raw",
+        "triton_url": "triton:8001",
+        "target_size": 640,
+        "num_images": 20,
+        "warmup_runs": 3,
+        "end2end": false,
+        "conf_threshold": 0.25,
+        "iou_threshold": 0.45
+      },
+      "total_time_s": 0.31845460700424155,
+      "avg_latency_ms": 15.922730350212078,
+      "throughput_fps": 62.80329930894552,
+      "p50_latency_ms": 15.945920000376645,
+      "p95_latency_ms": 18.71889305075456,
+      "p99_latency_ms": 19.152960208957666,
+      "num_images": 20
+    },
+    {
+      "config": {
+        "model_name": "yolo12s",
+        "backend": "tensorrt",
+        "preprocess_mode": "dali",
+        "triton_url": "triton:8001",
+        "target_size": 640,
+        "num_images": 20,
+        "warmup_runs": 3,
+        "end2end": false,
+        "conf_threshold": 0.25,
+        "iou_threshold": 0.45
+      },
+      "total_time_s": 0.32061501198768383,
+      "avg_latency_ms": 16.03075059938419,
+      "throughput_fps": 62.38011088753475,
+      "p50_latency_ms": 16.054872998211067,
+      "p95_latency_ms": 17.912367648386862,
+      "p99_latency_ms": 18.075731931894552,
+      "num_images": 20
+    }
+  ],
+  "timestamp": "2026-03-30T20:52:53.507724+00:00",
+  "python_version": "3.12.3",
+  "platform_info": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39"
+}

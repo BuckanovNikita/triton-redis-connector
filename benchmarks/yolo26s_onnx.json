@@ -1,0 +1,28 @@
+{
+  "results": [
+    {
+      "config": {
+        "model_name": "yolo26s",
+        "backend": "onnx",
+        "preprocess_mode": "raw",
+        "triton_url": "triton:8001",
+        "target_size": 640,
+        "num_images": 20,
+        "warmup_runs": 3,
+        "end2end": true,
+        "conf_threshold": 0.25,
+        "iou_threshold": 0.45
+      },
+      "total_time_s": 0.49935273099981714,
+      "avg_latency_ms": 24.967636549990857,
+      "throughput_fps": 40.05184864004944,
+      "p50_latency_ms": 24.983566498121945,
+      "p95_latency_ms": 32.48968724728911,
+      "p99_latency_ms": 33.495855048968224,
+      "num_images": 20
+    }
+  ],
+  "timestamp": "2026-03-30T20:52:33.567747+00:00",
+  "python_version": "3.12.3",
+  "platform_info": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39"
+}
