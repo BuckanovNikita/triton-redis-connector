@@ -885,6 +885,61 @@ All other ruff rules still apply in tests. Tests must still have:
 
 ---
 
+## Mocking Ultralytics for Preprocessing Cross-Validation
+
+Phase 3B requires a cross-validation test proving `YoloPreprocessor` replicates
+ultralytics letterbox exactly. This is one of the most critical tests in the project.
+
+### Real Comparison Test (integration, requires ultralytics installed)
+
+```python
+import numpy as np
+import pytest
+
+@pytest.mark.integration
+def test_yolo_preprocessor_matches_ultralytics_letterbox() -> None:
+    from ultralytics.data.augment import LetterBox  # noqa: PLC0415
+
+    image = np.random.randint(0, 255, (1080, 1920, 3), dtype=np.uint8)
+    target_size = (640, 640)
+
+    our_tensor, scale, pad = YoloPreprocessor(target_size).preprocess(image)
+
+    letterbox = LetterBox(new_shape=target_size)
+    ul_image = letterbox(image=image)
+    ul_tensor = ul_image.transpose(2, 0, 1).astype(np.float32) / 255.0
+    ul_tensor = np.expand_dims(ul_tensor, axis=0)
+
+    np.testing.assert_allclose(our_tensor, ul_tensor, atol=1e-6)
+```
+
+### Unit Test with Mocked Ultralytics (no dependency)
+
+```python
+def test_yolo_preprocessor_letterbox_properties() -> None:
+    image = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    image[100:200, 300:400] = 255
+
+    tensor, scale, pad = YoloPreprocessor((640, 640)).preprocess(image)
+
+    assert tensor.shape == (1, 3, 640, 640)
+    assert tensor.dtype == np.float32
+    assert tensor.max() <= 1.0
+    assert tensor.min() >= 0.0
+    # Letterbox pads with 114/255 ≈ 0.447
+    assert np.isclose(tensor[0, 0, 0, 0], 114.0 / 255.0, atol=1e-6)
+```
+
+Key validation points:
+- Output shape is `(1, 3, H, W)` — batch + CHW
+- Aspect ratio preserved (not stretched)
+- Padding fill value is `114/255` (ultralytics default gray)
+- BGR→RGB conversion applied
+- Values in `[0, 1]` range (divided by 255)
+- Scale and pad offset returned for postprocessing coordinate rescaling
+
+---
+
 ## Constraints
 
 - Tests MUST pass with `-n auto` (parallel safe)

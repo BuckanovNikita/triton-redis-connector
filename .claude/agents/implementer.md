@@ -42,6 +42,46 @@ If ruff check reports fixable issues: `uv run ruff check --fix .` then re-run fo
 
 ---
 
+## Import-Linter Architecture Contracts
+
+The root `pyproject.toml` enforces 5 import-linter contracts. Violating them fails
+`uv run pre-commit run --all-files` silently (no useful error). Know the rules:
+
+1. **Layer hierarchy in `triton_redis_connector`**: domain modules (`connectors`,
+   `inference`, `preprocessing`, `metrics`) → `engine` → `config` / `errors` / `protocols`.
+   Higher layers may import lower layers, never the reverse.
+2. **Domain module independence**: `connectors`, `inference`, `preprocessing`, `metrics`
+   must NOT import each other. Cross-cutting communication goes through the engine layer.
+3. **Package boundary**: `triton_redis_connector` must NOT import from `triton_model_tools`.
+4. **Package boundary**: `triton_model_tools` must NOT import from `triton_redis_connector`.
+5. **Model tools internal layers**: `exporter` / `repository` / `__main__` → `models`.
+   Never the reverse.
+
+Before adding any cross-module import, verify it does not violate these contracts.
+
+---
+
+## Infrastructure Patterns
+
+### Docker Compose Changes
+
+When modifying `.devcontainer/docker-compose.yml`:
+- Use `condition: service_healthy` in `depends_on` for startup ordering
+- Health checks: Redis uses `redis-cli ping`, Triton uses HTTP health endpoint
+- GPU services need `deploy.resources.reservations.devices` with nvidia driver
+- Shared volumes use `..:/workspace:cached` for code, `../model_repository:/models` for models
+
+### uv Workspace Management
+
+When adding or modifying workspace packages:
+- All packages live under `packages/`
+- Root `pyproject.toml` declares `members = ["packages/*"]`
+- Each package has its own `pyproject.toml` with `[build-system]` using hatchling
+- After adding a package: `uv sync --dev` to update the lockfile
+- Update import-linter contracts in root `pyproject.toml` if new cross-package boundaries exist
+
+---
+
 ## Execution Variant Model
 
 ### Nine Variants Overview

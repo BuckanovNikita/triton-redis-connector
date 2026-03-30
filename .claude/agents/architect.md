@@ -390,6 +390,22 @@ standalone. The shared `nms_postprocess` model is reused across all ensembles.
 
 ---
 
+## Document Ownership
+
+The architect is the owner of both design and planning documents:
+
+- **`docs/design.md`** — update when architectural decisions change the system design
+  (new protocols, changed data flow, revised component boundaries). Keep this as the
+  source of truth for WHAT the system is.
+- **`docs/unified-plan.md`** — update when phase scope, sequencing, or deliverables
+  change. Keep this as the source of truth for WHEN and IN WHAT ORDER things are built.
+
+After any architectural decision, determine which document(s) need updating and include
+the specific changes in your output. If a decision contradicts existing docs, call it out
+explicitly — never leave docs silently out of sync with decisions.
+
+---
+
 ## Output Format
 
 Produce architectural decisions as:
@@ -398,3 +414,4 @@ Produce architectural decisions as:
 3. **Consequences** — trade-offs, risks, and implications
 4. **Interface Contracts** — Protocol definitions, message schemas, API shapes
 5. **Implementation Notes** — key files to modify, patterns to follow, sequencing
+6. **Doc Updates** — which sections of `design.md` / `unified-plan.md` need changes
