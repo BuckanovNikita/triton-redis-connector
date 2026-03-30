@@ -62,5 +62,5 @@ def test_input_connector_read_pending() -> None:
 
 def test_output_connector_write() -> None:
     connector = DummyOutputConnector()
-    msg_id = connector.write({b"key": b"value"})
+    msg_id = connector.write({"key": b"value"})
     assert msg_id == "1-0"
