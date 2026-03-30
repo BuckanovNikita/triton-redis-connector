@@ -106,6 +106,71 @@ async def redis_client() -> AsyncIterator[redis.asyncio.Redis]:
 
 ---
 
+## Testing the `__call__` Pattern
+
+### Source Testing
+
+Sources are callables with a `stop` event. Test the call and the stop mechanism:
+
+```python
+import threading
+
+def test_source_produces_items() -> None:
+    source = MyRedisSource(config=test_config)
+    source.stop = threading.Event()
+
+    item = source()
+    assert item is not None
+    assert isinstance(item, ExpectedType)
+
+def test_source_respects_stop_event() -> None:
+    source = MyRedisSource(config=test_config)
+    source.stop = threading.Event()
+    source.stop.set()
+    # Source should return sentinel or raise StopIteration when stopped
+```
+
+### Processor Testing
+
+Processors are pure `__call__(item) -> result` transforms. No framework setup needed:
+
+```python
+def test_processor_transforms_correctly() -> None:
+    processor = MyPreprocessor(target_size=(640, 640))
+    raw_image = make_test_image(width=1920, height=1080)
+
+    result = processor(raw_image)
+
+    assert result.shape == (1, 3, 640, 640)
+    assert result.dtype == np.float32
+
+def test_processor_returns_inference_input() -> None:
+    processor = MyPreprocessor(target_size=(640, 640))
+    raw_image = make_test_image(width=640, height=640)
+
+    result = processor(raw_image)
+
+    assert isinstance(result, InferenceInput)
+    assert result.model_name == "yolo11s"
+```
+
+### Sink Testing
+
+Sinks are `__call__(item) -> None`. Verify side effects via fakes or mocks:
+
+```python
+def test_sink_writes_to_redis() -> None:
+    fake_redis = FakeRedisStreamWriter()
+    sink = MyResultSink(redis_client=fake_redis, stream="stream:results")
+
+    sink(detection_result)
+
+    assert len(fake_redis.written) == 1
+    assert fake_redis.written[0]["stream"] == "stream:results"
+```
+
+---
+
 ## Mocking Redis — Protocol-Based Fakes
 
 ### Approach: Build a Fake That Satisfies the Protocol
@@ -162,16 +227,19 @@ async def test_handles_redis_connection_error() -> None:
     mock_redis.xreadgroup.side_effect = redis.exceptions.ConnectionError(
         "lost connection",
     )
-    consumer = StreamConsumer(redis_client=mock_redis, ...)
+    source = MyRedisSource(redis_client=mock_redis, config=test_config)
     with pytest.raises(redis.exceptions.ConnectionError):
-        await consumer.read_next_batch()
+        source()
 ```
 
 ---
 
-## Mocking Triton Client for Unit Tests
+## Mocking Triton Client — async_infer Callback Pattern
 
-### Fake Inference Result
+### Fake async_infer with Callback
+
+The production code uses `async_infer` with callbacks. Mocks must invoke the
+callback to simulate completion:
 
 ```python
 import numpy as np
@@ -180,22 +248,56 @@ from unittest.mock import AsyncMock, MagicMock
 def make_fake_infer_result(
     outputs: dict[str, np.ndarray],
 ) -> MagicMock:
-    """Create a fake InferResult that returns numpy arrays."""
     result = MagicMock()
     result.as_numpy = lambda name: outputs[name]
     return result
 
-async def test_inference_returns_detections() -> None:
+async def test_inference_callback_receives_result() -> None:
     fake_output = np.array([[0.5, 0.5, 0.8, 0.8, 0.95, 0]]).astype(np.float32)
     fake_result = make_fake_infer_result({"output0": fake_output})
 
     mock_client = AsyncMock()
-    mock_client.infer.return_value = fake_result
+
+    async def fake_async_infer(*, model_name, inputs, outputs, callback, **kwargs):
+        callback(fake_result, None)
+
+    mock_client.async_infer = fake_async_infer
     mock_client.is_server_ready.return_value = True
 
-    processor = InferenceProcessor(triton_client=mock_client, model_name="yolo11s")
-    detections = await processor.run(input_tensor)
-    assert detections.shape == (1, 6)
+    # Trigger inference and verify the callback was invoked with correct data
+    received = []
+    def capture_callback(result, error):
+        received.append((result, error))
+
+    await mock_client.async_infer(
+        model_name="yolo11s",
+        inputs=[],
+        outputs=[],
+        callback=capture_callback,
+    )
+    assert len(received) == 1
+    assert received[0][1] is None  # No error
+
+async def test_inference_callback_receives_error() -> None:
+    mock_client = AsyncMock()
+
+    async def fake_async_infer_error(*, model_name, inputs, outputs, callback, **kwargs):
+        callback(None, RuntimeError("Triton unavailable"))
+
+    mock_client.async_infer = fake_async_infer_error
+
+    errors = []
+    def capture_error(result, error):
+        errors.append(error)
+
+    await mock_client.async_infer(
+        model_name="yolo11s",
+        inputs=[],
+        outputs=[],
+        callback=capture_error,
+    )
+    assert len(errors) == 1
+    assert isinstance(errors[0], RuntimeError)
 ```
 
 ### Fake Model Metadata
@@ -215,6 +317,84 @@ def make_fake_model_metadata(
         for name, dtype, shape in outputs
     ]
     return metadata
+```
+
+---
+
+## Testing Queue Overflow / Drop Behavior
+
+Verify that full queues drop items instead of blocking:
+
+```python
+import queue
+
+def test_queue_overflow_drops_item() -> None:
+    q: queue.Queue[str] = queue.Queue(maxsize=2)
+    q.put("a")
+    q.put("b")
+
+    # Queue is full — producer must drop, not block
+    dropped = not try_enqueue(q, "c")
+    assert dropped
+    assert q.qsize() == 2
+
+def test_queue_overflow_emits_metric(caplog) -> None:
+    q: queue.Queue[str] = queue.Queue(maxsize=1)
+    q.put("a")
+
+    # Attempting to enqueue when full should log error
+    try_enqueue(q, "b")
+    assert "queue_overflow" in caplog.text or "Queue overflow" in caplog.text
+```
+
+---
+
+## Testing Interleave Ratio + TTL Recovery
+
+```python
+import time
+
+def test_interleave_ratio_processes_pending_and_new() -> None:
+    fake_redis = FakeRedisStreamReader()
+    fake_redis.seed_messages("stream:input", [
+        ("pending-1", {"data": "old"}),
+        ("pending-2", {"data": "old"}),
+    ])
+    # Seed new messages separately
+    fake_redis.seed_new_messages("stream:input", [
+        ("new-1", {"data": "fresh"}),
+        ("new-2", {"data": "fresh"}),
+        ("new-3", {"data": "fresh"}),
+        ("new-4", {"data": "fresh"}),
+    ])
+
+    recovery = RecoveryReader(
+        redis_client=fake_redis,
+        interleave_ratio=4,
+        pending_ttl_seconds=60,
+    )
+    # Should read 4 new, then 1 pending (4:1 ratio)
+    batch = recovery.read_interleaved(count=5)
+    assert sum(1 for m in batch if m.is_new) == 4
+    assert sum(1 for m in batch if not m.is_new) == 1
+
+def test_expired_pending_messages_are_dropped() -> None:
+    fake_redis = FakeRedisStreamReader()
+    # Message with idle time > TTL
+    fake_redis.seed_messages_with_idle("stream:input", [
+        ("expired-1", {"data": "stale"}, 120_000),  # 120s idle
+        ("fresh-1", {"data": "ok"}, 5_000),          # 5s idle
+    ])
+
+    recovery = RecoveryReader(
+        redis_client=fake_redis,
+        interleave_ratio=4,
+        pending_ttl_seconds=60,
+    )
+    processed = recovery.reclaim_pending(count=10)
+
+    assert "expired-1" in fake_redis.acked  # Dropped via XACK
+    assert len(processed) == 1  # Only fresh-1 was actually processed
 ```
 
 ---

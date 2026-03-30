@@ -39,6 +39,53 @@ Before making architectural decisions, always read:
 
 ---
 
+## Component Model — `__call__` Pattern
+
+### Three Primitives
+
+The framework uses three callable primitives instead of a unified
+`ComponentProtocol.process(envelope)` interface:
+
+- **`Source[TOut]`** — produces data. Has a `stop: threading.Event` protocol field.
+  `__call__(self) -> TOut` yields one item per call. Framework calls it in a loop
+  until `stop` is set.
+- **`Processor[TIn, TOut]`** — transforms data. `__call__(self, item: TIn) -> TOut`.
+  Pure function signature, no framework awareness needed.
+- **`Sink[TIn]`** — consumes data. `__call__(self, item: TIn) -> None`.
+  Writes to external systems (Redis, files, metrics).
+
+### Envelope Is Hidden
+
+The `Envelope` type carries metadata (request_id, timestamps, trace context) but
+is NEVER exposed to user code. Users write plain `__call__` with domain types.
+Metadata is accessible via `current_context()` using `contextvars` when needed.
+
+**Anti-pattern**: never expose Envelope in any user-facing API, protocol definition,
+or configuration schema. Envelope is a framework-internal transport mechanism only.
+
+### Config Naming
+
+Pipeline configuration uses `sources`, `sinks`, and `processors` as section names.
+Do NOT use `input_streams`, `output_streams`, or `components`.
+
+---
+
+## Inference Interception Pattern
+
+There is NO `TritonInferenceProcessor` class. Instead, the framework intercepts
+based on return types:
+
+1. A `Processor` returns `InferenceInput` (a pydantic model with tensor data,
+   model name, and output names).
+2. The framework detects the `InferenceInput` return type and routes it to a
+   worker pool that calls Triton.
+3. The framework re-injects `InferenceOutput` into the next pipeline stage.
+
+This keeps user code free of Triton client dependencies — preprocessors just
+return an `InferenceInput` marker and the framework handles the rest.
+
+---
+
 ## Redis Streams Architecture Knowledge
 
 ### Consumer Groups — Design Principles
@@ -54,6 +101,15 @@ Before making architectural decisions, always read:
 - Stream trimming: use `MAXLEN ~ N` (approximate) to avoid O(N) exact trimming.
   `MINID ~ <id>` trims by time. Choose based on whether you need count-based or
   time-based retention.
+
+### Recovery: Interleave Ratio + TTL
+
+- On startup, reclaim pending messages interleaved with new messages at a
+  configurable ratio (default 4:1 — 4 new messages per 1 pending reclaim).
+- Pending messages have a configurable TTL (default 60 seconds). Messages older
+  than TTL are dropped with XACK (not reprocessed). This prevents stale data
+  from clogging recovery.
+- Both `interleave_ratio` and `pending_ttl_seconds` are user-configurable.
 
 ### Consumer Group Topology Decisions
 
@@ -105,6 +161,19 @@ model_repository/
 Key config.pbtxt fields: name, platform, max_batch_size, input/output specs
 (name, data_type, dims), instance_group (count, kind), dynamic_batching.
 
+### NMS Ensemble Pattern
+
+For models without built-in NMS (non-end2end exports), the project uses a
+Triton ensemble that chains:
+
+1. **Detection model** (ONNX backend) — runs inference, outputs raw detections.
+2. **NMS postprocess model** (`nms_postprocess/`, Python backend) — applies
+   `torchvision.ops.nms` to filter detections.
+
+The `end2end_export` flag from the model registry determines whether NMS
+ensemble config is generated. End-to-end models skip the ensemble and run
+standalone. The shared `nms_postprocess` model is reused across all ensembles.
+
 ### Model Control Modes
 
 - `--model-control-mode=none`: all models in repository loaded at startup, no changes.
@@ -135,7 +204,7 @@ Key config.pbtxt fields: name, platform, max_batch_size, input/output specs
 ### DALI Ensemble Alternative
 
 - DALI backend runs preprocessing on GPU inside Triton (decode + resize + normalize).
-- Ensemble model chains DALI preprocessing → inference model in a single request.
+- Ensemble model chains DALI preprocessing -> inference model in a single request.
 - Trade-off: moves CPU work to GPU (frees client CPU) but adds model complexity
   and requires DALI pipeline code in Python (runs inside Triton container).
 
@@ -152,15 +221,17 @@ Key config.pbtxt fields: name, platform, max_batch_size, input/output specs
   preferred for high concurrency.
 - Image decoding/preprocessing: ProcessPoolExecutor (CPU-bound).
 
-### Queue Patterns
+### Queue Patterns — Mandatory Backpressure
 
 - `multiprocessing.Queue`: thread/process-safe, uses pickle serialization.
   Numpy arrays are pickled (copies data). For large tensors, consider
   `multiprocessing.shared_memory`.
+- **ALL queues MUST have `maxsize` set.** Unbounded queues are a hard anti-pattern.
+- **Drop policy on full**: when a queue is full, DROP the item (do not block the
+  producer). Log the drop at error level and emit a `queue_overflow` metric.
+  Never block producers — this prevents cascading backpressure deadlocks.
 - Anti-pattern: passing unpicklable objects through Queue (Redis connections,
   gRPC channels, file handles, loguru sinks).
-- Anti-pattern: unbounded queue without backpressure. Always set maxsize or
-  implement explicit backpressure.
 
 ### Shared Memory (for large tensors)
 
@@ -192,6 +263,8 @@ Key config.pbtxt fields: name, platform, max_batch_size, input/output specs
   (not library-specific types) to keep layers decoupled.
 - Use `from __future__ import annotations` in all modules (PEP 604 union syntax,
   deferred evaluation for forward references).
+- The `__call__` pattern means protocols are minimal: `Source`, `Processor`, `Sink`
+  each define only `__call__` (and `stop` for Source). No multi-method interfaces.
 
 ---
 

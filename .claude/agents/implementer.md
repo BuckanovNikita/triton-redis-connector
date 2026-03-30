@@ -42,6 +42,37 @@ If ruff check reports fixable issues: `uv run ruff check --fix .` then re-run fo
 
 ---
 
+## Component Model — `__call__` Pattern
+
+### Three Primitives
+
+User code implements one of three callable interfaces:
+
+- **`Source[TOut]`** — `__call__(self) -> TOut`, with `stop: threading.Event` field.
+  Framework calls it in a loop until `stop` is set.
+- **`Processor[TIn, TOut]`** — `__call__(self, item: TIn) -> TOut`. Pure transform.
+- **`Sink[TIn]`** — `__call__(self, item: TIn) -> None`. Writes to external systems.
+
+### Envelope Is Internal Only
+
+The `Envelope` type is a framework-internal transport. User code NEVER receives
+or returns an Envelope. Metadata access (request_id, timestamps) is via
+`current_context()` from `contextvars`.
+
+### Config Naming
+
+Pipeline config sections are named `sources`, `sinks`, `processors` (not
+`input_streams`, `output_streams`, or `components`).
+
+### Inference Interception
+
+There is no `TritonInferenceProcessor` class. A `Processor` returns
+`InferenceInput` (pydantic model with tensor data, model name, output names).
+The framework intercepts this return type, routes to a worker pool for Triton
+inference, and re-injects `InferenceOutput` into the next stage.
+
+---
+
 ## redis-py API Patterns
 
 ### Async Client Setup
@@ -87,18 +118,21 @@ messages = await redis_client.xreadgroup(
 await redis_client.xack("stream:input", "inference-workers", message_id)
 ```
 
-### Recovery Pattern (reclaim pending on startup)
+### Recovery: Interleave Ratio + TTL
 
 ```python
-# First pass: reclaim any pending messages from crashed consumers
+# Interleave pending reclaim with new message reads at 4:1 ratio.
+# Pending messages older than TTL (default 60s) are dropped with XACK.
 pending = await redis_client.xreadgroup(
     groupname="inference-workers",
     consumername="worker-1",
     streams={"stream:input": "0"},  # "0" = re-read all pending for this consumer
     count=100,
 )
-# Process pending messages...
-# Then switch to ">" for new messages
+# Check idle time for each pending message.
+# If idle > pending_ttl_seconds: XACK and drop (do not reprocess).
+# Otherwise: process normally.
+# Then read 4x new messages before reclaiming more pending.
 ```
 
 ### Writing Results
@@ -137,7 +171,10 @@ triton_client = grpcclient.InferenceServerClient(url="triton:8001")
 ready = await triton_client.is_server_ready()
 ```
 
-### Building Inference Request
+### Building Inference Request with async_infer + Callback
+
+Workers use `async_infer` with callback-based completion. Do NOT wrap synchronous
+`infer()` calls in retry logic around async code.
 
 ```python
 import numpy as np
@@ -149,14 +186,41 @@ input_tensor.set_data_from_numpy(input_data)
 
 output = grpcclient.InferRequestedOutput("output0")
 
-result = await triton_client.infer(
+# Callback-based async inference
+def on_infer_complete(result, error):
+    if error is not None:
+        handle_inference_error(error)
+        return
+    output_data = result.as_numpy("output0")
+    process_output(output_data)
+
+await triton_client.async_infer(
     model_name="yolo11s",
     inputs=[input_tensor],
     outputs=[output],
+    callback=on_infer_complete,
     model_version="",  # Empty string = latest version
 )
+```
 
-output_data = result.as_numpy("output0")
+### Callback-Based Retry with threading.Timer
+
+Retry failed inference using `threading.Timer` rather than wrapping sync retry
+logic around async calls:
+
+```python
+import threading
+
+def on_infer_with_retry(result, error, *, attempt: int = 1, max_retries: int = 3):
+    if error is not None and attempt < max_retries:
+        delay = 0.5 * (2 ** (attempt - 1))
+        timer = threading.Timer(delay, schedule_retry, args=[attempt + 1])
+        timer.start()
+        return
+    if error is not None:
+        logger.error("Inference failed after {} attempts: {}", max_retries, error)
+        return
+    process_output(result)
 ```
 
 ### Triton Data Type Mapping
@@ -182,6 +246,21 @@ config = await triton_client.get_model_config("yolo11s")
 - The gRPC channel is not fork-safe. Each process needs its own client.
 - `tritonclient` has no type stubs. Use `# pyright: ignore[reportMissingTypeStubs]`
   on imports, and the mypy override in pyproject.toml handles this.
+
+---
+
+## Image Decoding — Single Decoder Config
+
+There is NO `DecoderDispatcher` and no magic-bytes detection. The decoder is
+chosen via a single config field:
+
+```python
+decoder: Literal["opencv", "turbojpeg"] = "opencv"
+decoder_pool_type: Literal["thread", "process"] = "thread"
+```
+
+One decoder per pipeline, selected at config time. The pool type controls
+whether decoding runs in a `ThreadPoolExecutor` or `ProcessPoolExecutor`.
 
 ---
 
@@ -334,6 +413,19 @@ import tritonclient.grpc.aio as grpcclient  # pyright: ignore[reportMissingTypeS
 ```
 
 For `types-redis`: installed as a dev dependency, provides stubs for redis-py.
+
+---
+
+## Backpressure — Mandatory Queue Maxsize + Drop Policy
+
+ALL queues (`multiprocessing.Queue`, `queue.Queue`, `asyncio.Queue`) MUST have
+`maxsize` set. When a queue is full:
+
+1. DROP the item (never block the producer).
+2. Log at error level with `logger.error("Queue overflow, dropping item {}", item_id)`.
+3. Emit a `queue_overflow` metric.
+
+This applies to every queue in the system — preprocessing, inference, results.
 
 ---
 

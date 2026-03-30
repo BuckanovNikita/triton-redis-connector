@@ -88,6 +88,54 @@ Follow the checklist below, section by section.
 
 ---
 
+## Architecture Contract Verification
+
+### `__call__` Pattern Compliance
+
+- Components implement one of three primitives: `Source[TOut]`, `Processor[TIn, TOut]`,
+  `Sink[TIn]` — each via `__call__`.
+- Sources have a `stop: threading.Event` protocol field.
+- Processors are pure transforms: `__call__(self, item: TIn) -> TOut`.
+- Sinks consume data: `__call__(self, item: TIn) -> None`.
+- No multi-method component interfaces (no `.process()`, `.handle()`, `.run()` on
+  components — only `__call__`).
+
+### Envelope Must Not Leak
+
+- **CRITICAL**: `Envelope` must NEVER appear in user-facing APIs, protocols,
+  or configuration schemas. It is framework-internal only.
+- User code accesses metadata via `current_context()` from `contextvars`.
+- If `Envelope` appears in a processor/source/sink signature, flag it as a
+  blocking issue.
+
+### Queue Backpressure Compliance
+
+- **ALL queues must have `maxsize` set.** Flag any `Queue()` without maxsize as
+  a blocking issue.
+- **No blocking producers.** When a queue is full, the code must DROP the item
+  (not block). Verify the drop-and-log pattern:
+  1. Try non-blocking put (`put_nowait` or `put(block=False)`)
+  2. On `queue.Full`: log error with item context
+  3. Emit `queue_overflow` metric
+- Flag any `queue.put()` without `block=False` or `put_nowait()` as a
+  potential blocking producer.
+
+### Config Naming
+
+- Pipeline config sections must be `sources`, `sinks`, `processors`.
+- Flag usage of `input_streams`, `output_streams`, or `components` as
+  naming convention violations.
+
+### Package Boundaries
+
+- Imports follow the defined layer contracts (when import-linter is configured)
+- No circular imports (check with `mypy` or manual trace)
+- Package boundaries respected: `triton_model_tools` does not import from
+  `triton_redis_connector` and vice versa
+- Protocols used at layer boundaries, concrete types internal to layers
+
+---
+
 ## Security Review — Redis Specific
 
 ### Command Injection via EVAL/EVALSHA
@@ -149,10 +197,12 @@ Follow the checklist below, section by section.
 - **Large object pickle**: passing large numpy arrays through `multiprocessing.Queue`
   serializes them fully. For large tensors, shared memory is preferred.
 - **Unbounded queues**: `Queue()` without `maxsize` can consume unlimited memory
-  under backpressure. Always set maxsize.
+  under backpressure. Always set maxsize. Flag as blocking issue.
 - **Sync in async**: calling blocking functions (file I/O, sync Redis, `time.sleep`)
   inside an async function blocks the event loop. Use `asyncio.to_thread()` or
   proper async alternatives.
+- **Blocking producers**: any `queue.put()` that blocks when full creates
+  cascading backpressure. Must use non-blocking put with drop policy.
 
 ### Redis-Specific
 
@@ -169,6 +219,14 @@ Follow the checklist below, section by section.
   Verify batching is used (either client-side or via dynamic_batching in config).
 - **Sync client in async code**: using `tritonclient.grpc` (sync) inside an
   async function blocks the event loop. Must use `tritonclient.grpc.aio`.
+- **Sync retry wrapping async_infer**: do not wrap synchronous retry logic
+  around `async_infer`. Use callback-based retry with `threading.Timer` instead.
+
+### Inference Interception
+
+- Preprocessors should return `InferenceInput`, not call Triton directly.
+  Flag any direct `triton_client.infer()` or `triton_client.async_infer()` call
+  from user-facing processor code (framework handles Triton calls).
 
 ---
 
@@ -206,13 +264,3 @@ Tests run with `pytest-xdist -n auto`. Verify:
 - Database/Redis fixtures use unique key prefixes or are properly isolated
 - conftest.py fixtures have correct scope (function > module > session)
 - No tests depend on execution order
-
----
-
-## Architecture Contract Verification
-
-- Imports follow the defined layer contracts (when import-linter is configured)
-- No circular imports (check with `mypy` or manual trace)
-- Package boundaries respected: `triton_model_tools` does not import from
-  `triton_redis_connector` and vice versa
-- Protocols used at layer boundaries, concrete types internal to layers

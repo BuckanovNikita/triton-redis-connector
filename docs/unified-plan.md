@@ -76,6 +76,7 @@ Replaces `ComponentProtocol.process(envelope)` from design.md. Three user-facing
 @runtime_checkable
 class Source(Protocol[TOut]):
     """Produces events. Runs in own thread, pushes events via emit()."""
+    stop: threading.Event
     def __call__(self, emit: Callable[[TOut], None]) -> None: ...
 
 @runtime_checkable
@@ -90,9 +91,9 @@ class Sink(Protocol[TIn]):
 ```
 
 Key design decisions:
-- **Push-based Sources** — Sources run in their own thread and push events via an `emit()` callback. This is natural for streaming data (Redis XREADGROUP blocks until messages arrive). The framework provides `emit` and manages the thread lifecycle. Built-in `RedisStreamSource` wraps XREADGROUP internally. Custom sources (camera SDK, filesystem watcher) use the same pattern — call `emit(event)` whenever data arrives. The Source's `__call__` runs continuously until shutdown.
+- **Push-based Sources with `stop` field** — Sources run in their own thread and push events via an `emit()` callback. Each Source has a `stop: threading.Event` field. The framework creates the Event, assigns it to `source.stop` before starting the thread, and calls `source.stop.set()` at shutdown. The Source's `__call__` should check `self.stop.is_set()` in its loop. This is natural for streaming data (Redis XREADGROUP blocks until messages arrive). Built-in `RedisStreamSource` wraps XREADGROUP internally. Custom sources (camera SDK, filesystem watcher) use the same pattern — call `emit(event)` whenever data arrives.
 - **Output type via return annotation** — `def __call__(self, event: ImageEvent) -> InferenceInput | None` declares input=ImageEvent, output=InferenceInput. `| None` stripped during wiring (means "filter")
-- **Inference is a Processor** — `TritonInferenceProcessor(Processor[InferenceInput, InferenceOutput])` is framework-provided. Under the hood it routes through `mp.Queue` to worker pool, but in the pipeline graph it's a normal Processor
+- **`InferenceInput` as framework intercept marker** — There is no `TritonInferenceProcessor` class. When the framework sees a Processor whose return type is `InferenceInput`, it intercepts at that boundary and routes the `InferenceInput` to the inference worker pool. The pipeline is split: pre-inference processors run in the main pipeline thread, then `InferenceInput` goes to workers, and the resulting `InferenceOutput` re-enters the pipeline at the next Processor. This keeps user code free of Triton concerns — the user just returns `InferenceInput` from a processor
 - **Envelope hidden** — `Envelope[T]` stays internal. Before calling `__call__`, runtime unwraps `envelope.payload`. After return, wraps result in new Envelope inheriting metadata. For opt-in metadata access: `current_context()` via `contextvars`
 - **Exact type matching** — wiring by type equality, no subclass polymorphism
 
@@ -108,7 +109,14 @@ Update `triton_model_tools` to import from `triton_shared_models`.
 
 #### 1.2 Config schema (`config/schema.py`)
 
-Pydantic models: `RedisConnectionConfig`, `StreamInputConfig`, `StreamOutputConfig`, `InferenceConfig`, `PreprocessingConfig`, `MetricsConfig`, `AppConfig` — as in design.md section 5.2, plus `sources` and `sinks` config sections for the new architecture.
+Pydantic models: `RedisConnectionConfig`, `StreamInputConfig`, `StreamOutputConfig`, `InferenceConfig`, `PreprocessingConfig`, `MetricsConfig`, `AppConfig` — as in design.md section 5.2, plus `sources`, `sinks`, and `processors` config sections for the new architecture.
+
+Additional config fields:
+- `decoder: Literal["opencv", "turbojpeg"]` — single decoder choice, no dispatcher
+- `decoder_pool_type: Literal["thread", "process"]` — default `thread`
+- `pending_interleave_ratio: int` — default `4` (every 4th message from pending)
+- `pending_ttl_s: float` — default `60.0` (drop pending messages older than this)
+- `queue_maxsize: int` — default for all internal queues, drop + metric on overflow
 
 #### 1.3 Hydra integration (`config/hydra_app.py`)
 
@@ -192,7 +200,22 @@ A simple `fn.resize(resize_x=640, resize_y=640)` without letterbox will produce 
 
 Ensemble structure per model: `yolo11s/` (inference) + `yolo11s_dali_preprocess/` (DALI backend) + `yolo11s_dali_ensemble/` (ensemble scheduler).
 
-#### 2.5 CLI refactoring
+#### 2.5 NMS Triton model (`nms.py`)
+
+Shared `nms_postprocess/` model using PyTorch backend (`torchvision.ops.nms`). Standard YOLO models (yolo11s, yolo12s) output raw predictions requiring NMS. Instead of client-side NMS, this runs as a Triton Python backend model.
+
+`NmsModelConfig` pydantic model, `generate_nms_model_script()`, `build_nms_model_directory()`.
+
+Ensemble structure with NMS:
+- `yolo11s → nms_postprocess → yolo11s_ensemble` (standard model with server-side NMS)
+- `yolo12s → nms_postprocess → yolo12s_ensemble` (standard model with server-side NMS)
+- `yolo26s` standalone (end2end export, NMS baked into ONNX graph)
+
+The `nms_postprocess` model is shared across all standard (non-end2end) models. Detection of end2end vs standard models is via the `end2end_export` flag in the model registry.
+
+DALI + NMS combined ensemble: `yolo11s_dali_preprocess → yolo11s → nms_postprocess → yolo11s_dali_ensemble`.
+
+#### 2.6 CLI refactoring
 
 Subcommand CLI: `triton-model-tools export --format onnx|tensorrt|all --dali-ensemble --models ...`
 
@@ -202,6 +225,8 @@ Subcommand CLI: `triton-model-tools export --format onnx|tensorrt|all --dali-ens
 - Generalized build_model_directory (.onnx and .plan)
 - DALI pipeline script: `ast.parse()` validity + verify letterbox ops present
 - Ensemble config: verify `platform: "ensemble"`, step mappings
+- NMS model: `ast.parse()` validity of generated script, config correctness
+- NMS ensemble wiring: standard models route through `nms_postprocess`, end2end models skip it
 - All existing tests pass
 
 ### Verification
@@ -239,11 +264,15 @@ Built-in `RedisStreamSource[T]` (push-based, runs XREADGROUP in own thread, call
 
 #### 3A.5 Application skeleton (`engine/app.py`)
 
-`Application.from_config()` and `run()`. Main loop: drain queues → unwrap Envelope → dispatch `__call__` → wrap result → route to output/next processor. Graceful shutdown.
+`Application.from_config()` and `run()`. Main loop: drain queues → unwrap Envelope → dispatch `__call__` → wrap result → route to output/next processor. When a processor returns `InferenceInput`, the framework intercepts and routes to the inference worker pool instead of the next processor. Graceful shutdown via `source.stop.set()` on all sources.
 
-#### 3A.6 Newest-first recovery
+#### 3A.6 Newest-first recovery with interleave and TTL
 
-Read pending on startup, sort newest-first, dual-queue reader.
+Read pending on startup, sort newest-first, dual-queue reader. Configurable interleave ratio (default 4:1) — every 4th message is read from the pending queue, rest from live. Pending messages older than 60s TTL are dropped with XACK (configurable `pending_ttl_s`). This prevents stale data from clogging the pipeline after recovery.
+
+#### 3A.7 Queue backpressure
+
+All internal queues have configurable `maxsize`. When a queue is full, the item is dropped, an error is logged, and a `queue_overflow` metric is emitted with the queue name. No blocking backpressure — drop + observe pattern.
 
 ### 3B — Tools: Inference Client + Folder Inference (parallel track)
 
@@ -286,7 +315,7 @@ Load real image, preprocess with `YoloPreprocessor`, also preprocess with `ultra
 
 ### Tests
 
-3A: Mock Redis, consumer groups, connectors, registry `__call__` wiring, Application passthrough
+3A: Mock Redis, consumer groups, connectors, registry `__call__` wiring, `InferenceInput` intercept detection, Application passthrough, queue backpressure (drop + metric on full), interleave 4:1 pending/live ratio, pending TTL drop
 3B: YoloPreprocessor shape/dtype/letterbox, mock Triton, folder inference
 
 ### Verification
@@ -305,11 +334,13 @@ uv run pytest && uv run pre-commit run --all-files
 
 #### 4A.1 Worker pool (`inference/worker.py`)
 
-`InferenceWorkerPool`: N processes, each with own `tritonclient.grpc.InferenceServerClient`. Communication via `mp.Queue`. The runtime layer intercepts `InferenceInput` events (from TritonInferenceProcessor in the pipeline) and routes through the pool.
+`InferenceWorkerPool`: N workers, each with own `tritonclient.grpc.aio.InferenceServerClient`. Communication via queues. The runtime intercepts `InferenceInput` events (detected by return type annotation at pipeline wiring time) and routes through the pool.
 
-#### 4A.2 Retry policy (`inference/retry.py`)
+Workers use `async_infer` (non-blocking). A semaphore limits concurrent in-flight requests per worker. The semaphore is released only on final success or final failure (after all retries exhausted).
 
-3 attempts, exponential backoff (0.1s, 0.4s, 1.6s).
+#### 4A.2 Async retry in callback (`inference/retry.py`)
+
+Retry via `threading.Timer` in the `async_infer` callback. 3 attempts, exponential backoff (0.1s, 0.4s, 1.6s). On transient failure, the callback schedules a `threading.Timer` for the next attempt. On final failure, the error is routed to the error queue and the semaphore is released.
 
 #### 4A.3 Model version tracker (`inference/model_registry.py`)
 
@@ -317,7 +348,9 @@ Per-worker, polls `get_model_repository_index()`.
 
 #### 4A.4 Image preprocessing (`preprocessing/`)
 
-`TurboJPEGDecoder`, `CV2AvifDecoder`, `DecoderDispatcher`, `ParallelDecoderPool`.
+Single decoder choice via config field `decoder: opencv | turbojpeg` (no dispatcher, no magic bytes routing, no multi-decoder logic). Both OpenCV and TurboJPEG release the GIL during decode.
+
+Decoder pool type is configurable: `decoder_pool_type: thread | process`, default `thread`. Uses `concurrent.futures.ThreadPoolExecutor` or `ProcessPoolExecutor` accordingly. Since both decoders release the GIL, thread pool is sufficient for most workloads; process pool available for CPU-bound scenarios.
 
 **CRITICAL**: Connector's preprocessing MUST share the same letterbox algorithm as `YoloPreprocessor` from tools. Three implementations must produce identical results:
 1. `YoloPreprocessor` in tools (client-side, for `infer_raw`)
@@ -326,7 +359,7 @@ Per-worker, polls `get_model_repository_index()`.
 
 #### 4A.5 Wire inference into Application
 
-Update main loop: when pipeline hits `TritonInferenceProcessor`, route `InferenceInput` through `mp.request_queue`. Re-inject `InferenceOutput` back into pipeline from `mp.result_queue`.
+Update main loop: when a processor returns `InferenceInput`, the framework intercepts and routes through the worker pool's request queue. Workers call `async_infer`, and the callback places `InferenceOutput` on the result queue. The framework re-injects `InferenceOutput` back into the pipeline at the next processor in the chain.
 
 ### 4B — Tools as E2E Test Driver
 
@@ -350,7 +383,10 @@ triton-model-tools e2e-test --image-dir ./test_images --model yolo11s \
 ### Tests
 
 - Worker pool integration with identity model
-- Retry policy
+- `async_infer` callback fires correctly on success and failure
+- `threading.Timer` retry: verify 3 attempts with exponential backoff
+- Semaphore released only on final success or final failure
+- Single decoder config (opencv vs turbojpeg), decoder pool type (thread vs process)
 - E2E: tools pushes image to Redis → connector processes → tools reads result
 - Connector preprocessing matches tools preprocessing (same image, same results)
 
@@ -401,6 +437,48 @@ Shells out to `perf_analyzer` in the SDK container via `docker exec`. Parses CSV
 - download_coco with mocked HTTP
 - run_ultralytics_benchmark with mocked ultralytics
 - BenchmarkSuite JSON/CSV serialization
+
+### Verification
+
+```bash
+uv run pytest && uv run pre-commit run --all-files
+```
+
+---
+
+## Phase 4C — Shared Memory IPC Optimization
+
+**Goal**: Replace queue-based numpy array transfer between pipeline threads and inference workers with `multiprocessing.shared_memory` for zero-copy IPC. This phase runs after Phase 5 benchmarks provide baseline numbers to measure improvement against.
+
+### Deliverables
+
+#### 4C.1 Shared memory allocator (`inference/shared_memory.py`)
+
+`SharedMemoryPool`: pre-allocates a pool of named shared memory blocks sized for inference tensors. `acquire()` returns a `SharedMemorySlot` (name + offset + shape + dtype). `release()` returns the slot to the pool.
+
+#### 4C.2 Producer side (pipeline thread)
+
+After preprocessing, write numpy array directly into a shared memory slot. Pass only the `SharedMemorySlot` descriptor (name, offset, shape, dtype) through the queue instead of the full numpy array bytes.
+
+#### 4C.3 Consumer side (inference worker)
+
+Worker opens shared memory by name, constructs `np.ndarray` view (zero-copy), builds `InferInput` from the view. Releases the slot back to the pool after `async_infer` callback fires.
+
+#### 4C.4 Lifecycle management
+
+Shared memory blocks are created at Application startup and cleaned up at shutdown. `SharedMemoryPool` tracks ownership to detect leaks. Fallback to regular queue transfer if shared memory allocation fails.
+
+### Prerequisites
+
+- Phase 4A (inference workers)
+- Phase 5 (baseline benchmark numbers for comparison)
+
+### Tests
+
+- SharedMemoryPool allocation/release/leak detection
+- Round-trip: write array → pass descriptor → reconstruct array, assert `np.array_equal`
+- Fallback path when shared memory unavailable
+- Benchmark comparison: queue transfer vs shared memory (latency + throughput)
 
 ### Verification
 
@@ -523,12 +601,14 @@ uv run pytest && uv run pre-commit run --all-files
 Phase 0 (Infrastructure)
     │
     v
-Phase 1 (Foundation: shared models, config, protocols, __call__)
+Phase 1 (Foundation: shared models, config, protocols, __call__, stop event)
     │
-    ├──► Phase 2 (Export: TRT + DALI)
+    ├──► Phase 2 (Export: TRT + DALI + NMS)
     │        │
     │        v
     │    Phase 3B (Tools: inference client)───► Phase 5 (Benchmark Stage 1)
+    │        │                                      │
+    │        │                                      ├──► Phase 4C (Shared memory IPC)
     │        │                                      │
     │        │                                      v
     │        │                                  Phase 6B (Comparison Stage 2)
@@ -536,14 +616,16 @@ Phase 1 (Foundation: shared models, config, protocols, __call__)
     │        │                                      v
     │        │                                  Phase 7B (Full matrix)
     │
-    └──► Phase 3A (App: connectors, queues, engine)
+    └──► Phase 3A (App: connectors, queues, engine, backpressure)
              │
              v
-         Phase 4A (App: inference workers)
+         Phase 4A (App: inference workers, async_infer + callback retry)
              │
              ├──► Phase 4B (Tools E2E harness — needs both 3B + 4A)
              │        │
              │        v (feeds Phase 6B and 7B connector benchmarks)
+             │
+             ├──► Phase 4C (Shared memory IPC — needs 4A + Phase 5 baselines)
              │
              └──► Phase 6A (App: metrics, errors)
                       │
@@ -551,7 +633,7 @@ Phase 1 (Foundation: shared models, config, protocols, __call__)
                   Phase 7A (App: aggregation, polish)
 ```
 
-**Parallelism**: 3A ‖ 3B, 5 starts after 3B (no connector needed), 6A ‖ 6B, 7A ‖ 7B. Phase 4B is the integration point requiring both tracks.
+**Parallelism**: 3A ‖ 3B, 5 starts after 3B (no connector needed), 6A ‖ 6B, 7A ‖ 7B. Phase 4B is the integration point requiring both tracks. Phase 4C requires both Phase 4A (worker pool) and Phase 5 (baseline benchmarks to measure improvement).
 
 ---
 
@@ -561,14 +643,18 @@ Phase 1 (Foundation: shared models, config, protocols, __call__)
 |---|---|---|
 | `.devcontainer/docker-compose.yml` | 0 | Triton 26.02, SDK container |
 | `packages/triton_shared_models/` | 1 | Shared Triton types |
-| `packages/triton_redis_connector/triton_redis_connector/protocols.py` | 1 | `Source`, `Processor`, `Sink` protocols |
+| `packages/triton_redis_connector/triton_redis_connector/protocols.py` | 1 | `Source` (with `stop` field), `Processor`, `Sink` protocols |
 | `packages/triton_redis_connector/triton_redis_connector/engine/context.py` | 1 | `EventContext`, `current_context()` |
-| `packages/triton_redis_connector/triton_redis_connector/engine/events.py` | 1 | `Event`, `InferenceInput`, `InferenceOutput` |
-| `packages/triton_redis_connector/triton_redis_connector/engine/registry.py` | 3A | `PipelineRegistry` (`__call__` type inspection) |
-| `packages/triton_redis_connector/triton_redis_connector/engine/app.py` | 3A | Main loop with envelope unwrap/wrap |
+| `packages/triton_redis_connector/triton_redis_connector/engine/events.py` | 1 | `Event`, `InferenceInput` (intercept marker), `InferenceOutput` |
+| `packages/triton_model_tools/triton_model_tools/nms.py` | 2 | NMS PyTorch backend model generation |
+| `packages/triton_redis_connector/triton_redis_connector/engine/registry.py` | 3A | `PipelineRegistry` (`__call__` type inspection, `InferenceInput` intercept detection) |
+| `packages/triton_redis_connector/triton_redis_connector/engine/app.py` | 3A | Main loop with envelope unwrap/wrap, queue backpressure, interleave recovery |
 | `packages/triton_model_tools/triton_model_tools/dali.py` | 2 | DALI pipeline with correct letterbox |
 | `packages/triton_model_tools/triton_model_tools/inference.py` | 3B | `YoloPreprocessor` (letterbox), `TritonInferenceClient` |
+| `packages/triton_redis_connector/triton_redis_connector/inference/worker.py` | 4A | Worker pool with `async_infer` + callback retry |
+| `packages/triton_redis_connector/triton_redis_connector/inference/retry.py` | 4A | `threading.Timer`-based retry in callback |
 | `packages/triton_model_tools/triton_model_tools/e2e_test.py` | 4B | `ConnectorE2ETestHarness` |
+| `packages/triton_redis_connector/triton_redis_connector/inference/shared_memory.py` | 4C | `SharedMemoryPool` for zero-copy IPC |
 | `packages/triton_model_tools/triton_model_tools/benchmark.py` | 5 | Benchmarking engine |
 | `packages/triton_model_tools/triton_model_tools/comparison.py` | 6B | Prediction comparison |
 
@@ -601,9 +687,11 @@ class DetectionPostprocessor:
 
 # Optional custom source (push-based, runs in own thread):
 class CameraSource:
+    stop: threading.Event  # framework creates and assigns before thread start
+
     def __call__(self, emit: Callable[[CameraImageEvent], None]) -> None:
         """Runs in dedicated thread. Pushes events via emit()."""
-        while not self._stop.is_set():
+        while not self.stop.is_set():
             frame = self._camera.read()
             emit(CameraImageEvent(camera_id="cam1", image_data=frame))
 
@@ -617,13 +705,14 @@ sinks:
     stream_name: detection_results
     event_type: myapp.events.DetectionResult
 processors:
-  - myapp.processors.CameraPreprocessor
-  - triton_redis_connector.TritonInferenceProcessor
+  - myapp.processors.CameraPreprocessor   # returns InferenceInput → framework intercepts
   - myapp.processors.DetectionPostprocessor
+decoder: opencv                           # opencv | turbojpeg
+decoder_pool_type: thread                 # thread | process
 
 # main.py
 app = Application.from_config()
 app.run()
 ```
 
-The user writes: 2 event models, 2 processors, 1 YAML config. Everything else (Redis I/O, queues, threading, inference workers, metrics, error handling, recovery) is handled by the framework. Sources are push-based — they run in their own thread and call `emit(event)` when data arrives.
+The user writes: 2 event models, 2 processors, 1 YAML config. Everything else (Redis I/O, queues, threading, inference workers, metrics, error handling, recovery) is handled by the framework. Sources are push-based — they run in their own thread and call `emit(event)` when data arrives. The framework creates `threading.Event` and assigns it to `source.stop` before starting the thread. When `CameraPreprocessor` returns `InferenceInput`, the framework intercepts it and routes to the inference worker pool — no explicit `TritonInferenceProcessor` class in user code or config.

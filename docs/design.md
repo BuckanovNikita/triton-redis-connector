@@ -4,14 +4,15 @@
 
 ### Problem Statement
 
-ML inference pipelines need a reliable bridge between data sources (camera streams, file uploads) and NVIDIA Triton Inference Server. The system must handle:
+ML inference pipelines need a reliable bridge between data sources (camera streams,
+file uploads) and NVIDIA Triton Inference Server. The system must handle:
 
 - Reading events from Redis Streams with consumer group semantics
 - Decoding and preprocessing images for YOLO models
 - Sending async inference requests to Triton via gRPC
 - Writing results back to Redis Streams
 - Collecting metrics (transit times, Triton stats, errors, business aggregations)
-- Recovering after restarts with newest-first priority
+- Recovering after restarts with newest-first priority and TTL-based staleness
 - Safe rolling model version updates
 
 ### System Context
@@ -25,13 +26,13 @@ Camera/Sensors → Redis Streams → [triton-redis-connector] → Triton Server
 
 The connector is a multi-process, multi-threaded Python application.
 
-- **Main process**: orchestrates connectors (threads), queues, component dispatch
+- **Main process**: orchestrates sources, processors, sinks, queues, dispatch
 - **Inference worker pool**: N separate processes, each with its own Triton gRPC
-  client. Requests are distributed via `multiprocessing.Queue`. Each worker uses
-  `async_infer` with futures internally for concurrency within its process.
-- **Preprocessing process pool**: `ProcessPoolExecutor` for CPU-bound image
-  decoding (turbojpeg, cv2). Separate from inference processes.
-- **Connector threads**: blocking Redis I/O (XREADGROUP, XADD) in dedicated threads
+  client. Requests distributed via `multiprocessing.Queue`. Each worker uses
+  `async_infer` with callback-based retry internally for concurrency.
+- **Decoder pool**: configurable `ThreadPoolExecutor` or `ProcessPoolExecutor`
+  for CPU-bound image decoding (single decoder per config).
+- **Source threads**: blocking I/O (e.g. Redis XREADGROUP) in dedicated threads
   within the main process.
 
 ---
@@ -55,7 +56,7 @@ packages/
     triton_redis_connector/
       __init__.py
       py.typed
-      protocols.py                  # All user-facing Protocol classes
+      protocols.py                  # Source, Processor, Sink protocols
 
       config/
         __init__.py
@@ -64,31 +65,28 @@ packages/
 
       connectors/
         __init__.py
-        base.py                     # InputConnector / OutputConnector Protocols
-        redis_stream.py             # RedisStreamInputConnector, RedisStreamOutputConnector
+        redis_stream.py             # RedisStreamSource, RedisStreamSink
         consumer_group.py           # Consumer group management, position tracking
 
       engine/
         __init__.py
         app.py                      # Application — main entry point
-        registry.py                 # Component registry, type-annotation wiring
-        queue_bus.py                # Thread-safe queues connecting threads
+        registry.py                 # Pipeline registry, type-annotation wiring
+        queue_bus.py                # Thread-safe queues connecting stages
         event.py                    # Envelope[T] — timestamped event wrapper
+        context.py                  # EventContext, current_context() via contextvars
 
       inference/
         __init__.py
         worker.py                   # InferenceWorkerPool, _inference_worker_main
-        request.py                  # InferenceRequest / InferenceResult models
+        request.py                  # InferenceInput / InferenceOutput models
         model_registry.py           # ModelVersionTracker — rolling release (per-worker)
-        retry.py                    # RetryPolicy with exponential backoff
 
       preprocessing/
         __init__.py
         protocols.py                # ImageDecoder Protocol, ImagePreprocessor Protocol
-        jpeg_decoder.py             # TurboJPEGDecoder
-        avif_decoder.py             # CV2AvifDecoder
-        dispatcher.py               # DecoderDispatcher — routes by content type
-        pool.py                     # ParallelDecoderPool — thread pool wrapper
+        decoder.py                  # OpenCVDecoder, TurboJPEGDecoder
+        pool.py                     # DecoderPool — thread or process pool wrapper
 
       metrics/
         __init__.py
@@ -104,12 +102,11 @@ packages/
 
     conf/                            # Hydra config directory
       config.yaml
-      streams/
-        input/
-          camera_images.yaml
-        output/
-          detection_results.yaml
-          metrics.yaml
+      sources/
+        camera_images.yaml
+      sinks/
+        detection_results.yaml
+        metrics.yaml
       inference/
         default.yaml
       preprocessing/
@@ -168,26 +165,28 @@ triton_metrics_aggregator   — triton_shared_models, triton_redis_connector,
 │                                                                      │
 │  ┌────────────────────────────────────────────────────────────────┐  │
 │  │                    APPLICATION LAYER (engine/)                  │  │
-│  │  Application       ComponentRegistry       QueueBus            │  │
-│  │  (orchestrator)    (type-hint wiring)      (thread-safe queues)│  │
+│  │  Application       PipelineRegistry       QueueBus             │  │
+│  │  (orchestrator)    (type-hint wiring)     (thread-safe queues) │  │
 │  └──┬────────────────────┬────────────────────────┬───────────────┘  │
 │     │                    │                        │                  │
 │  ┌──▼────────────────────▼────────────────────────▼───────────────┐  │
-│  │                    CONNECTOR LAYER (connectors/)                │  │
+│  │                    SOURCE / SINK LAYER                          │  │
 │  │  ┌─────────────────┐        ┌──────────────────┐              │  │
-│  │  │ InputConnector   │ Thread  │ OutputConnector   │ Thread      │  │
+│  │  │ Source[T]        │ Thread  │ Sink[T]           │ Thread      │  │
 │  │  │ (Redis XREAD)    │───────► │ (Redis XADD)      │              │  │
 │  │  └─────────────────┘ Queue  └──────────────────┘              │  │
 │  │  Protocol-based: Kafka can be added later.                     │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 │     │                                       ▲                        │
-│     │ Queue[Envelope[T]]                    │ Queue[dict]            │
+│     │ Queue[Envelope[T]]                    │ Queue[T]               │
 │     ▼                                       │                        │
 │  ┌────────────────────────────────────────────────────────────────┐  │
-│  │                    PROCESSING LAYER (user components)           │  │
-│  │  ComponentProtocol[TIn, TOut] wired by type annotations        │  │
+│  │                    PROCESSING LAYER (user processors)           │  │
+│  │  Processor[TIn, TOut].__call__(event) wired by type annotations│  │
+│  │  Envelope hidden: runtime unwraps payload, wraps result        │  │
+│  │  Metadata access via current_context() contextvars             │  │
 │  └──────────────────────────┬─────────────────────────────────────┘  │
-│                              │ InferenceRequest                      │
+│                              │ InferenceInput (type-based intercept) │
 │                              ▼ mp.request_queue                      │
 │  ┌────────────────────────────────────────────────────────────────┐  │
 │  │                    METRICS LAYER (metrics/)                     │  │
@@ -203,20 +202,19 @@ triton_metrics_aggregator   — triton_shared_models, triton_redis_connector,
 │                                                                      │
 │  Each worker has:                                                    │
 │  - Own gRPC InferenceServerClient (independent connection)           │
-│  - async_infer + futures (concurrency within process)                │
+│  - async_infer with callback-based retry (threading.Timer)           │
 │  - ModelVersionTracker (per-worker, polls independently)             │
-│  - RetryPolicy (3x exponential backoff)                              │
 │  - Semaphore limiting concurrent in-flight requests                  │
 │                                                                      │
 │  Results → mp.result_queue → Main process                            │
 └──────────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────────┐
-│  PREPROCESSING PROCESS POOL (ProcessPoolExecutor, separate from      │
-│  inference workers)                                                   │
+│  DECODER POOL (ThreadPoolExecutor or ProcessPoolExecutor, via config)│
 │                                                                      │
-│  CPU-bound image decoding: turbojpeg (JPEG), cv2 (AVIF/PNG)         │
-│  Results (numpy arrays) returned to main process via IPC             │
+│  Single decoder type per config (opencv or turbojpeg)               │
+│  Both release GIL during decode — ThreadPool is default             │
+│  Results (numpy arrays) returned to main process                     │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -230,49 +228,53 @@ triton_metrics_aggregator   — triton_shared_models, triton_redis_connector,
 Step 1: Redis Stream "camera_images"
         XREADGROUP GROUP app_group consumer_1 COUNT 10 BLOCK 1000
 
-Step 2: RedisStreamInputConnector (Thread-1)
+Step 2: RedisStreamSource (Thread-1)
         - Decodes Redis fields into pydantic model (CameraImageEvent)
         - Wraps in Envelope[CameraImageEvent] with receive timestamp
-        - Puts onto Queue[Envelope[CameraImageEvent]]
+        - Calls emit(event) to push onto queue
         - Does NOT XACK yet (tracked in pending set)
 
-Step 3: QueueBus delivers to registered Component (main thread)
-        - Registry resolved: CameraImageEvent → UserPreprocessComponent
-        - component.process(envelope) called
+Step 3: Runtime unwraps Envelope, calls Processor.__call__(event)
+        - Registry resolved: CameraImageEvent → UserPreprocessor
+        - current_context() provides metadata if needed
 
-Step 4: UserPreprocessComponent (user code, implements ComponentProtocol)
+Step 4: UserPreprocessor (user code, implements Processor[TIn, TOut])
         - Extracts image bytes from event
-        - Submits to ParallelDecoderPool:
-          JPEG → TurboJPEGDecoder | AVIF → CV2AvifDecoder
-        - Creates InferenceRequest(raw_image=ndarray, model_name="yolo26s")
+        - Submits to DecoderPool (single decoder type per config)
+        - Returns InferenceInput(raw_image=ndarray, model_name="yolo26s")
 
-Step 5: Main process puts InferenceRequest onto mp.request_queue
-        - Non-blocking put, returns immediately
+Step 5: Framework intercepts InferenceInput return type
+        - Pipeline is split at the InferenceInput boundary
+        - Puts InferenceInput onto mp.request_queue (non-blocking)
 
 Step 6: Inference worker process (one of N) picks up request
         - ModelVersionTracker resolves latest ready version (per-worker)
         - Builds tritonclient InferInput from ndarray
-        - Calls async_infer() with callback (concurrent within worker)
-        - RetryPolicy: 3 attempts, exponential backoff (0.1s, 0.4s, 1.6s)
-        - On success: puts InferenceResult onto mp.result_queue
-        - On all retries exhausted: puts InferenceError onto mp.result_queue
+        - Calls async_infer() with callback
+        - On failure: callback schedules retry via threading.Timer
+          with exponential delay, re-calls async_infer with new callback
+        - Semaphore released only on final success or final failure
+        - On success: puts InferenceOutput onto mp.result_queue
 
 Step 7: Main process drains mp.result_queue
-        - Routes InferenceResult to user ResultHandler or output queue
-        - Routes InferenceError to error handler
+        - Framework wraps InferenceOutput in Envelope
+        - Feeds to next Processor in pipeline (post-inference stage)
 
-Step 8: RedisStreamOutputConnector (Thread-2)
+Step 8: Post-inference Processor returns result
+        - If output type matches a Sink, framework routes to Sink
+
+Step 9: RedisStreamSink (Thread-2)
         - Gets result from output queue
         - Serializes to Redis fields
         - XADD to output stream "detection_results"
 
-Step 9: Acknowledgment
-        - After successful output write, XACK on input stream
-        - Envelope.track_state("acknowledged") records final timestamp
-        - Transit time metric emitted
+Step 10: Acknowledgment
+         - After successful output write, XACK on input stream
+         - Envelope.track_state("acknowledged") records final timestamp
+         - Transit time metric emitted
 ```
 
-### 4.2 Newest-First Recovery (after restart)
+### 4.2 Newest-First Recovery with Interleave Ratio + TTL
 
 ```
 1. Startup: XGROUP CREATE stream group $ MKSTREAM (no-op if exists)
@@ -281,14 +283,17 @@ Step 9: Acknowledgment
    XREADGROUP GROUP group consumer STREAMS stream 0
    Sort by message ID DESCENDING (newest first)
    Feed into pending_queue (PriorityQueue, newest = highest priority)
+   Drop any pending message older than pending_ttl_s (default 60s):
+     XACK without processing, log as dropped
 
 3. Start live reading: XREADGROUP ... STREAMS stream >
    Feed into live_queue (regular Queue)
 
-4. Main thread reader:
-   - Always try live_queue first (non-blocking get)
-   - If empty, try pending_queue (non-blocking get, newest first)
-   - If both empty, block on live_queue with short timeout
+4. Combined reader with interleave ratio (default 4:1):
+   - Process 4 live messages, then 1 pending message
+   - If live_queue empty, process pending
+   - If pending_queue empty, process live only
+   - Both configurable via recovery_interleave_ratio and pending_ttl_s
    → Live data is never starved by recovery backlog
 ```
 
@@ -301,16 +306,15 @@ Step 9: Acknowledgment
 ```
 conf/
   config.yaml                     # Main config with defaults list
-  streams/
-    input/
-      camera_images.yaml          # Input stream definition
-    output/
-      detection_results.yaml      # Output stream definition
-      metrics.yaml                # Metrics output stream
+  sources/
+    camera_images.yaml            # Source definition
+  sinks/
+    detection_results.yaml        # Sink definition
+    metrics.yaml                  # Metrics output sink
   inference/
     default.yaml                  # Triton connection + retry config
   preprocessing/
-    default.yaml                  # Decoder pool config
+    default.yaml                  # Decoder type + pool config
   metrics/
     default.yaml                  # Collection intervals
 ```
@@ -325,7 +329,7 @@ class RedisConnectionConfig(BaseModel):
     decode_responses: bool = False
 
 
-class StreamInputConfig(BaseModel):
+class SourceConfig(BaseModel):
     stream_name: str
     consumer_group: str
     consumer_name: str = ""           # auto-generated if empty
@@ -333,18 +337,30 @@ class StreamInputConfig(BaseModel):
     batch_size: int = 10
     block_ms: int = 1000
     newest_first_on_recovery: bool = True
+    recovery_interleave_ratio: int = 4  # N live : 1 pending
+    pending_ttl_s: float = 60.0         # drop pending older than this
 
 
-class StreamOutputConfig(BaseModel):
+class SinkConfig(BaseModel):
     stream_name: str
     maxlen: int | None = 10_000       # XADD MAXLEN ~ value
     approximate_maxlen: bool = True
 
 
+class DecoderType(str, Enum):
+    OPENCV = "opencv"
+    TURBOJPEG = "turbojpeg"
+
+
+class DecoderPoolType(str, Enum):
+    THREAD = "thread"
+    PROCESS = "process"
+
+
 class InferenceConfig(BaseModel):
     grpc_url: str = "localhost:8001"  # env: TRITON_GRPC_URL
-    num_inference_workers: int = 2    # number of worker processes
-    max_concurrent_per_worker: int = 8  # async_infer concurrency per process
+    num_inference_workers: int = 2
+    max_concurrent_per_worker: int = 8
     max_retry_attempts: int = 3
     retry_base_delay_s: float = 0.1
     retry_backoff_multiplier: float = 4.0
@@ -352,8 +368,14 @@ class InferenceConfig(BaseModel):
 
 
 class PreprocessingConfig(BaseModel):
-    decoder_pool_workers: int = 4     # number of decoder processes
+    decoder: DecoderType = DecoderType.OPENCV
+    decoder_pool_type: DecoderPoolType = DecoderPoolType.THREAD
+    decoder_pool_workers: int = 4
     default_target_size: tuple[int, int] = (640, 640)
+
+
+class QueueConfig(BaseModel):
+    maxsize: int = 1000               # applied to ALL queues
 
 
 class MetricsConfig(BaseModel):
@@ -366,12 +388,13 @@ class MetricsConfig(BaseModel):
 class AppConfig(BaseModel):
     app_name: str = "triton-connector"  # env: APP_NAME
     redis: RedisConnectionConfig = RedisConnectionConfig()
-    input_streams: list[StreamInputConfig] = []
-    output_streams: list[StreamOutputConfig] = []
+    sources: list[SourceConfig] = []
+    sinks: list[SinkConfig] = []
+    processors: list[str] = []          # fully-qualified class paths
     inference: InferenceConfig = InferenceConfig()
     preprocessing: PreprocessingConfig = PreprocessingConfig()
+    queues: QueueConfig = QueueConfig()
     metrics: MetricsConfig = MetricsConfig()
-    components: list[str] = []          # fully-qualified class paths
 ```
 
 ### 5.3 Example Main Config (`conf/config.yaml`)
@@ -389,23 +412,25 @@ redis:
   host: ${oc.env:REDIS_HOST,localhost}
   port: ${oc.env:REDIS_PORT,6379}
 
-input_streams:
+sources:
   - stream_name: camera_images
     consumer_group: inference_group
     event_model: myapp.models.CameraImageEvent
     batch_size: 10
     block_ms: 1000
     newest_first_on_recovery: true
+    recovery_interleave_ratio: 4
+    pending_ttl_s: 60.0
 
-output_streams:
+sinks:
   - stream_name: detection_results
     maxlen: 10000
   - stream_name: metrics
     maxlen: 50000
 
-components:
-  - myapp.components.CameraToInference
-  - myapp.components.DetectionResultHandler
+processors:
+  - myapp.processors.CameraToInference
+  - myapp.processors.DetectionResultHandler
 ```
 
 ---
@@ -415,54 +440,54 @@ components:
 All extension points use `typing.Protocol` with `@runtime_checkable`. Users implement
 these interfaces without inheriting from framework classes (structural subtyping).
 
-### 6.1 Connector Protocols (`connectors/base.py`)
+### 6.1 Core Pipeline Protocols (`protocols.py`)
+
+Three primitives define the user-facing pipeline:
 
 ```python
 @runtime_checkable
-class InputConnectorProtocol(Protocol):
-    """Protocol for input connectors (Redis Streams, future Kafka, etc.)."""
+class Source(Protocol[TOut]):
+    """Produces events. Runs in own thread, pushes events via emit().
 
-    def start(self) -> None: ...
-    def stop(self) -> None: ...
-    @property
-    def output_queue(self) -> queue.Queue[Envelope[Any]]: ...
-    @property
-    def error_queue(self) -> queue.Queue[ConnectorError]: ...
-
-
-@runtime_checkable
-class OutputConnectorProtocol(Protocol):
-    """Protocol for output connectors."""
-
-    def start(self) -> None: ...
-    def stop(self) -> None: ...
-    @property
-    def input_queue(self) -> queue.Queue[dict[str, str | bytes]]: ...
-```
-
-### 6.2 Component Protocol (`protocols.py`)
-
-```python
-@runtime_checkable
-class ComponentProtocol[TInput, TOutput](Protocol):
-    """Base protocol for processing components.
-
-    Framework inspects TInput/TOutput type parameters to wire
-    components together automatically via type annotation parsing.
+    Framework creates the stop Event, assigns it before starting the
+    source thread, and calls source.stop.set() at shutdown.
     """
 
-    def process(self, envelope: Envelope[TInput]) -> TOutput: ...
+    stop: threading.Event
+
+    def __call__(self, emit: Callable[[TOut], None]) -> None: ...
+
+
+@runtime_checkable
+class Processor(Protocol[TIn, TOut]):
+    """Transforms events. Return None to filter (skip this event).
+
+    Runtime unwraps Envelope.payload before calling __call__,
+    wraps result in new Envelope after return.
+    Users access metadata via current_context() contextvars.
+    """
+
+    def __call__(self, event: TIn) -> TOut | None: ...
+
+
+@runtime_checkable
+class Sink(Protocol[TIn]):
+    """Consumes events (terminal pipeline node)."""
+
+    def __call__(self, event: TIn) -> None: ...
 ```
 
-### 6.3 Image Protocols (`preprocessing/protocols.py`)
+Envelope is hidden from users. The runtime:
+1. Unwraps `envelope.payload` before calling `Processor.__call__`
+2. Wraps the return value in a new Envelope inheriting metadata
+3. Sets `current_context()` via `contextvars` for opt-in metadata access
+
+### 6.2 Image Protocols (`preprocessing/protocols.py`)
 
 ```python
 @runtime_checkable
 class ImageDecoderProtocol(Protocol):
     """Protocol for image decoders. Must be thread-safe."""
-
-    @property
-    def supported_content_types(self) -> frozenset[str]: ...
 
     def decode(self, raw_bytes: bytes) -> npt.NDArray[np.uint8]: ...
 
@@ -471,45 +496,28 @@ class ImageDecoderProtocol(Protocol):
 class ImagePreprocessorProtocol(Protocol):
     """Protocol for image preprocessing (resize, normalize, pad)."""
 
-    def to_raw(self, image: npt.NDArray[np.uint8]) -> npt.NDArray[np.float32]: ...
+    def to_raw(
+        self, image: npt.NDArray[np.uint8],
+    ) -> npt.NDArray[np.float32]: ...
 
     def to_bytes(self, tensor: npt.NDArray[np.float32]) -> bytes: ...
 ```
 
-### 6.4 Inference Protocols (`protocols.py`)
+### 6.3 Observer Protocol (`protocols.py`)
 
 ```python
 @runtime_checkable
-class InferenceRequestBuilderProtocol[TInput](Protocol):
-    """Builds InferenceRequest from input events — primary extension point."""
-
-    def build_request(self, envelope: Envelope[TInput]) -> InferenceRequest: ...
-
-
-@runtime_checkable
-class ResultHandlerProtocol[TResult](Protocol):
-    """Handles inference results before output."""
-
-    def handle_result(
-        self, result: InferenceResult, original_envelope: Envelope[TResult],
-    ) -> dict[str, str | bytes]: ...
-```
-
-### 6.5 Observer Protocol (`protocols.py`)
-
-```python
-@runtime_checkable
-class ObserverProtocol[TEvent](Protocol):
-    """Observes events without producing output (metrics, logging, side-effects)."""
+class ObserverProtocol(Protocol[TEvent]):
+    """Observes events without producing output (metrics, logging)."""
 
     def observe(self, envelope: Envelope[TEvent]) -> None: ...
 ```
 
-### 6.6 Aggregation Rule Protocol (`protocols.py`)
+### 6.4 Aggregation Rule Protocol (`protocols.py`)
 
 ```python
 @runtime_checkable
-class AggregationRuleProtocol[TEvent](Protocol):
+class AggregationRuleProtocol(Protocol[TEvent]):
     """Extracts grouping key from events for time-windowed aggregation."""
 
     @property
@@ -525,50 +533,46 @@ class AggregationRuleProtocol[TEvent](Protocol):
 
 ---
 
-## 7. Connector Layer
+## 7. Source & Sink Layer
 
-### 7.1 RedisStreamInputConnector
+### 7.1 RedisStreamSource
 
-Runs in a dedicated thread. Performs blocking `XREADGROUP` calls.
+Implements `Source[T]`. Runs in a dedicated thread. Performs blocking
+`XREADGROUP` calls and pushes events via `emit()`.
 
 ```python
-class RedisStreamInputConnector:
+class RedisStreamSource:
     """Reads from a Redis Stream using consumer group semantics.
 
-    Runs in a dedicated thread. Decodes fields to pydantic models.
-    Puts Envelope[T] instances onto the output queue.
-    Errors go to the error queue — connector never crashes.
+    Runs in a dedicated thread. The framework assigns stop: Event
+    before starting the thread. Calls emit(event) for each decoded
+    message. Errors go to the error queue — source never crashes.
     """
+
+    stop: threading.Event
 
     def __init__(
         self,
-        config: StreamInputConfig,
+        config: SourceConfig,
         redis_config: RedisConnectionConfig,
         event_model_class: type[BaseModel],
     ) -> None: ...
 
-    def start(self) -> None:
-        """Start the connector thread."""
-
-    def stop(self) -> None:
-        """Signal the thread to stop and join."""
-
-    def _run_loop(self) -> None:
+    def __call__(self, emit: Callable[[Any], None]) -> None:
         """Main loop running in dedicated thread.
 
-        while not stop_event:
+        while not self.stop.is_set():
             try:
                 messages = redis.xreadgroup(...)
                 for message_id, fields in messages:
                     try:
                         event = event_model_class.model_validate(fields)
-                        envelope = Envelope(payload=event, ...)
-                        output_queue.put(envelope)
+                        emit(event)
                     except ValidationError:
                         error_queue.put(ConnectorError(...))
             except redis.ConnectionError:
                 error_queue.put(ConnectorError(...))
-                stop_event.wait(timeout=1.0)  # backoff
+                self.stop.wait(timeout=1.0)  # backoff
             except redis.TimeoutError:
                 pass  # normal for BLOCK reads
         """
@@ -583,8 +587,11 @@ class ConsumerGroupManager:
     def ensure_group_exists(self) -> None:
         """XGROUP CREATE with $ and MKSTREAM. Catches BUSYGROUP."""
 
-    def read_pending_newest_first(self) -> list[tuple[str, dict[str, str]]]:
-        """XREADGROUP with id=0, sort by message ID descending."""
+    def read_pending_newest_first(
+        self, ttl_s: float = 60.0,
+    ) -> list[tuple[str, dict[str, str]]]:
+        """XREADGROUP with id=0, sort by message ID descending.
+        Drop messages older than ttl_s: XACK without processing."""
 
     def read_new(self) -> list[tuple[str, dict[str, str]]]:
         """XREADGROUP with id='>' (new messages, blocking)."""
@@ -593,33 +600,60 @@ class ConsumerGroupManager:
         """XACK a processed message."""
 ```
 
-### 7.3 RedisStreamOutputConnector
+### 7.3 RedisStreamSink
 
-Runs in a dedicated thread. Reads from an input queue and writes via `XADD`.
+Implements `Sink[T]`. Runs in a dedicated thread. Reads from a queue and
+writes via `XADD`.
 
 ```python
-class RedisStreamOutputConnector:
+class RedisStreamSink:
     """Writes events to a Redis Stream.
 
-    Runs in a dedicated thread. Reads dict[str, str | bytes] from queue.
-    On successful XADD, triggers acknowledgment callback.
+    Runs in a dedicated thread. On successful XADD, triggers
+    acknowledgment callback.
     """
 
-    def _run_loop(self) -> None:
-        """Main loop: get from queue, XADD to stream, trigger ack callback."""
+    stop: threading.Event
+
+    def __call__(self, event: dict[str, str | bytes]) -> None:
+        """XADD to stream, trigger ack callback."""
 ```
 
 ---
 
 ## 8. Inference Layer
 
-### 8.1 Multiprocessing Worker Pool
+### 8.1 InferenceInput as Framework Intercept Marker
+
+`InferenceInput` is not a real Processor — it is a type-based intercept point.
+When a Processor returns `InferenceInput`, the framework intercepts it, routes
+to the worker pool via `mp.request_queue`. `InferenceOutput` comes back from
+`mp.result_queue`, and the framework feeds it to the next Processor in the
+pipeline. The pipeline is split at the `InferenceInput` boundary.
+
+```python
+class InferenceInput(BaseModel, arbitrary_types_allowed=True):
+    model_name: str
+    model_version: str = ""           # empty = latest
+    raw_image: npt.NDArray[np.float32]
+    input_name: str = "images"
+    output_names: tuple[str, ...] = ("output0",)
+
+
+class InferenceOutput(BaseModel, arbitrary_types_allowed=True):
+    model_name: str
+    model_version: str
+    outputs: dict[str, npt.NDArray[np.float32]]
+    inference_time_ms: float
+```
+
+### 8.2 Multiprocessing Worker Pool
 
 Triton inference runs in a **pool of N worker processes**. Each worker process
-creates its own `tritonclient.grpc.InferenceServerClient` and runs `async_infer`
-with futures internally for concurrency within that process. The main process
-distributes `InferenceRequest` objects via `multiprocessing.Queue` and collects
-results via a separate result queue.
+creates its own `tritonclient.grpc.InferenceServerClient` and uses
+`client.async_infer()` with callback-based retry. The main process distributes
+`InferenceInput` objects via `multiprocessing.Queue` and collects results via
+a separate result queue.
 
 This design avoids Python GIL contention for gRPC serialization/deserialization,
 allows true parallel utilization of Triton's gRPC endpoint, and isolates inference
@@ -630,13 +664,13 @@ Main Process                        Worker Processes
 ┌──────────────────┐               ┌─────────────────────────┐
 │                  │  request_queue │  Worker-0               │
 │  Application     │──────────────►│  gRPC client (own conn) │
-│  (orchestrator)  │               │  async_infer + futures   │
-│                  │  request_queue │  RetryPolicy (3x exp)   │
+│  (orchestrator)  │               │  async_infer + callback  │
+│                  │  request_queue │  retry via Timer         │
 │                  │──────────────►├─────────────────────────┤
 │                  │               │  Worker-1               │
 │                  │◄──────────────│  gRPC client (own conn) │
-│                  │  result_queue  │  async_infer + futures   │
-│                  │◄──────────────│  RetryPolicy (3x exp)   │
+│                  │  result_queue  │  async_infer + callback  │
+│                  │◄──────────────│  retry via Timer         │
 │                  │  result_queue  ├─────────────────────────┤
 │                  │               │  Worker-N               │
 │                  │◄──────────────│  ...                     │
@@ -649,32 +683,56 @@ class InferenceWorkerPool:
 
     Each worker has its own Triton gRPC client for true parallelism.
     Requests/results flow through multiprocessing.Queue.
+    All queues have configurable maxsize.
     """
 
-    def __init__(self, config: InferenceConfig) -> None:
-        self._request_queue: multiprocessing.Queue[InferenceRequest] = multiprocessing.Queue()
-        self._result_queue: multiprocessing.Queue[InferenceResult | InferenceError] = multiprocessing.Queue()
-        self._workers: list[multiprocessing.Process] = []
+    def __init__(
+        self, config: InferenceConfig, queue_config: QueueConfig,
+    ) -> None:
+        self._request_queue: mp.Queue[InferenceInput] = mp.Queue(
+            maxsize=queue_config.maxsize,
+        )
+        self._result_queue: mp.Queue[InferenceOutput | InferenceError] = (
+            mp.Queue(maxsize=queue_config.maxsize)
+        )
+        self._workers: list[mp.Process] = []
         self._config = config
 
     def start(self) -> None:
         """Spawn N worker processes."""
         for i in range(self._config.num_inference_workers):
-            worker = multiprocessing.Process(
+            worker = mp.Process(
                 target=_inference_worker_main,
-                args=(i, self._config, self._request_queue, self._result_queue),
+                args=(
+                    i,
+                    self._config,
+                    self._request_queue,
+                    self._result_queue,
+                ),
                 daemon=True,
             )
             worker.start()
             self._workers.append(worker)
 
-    def submit(self, request: InferenceRequest) -> None:
-        """Put request onto the shared request queue (non-blocking from main process)."""
-        self._request_queue.put(request)
+    def submit(self, request: InferenceInput) -> bool:
+        """Put request onto the shared request queue.
+        Returns False and logs + emits queue_overflow metric if full.
+        """
+        try:
+            self._request_queue.put_nowait(request)
+        except queue.Full:
+            logger.error(
+                "request_queue full, dropping InferenceInput for {}",
+                request.model_name,
+            )
+            return False
+        return True
 
-    def get_results(self, timeout: float = 0.1) -> list[InferenceResult | InferenceError]:
+    def get_results(
+        self, timeout: float = 0.1,
+    ) -> list[InferenceOutput | InferenceError]:
         """Drain available results from result queue (non-blocking)."""
-        results: list[InferenceResult | InferenceError] = []
+        results: list[InferenceOutput | InferenceError] = []
         while True:
             try:
                 results.append(self._result_queue.get_nowait())
@@ -688,27 +746,83 @@ class InferenceWorkerPool:
             self._request_queue.put(None)  # sentinel
         for worker in self._workers:
             worker.join(timeout=10)
+```
 
+### 8.3 Inference Worker with Async Retry via Callback
 
+Each worker uses `client.async_infer()` (non-blocking). Retry happens inside
+the callback via `threading.Timer` — on failure, schedule retry with exponential
+delay, re-call `async_infer` with a new callback. The semaphore is released only
+on final success or final failure.
+
+```python
 def _inference_worker_main(
     worker_id: int,
     config: InferenceConfig,
-    request_queue: multiprocessing.Queue[InferenceRequest | None],
-    result_queue: multiprocessing.Queue[InferenceResult | InferenceError],
+    request_queue: mp.Queue[InferenceInput | None],
+    result_queue: mp.Queue[InferenceOutput | InferenceError],
 ) -> None:
     """Entry point for each inference worker process.
 
     Creates its own gRPC client. Reads requests from queue.
-    Uses async_infer with callback for concurrency within the process.
-    Retry policy applied per-request.
+    Uses async_infer with callback-based retry for concurrency.
     """
-    client = tritonclient.grpc.InferenceServerClient(url=config.grpc_url)
-    retry_policy = RetryPolicy(
-        max_attempts=config.max_retry_attempts,
-        base_delay=config.retry_base_delay_s,
-        multiplier=config.retry_backoff_multiplier,
+    client = tritonclient.grpc.InferenceServerClient(
+        url=config.grpc_url,
     )
     semaphore = threading.Semaphore(config.max_concurrent_per_worker)
+
+    def _make_callback(
+        req: InferenceInput,
+        attempt: int,
+        start_time_ns: int,
+    ) -> Callable:
+        def _on_complete(result, error):
+            if error is None:
+                elapsed_ms = (
+                    (time.monotonic_ns() - start_time_ns) / 1_000_000
+                )
+                result_queue.put(InferenceOutput(
+                    model_name=req.model_name,
+                    model_version=req.model_version,
+                    outputs=_extract_outputs(result, req.output_names),
+                    inference_time_ms=elapsed_ms,
+                ))
+                semaphore.release()
+                return
+
+            if attempt >= config.max_retry_attempts:
+                result_queue.put(InferenceError(
+                    model_name=req.model_name,
+                    model_version=req.model_version,
+                    error_type=type(error).__name__,
+                    error_message=str(error),
+                    retry_count=attempt,
+                    timestamp_ms=int(time.time() * 1000),
+                ))
+                semaphore.release()
+                return
+
+            delay = (
+                config.retry_base_delay_s
+                * config.retry_backoff_multiplier ** attempt
+            )
+
+            def _retry():
+                client.async_infer(
+                    model_name=req.model_name,
+                    model_version=req.model_version,
+                    inputs=_build_inputs(req),
+                    callback=_make_callback(
+                        req, attempt + 1, start_time_ns,
+                    ),
+                    outputs=_build_requested_outputs(req),
+                )
+
+            timer = threading.Timer(delay, _retry)
+            timer.start()
+
+        return _on_complete
 
     while True:
         request = request_queue.get()
@@ -716,68 +830,14 @@ def _inference_worker_main(
             break
         semaphore.acquire()
 
-        def _on_complete(result, error, req=request):
-            semaphore.release()
-            if error is not None:
-                result_queue.put(InferenceError(...))
-            else:
-                result_queue.put(InferenceResult(...))
-
-        retry_policy.execute_with_callback(
-            client.async_infer,
+        start_ns = time.monotonic_ns()
+        client.async_infer(
             model_name=request.model_name,
             model_version=request.model_version,
             inputs=_build_inputs(request),
-            callback=_on_complete,
+            callback=_make_callback(request, attempt=1, start_time_ns=start_ns),
+            outputs=_build_requested_outputs(request),
         )
-```
-
-### 8.2 InferenceRequest / InferenceResult (`inference/request.py`)
-
-```python
-class InferenceRequest(BaseModel, arbitrary_types_allowed=True):
-    model_name: str
-    model_version: str = ""           # empty = latest
-    raw_image: npt.NDArray[np.float32]
-    input_name: str = "images"
-    output_names: tuple[str, ...] = ("output0",)
-
-
-class InferenceResult(BaseModel, arbitrary_types_allowed=True):
-    model_name: str
-    model_version: str
-    outputs: dict[str, npt.NDArray[np.float32]]
-    inference_time_ms: float
-```
-
-### 8.3 Retry Policy (`inference/retry.py`)
-
-```python
-class RetryPolicy:
-    """Exponential backoff: 3 attempts with delays 0.1s, 0.4s, 1.6s.
-
-    On final failure, returns the error rather than retrying.
-    Uses time.sleep() — runs inside worker processes.
-    """
-
-    def __init__(
-        self,
-        max_attempts: int = 3,
-        base_delay: float = 0.1,
-        multiplier: float = 4.0,
-    ) -> None: ...
-
-    def execute_with_callback(
-        self,
-        func: Callable[..., None],
-        *args: Any,
-        on_failure: Callable[[Exception], None],
-    ) -> None:
-        """Execute func with retry inside worker process.
-
-        Calls on_failure after all attempts exhausted.
-        Delays between retries: 0.1s, 0.4s, 1.6s (base * multiplier^attempt).
-        """
 ```
 
 ### 8.4 Rolling Release — ModelVersionTracker (`inference/model_registry.py`)
@@ -806,7 +866,7 @@ class ModelVersionTracker:
         """
 
     def track_inflight(self, model_name: str, version: str) -> None:
-        """Increment in-flight counter (thread-safe via Lock within worker)."""
+        """Increment in-flight counter (thread-safe via Lock)."""
 
     def release_inflight(self, model_name: str, version: str) -> None:
         """Decrement in-flight counter."""
@@ -817,7 +877,7 @@ class ModelVersionTracker:
         2. For each model, check is_model_ready(model, new_version)
         3. If ready, update current version mapping
         4. Old version usable until in-flight count drops to zero
-        5. Emit metric: model_version_switch (via result_queue to main process)
+        5. Emit metric: model_version_switch (via result_queue)
         """
 ```
 
@@ -852,126 +912,148 @@ def tracked_inference(
 
 ## 9. Image Preprocessing
 
-### 9.1 Decoder Implementations
+### 9.1 Single Decoder via Config
 
-**TurboJPEGDecoder** — uses PyTurboJPEG for high-throughput JPEG decoding.
-Thread-safe: each call uses a thread-local TurboJPEG instance.
+User picks one decoder via config (`decoder: opencv | turbojpeg`). There is no
+dispatcher, no magic bytes detection, no multi-decoder routing.
+
+- **OpenCV** (`opencv`): Handles JPEG, PNG, AVIF, BMP natively via
+  `cv2.imdecode()`. Default choice for format flexibility.
+- **TurboJPEG** (`turbojpeg`): Faster for JPEG-only workloads via PyTurboJPEG.
+  Thread-safe with thread-local instances.
 
 ```python
-class TurboJPEGDecoder:
-    supported_content_types = frozenset({"image/jpeg", "image/jpg"})
+class OpenCVDecoder:
+    def decode(self, raw_bytes: bytes) -> npt.NDArray[np.uint8]:
+        buf = np.frombuffer(raw_bytes, dtype=np.uint8)
+        return cv2.imdecode(buf, cv2.IMREAD_COLOR)
 
+
+class TurboJPEGDecoder:
     def decode(self, raw_bytes: bytes) -> npt.NDArray[np.uint8]:
         jpeg = self._get_thread_local()
         return jpeg.decode(raw_bytes)  # returns BGR numpy array
 ```
 
-**CV2AvifDecoder** — uses opencv-python-headless for AVIF and general format decoding.
+### 9.2 Configurable Decoder Pool
+
+The pool type is configurable: `decoder_pool_type: thread | process` in config,
+defaulting to `thread` since both OpenCV and TurboJPEG release GIL during decode.
+Uses `ThreadPoolExecutor` or `ProcessPoolExecutor` accordingly.
 
 ```python
-class CV2AvifDecoder:
-    supported_content_types = frozenset({"image/avif", "image/png", "image/bmp"})
+class DecoderPool:
+    """Configurable pool for image decoding.
 
-    def decode(self, raw_bytes: bytes) -> npt.NDArray[np.uint8]:
-        buf = np.frombuffer(raw_bytes, dtype=np.uint8)
-        return cv2.imdecode(buf, cv2.IMREAD_COLOR)
-```
+    Pool type (thread/process) and decoder type (opencv/turbojpeg)
+    determined by config. Decoded numpy arrays returned via Future.
 
-### 9.2 DecoderDispatcher
-
-Routes images to the correct decoder based on content type or magic bytes.
-
-```python
-class DecoderDispatcher:
-    MAGIC_BYTES: ClassVar[dict[bytes, str]] = {
-        b"\xff\xd8\xff": "image/jpeg",
-        b"\x00\x00\x00": "image/avif",  # ftyp box detection
-        b"\x89PNG": "image/png",
-    }
-
-    def __init__(self, decoders: Sequence[ImageDecoderProtocol]) -> None:
-        """Build registry: content_type → decoder."""
-
-    def detect_content_type(self, raw_bytes: bytes) -> str: ...
-
-    def dispatch(self, raw_bytes: bytes, content_type: str | None = None) -> ImageDecoderProtocol: ...
-```
-
-### 9.3 ParallelDecoderPool
-
-Wraps `concurrent.futures.ProcessPoolExecutor` for parallel image decoding.
-Separate process pool from inference workers — preprocessing is CPU-bound
-(turbojpeg C code, cv2 decode) and benefits from true multiprocessing
-without GIL contention.
-
-```python
-class ParallelDecoderPool:
-    """Process pool for image decoding.
-
-    Each worker process gets its own decoder instances (turbojpeg, cv2).
-    Decoded numpy arrays are returned to the main process via IPC.
-
-    Note: raw_bytes (input) and ndarray (output) are serialized across
-    process boundary via pickle. For typical camera images (100KB-2MB in,
-    ~3.7MB out at 640x640x3 uint8) this overhead is acceptable compared
-    to decode time.
+    Note: for ProcessPoolExecutor, raw_bytes (input) and ndarray (output)
+    are serialized across process boundary via pickle. For typical camera
+    images (100KB-2MB in, ~3.7MB out at 640x640x3 uint8) this overhead
+    is acceptable compared to decode time.
     """
 
-    def __init__(self, config: PreprocessingConfig, dispatcher: DecoderDispatcher) -> None:
-        self._executor = ProcessPoolExecutor(
-            max_workers=config.decoder_pool_workers,
-            initializer=_init_decoder_worker,
-            initargs=(dispatcher,),
+    def __init__(self, config: PreprocessingConfig) -> None:
+        executor_cls = (
+            ThreadPoolExecutor
+            if config.decoder_pool_type == DecoderPoolType.THREAD
+            else ProcessPoolExecutor
         )
-        self._dispatcher = dispatcher
+        self._executor = executor_cls(
+            max_workers=config.decoder_pool_workers,
+        )
 
-    def decode(self, raw_bytes: bytes, content_type: str | None = None) -> Future[npt.NDArray[np.uint8]]:
-        """Submit decode to process pool, return Future."""
-        content_type = content_type or self._dispatcher.detect_content_type(raw_bytes)
-        return self._executor.submit(_decode_in_worker, raw_bytes, content_type)
+    def decode(
+        self, raw_bytes: bytes,
+    ) -> Future[npt.NDArray[np.uint8]]:
+        """Submit decode to pool, return Future."""
+        return self._executor.submit(_decode_in_worker, raw_bytes)
 
     def decode_batch(
         self,
         items: Sequence[bytes],
-        content_types: Sequence[str | None] | None = None,
     ) -> list[Future[npt.NDArray[np.uint8]]]:
         """Submit multiple decodes, return list of Futures."""
-
-
-def _init_decoder_worker(dispatcher: DecoderDispatcher) -> None:
-    """Initialize decoder instances in each worker process (called once per worker)."""
-    global _worker_dispatcher
-    _worker_dispatcher = dispatcher
-
-
-def _decode_in_worker(raw_bytes: bytes, content_type: str) -> npt.NDArray[np.uint8]:
-    """Top-level function for ProcessPoolExecutor (must be picklable)."""
-    decoder = _worker_dispatcher.dispatch(raw_bytes, content_type)
-    return decoder.decode(raw_bytes)
 ```
 
-### 9.4 DALI Ensemble Alternative
+### 9.3 DALI Ensemble Alternative
 
 For YOLO models with DALI preprocessing, decoding happens server-side in Triton.
 The `ImagePreprocessorProtocol.to_bytes()` passes raw JPEG bytes through, and
-Triton's DALI backend handles decode + preprocess. The `InferenceRequest.raw_image`
+Triton's DALI backend handles decode + preprocess. The `InferenceInput.raw_image`
 field carries raw bytes as a 1-D uint8 array.
 
 ---
 
-## 10. Metrics
+## 10. Model Repository
 
-### 10.1 MetricEvent Model
+### 10.1 NMS as Separate Triton Python Backend Model
+
+Non-maximum suppression runs as a shared Triton model using the PyTorch backend
+with `torchvision.ops.nms`. This model is reused across all non-end2end ensembles.
+
+```
+model_repository/
+  nms_postprocess/                  # Shared NMS model (PyTorch backend)
+    config.pbtxt
+    1/
+      model.py                      # torchvision.ops.nms
+
+  yolo11s/                          # Standard detection (needs NMS)
+    config.pbtxt
+    1/
+      model.onnx
+
+  yolo12s/                          # Standard detection (needs NMS)
+    config.pbtxt
+    1/
+      model.onnx
+
+  yolo26s/                          # End2end (built-in NMS, no ensemble)
+    config.pbtxt
+    1/
+      model.onnx
+
+  yolo11s_ensemble/                 # Ensemble: yolo11s → nms_postprocess
+    config.pbtxt
+
+  yolo12s_ensemble/                 # Ensemble: yolo12s → nms_postprocess
+    config.pbtxt
+```
+
+### 10.2 Ensemble Topology
+
+End2end models (like `yolo26s`) export with NMS baked into the ONNX graph via the
+`end2end_export` flag in the model registry. They run standalone without an ensemble.
+
+Standard detection models route through a shared `nms_postprocess` model:
+
+```
+yolo11s → nms_postprocess → yolo11s_ensemble
+yolo12s → nms_postprocess → yolo12s_ensemble
+yolo26s (standalone, end2end, no ensemble needed)
+```
+
+The `nms_postprocess` model uses `torchvision.ops.nms` to filter overlapping
+detections. One shared instance serves all non-end2end ensembles.
+
+---
+
+## 11. Metrics
+
+### 11.1 MetricEvent Model
 
 ```python
 class MetricEvent(BaseModel):
     component_name: str               # from APP_NAME env var
-    measure: str                      # metric name (e.g., "inference_latency_ms")
-    value: float                      # metric value
+    measure: str                      # metric name
+    value: float
     timestamp_ms: int                 # unix epoch ms
+    tags: dict[str, str] = {}         # queue name, model name, etc.
 ```
 
-### 10.2 Metrics Flow
+### 11.2 Metrics Flow
 
 ```
 Event transit tracking ──┐
@@ -980,28 +1062,31 @@ Triton stats polling ─────┤   MetricEvent
                           ├──────────────► MetricBuffer ──► MetricEmitter ──► Redis "metrics"
 Error aggregation ────────┤
                           │
+Queue overflow tracking ──┤
+                          │
 Business aggregation ─────┘
   (TimeWindowAggregator)
 ```
 
-### 10.3 Transit Time Tracking
+### 11.3 Transit Time Tracking
 
 Each `Envelope` records timestamps at key states:
 
 | State | When |
 |---|---|
-| `received` | Connector reads from Redis |
+| `received` | Source reads from Redis |
 | `decoded` | Pydantic model deserialized |
 | `queued` | Placed on processing queue |
-| `processing_start` | Component begins processing |
+| `processing_start` | Processor begins processing |
 | `inference_submitted` | Triton request sent |
 | `inference_complete` | Triton response received |
 | `output_sent` | Result written to output stream |
 | `acknowledged` | XACK sent |
 
-Auto-emitted metrics: `event_total_transit_ms`, `event_queue_wait_ms`, `event_inference_ms`.
+Auto-emitted metrics: `event_total_transit_ms`, `event_queue_wait_ms`,
+`event_inference_ms`.
 
-### 10.4 TritonMetricsCollector
+### 11.4 TritonMetricsCollector
 
 Periodic task (runs in a timer thread). Polls Triton stats via gRPC
 `get_inference_statistics()`:
@@ -1012,14 +1097,15 @@ Periodic task (runs in a timer thread). Polls Triton stats via gRPC
 - `triton_inference_compute_input_time_us` — cumulative input compute time
 - `triton_inference_compute_output_time_us` — cumulative output compute time
 
-### 10.5 MetricBuffer & MetricEmitter
+### 11.5 MetricBuffer & MetricEmitter
 
 ```python
 class MetricBuffer:
     """Thread-safe buffer accumulating MetricEvent instances.
 
-    Multiple producers (transit tracker, Triton collector, error collector)
-    write concurrently. MetricEmitter drains periodically.
+    Multiple producers (transit tracker, Triton collector, error collector,
+    queue overflow tracker) write concurrently. MetricEmitter drains
+    periodically.
     """
 
     def push(self, event: MetricEvent) -> None: ...
@@ -1036,25 +1122,25 @@ class MetricEmitter:
 
 ---
 
-## 11. Aggregation Metrics Library (`triton_metrics_aggregator`)
+## 12. Aggregation Metrics Library (`triton_metrics_aggregator`)
 
-### 11.1 Purpose
+### 12.1 Purpose
 
 Analyze incoming events with pydantic validators and send aggregation results as
-metrics. Example: input event has `camera` attribute → aggregate by camera value per
-minute → emit "images_per_camera_per_minute" metric.
+metrics. Example: input event has `camera` attribute, aggregate by camera value per
+minute, emit "images_per_camera_per_minute" metric.
 
-### 11.2 Core Types
+### 12.2 Core Types
 
 ```python
 class AggregationRule(BaseModel):
-    metric_name: str                  # e.g., "images_per_camera_per_minute"
-    field_path: str                   # dot-separated path, e.g., "camera"
+    metric_name: str                  # "images_per_camera_per_minute"
+    field_path: str                   # dot-separated path, "camera"
     window_seconds: int = 60
     aggregation: str = "count"        # "count" | "sum" | "avg"
 
 
-class TimeWindowAggregator[TEvent: BaseModel]:
+class TimeWindowAggregator(Generic[TEvent]):
     """Aggregates events by field values within time windows.
 
     Validates field_path exists on TEvent at registration time
@@ -1070,7 +1156,9 @@ class TimeWindowAggregator[TEvent: BaseModel]:
         )
         aggregator.observe(event)       # on each event
         metrics = aggregator.flush()    # periodically
-        # → [MetricEvent(measure="images_per_camera_per_minute.cam_01", value=42)]
+        # → [MetricEvent(
+        #     measure="images_per_camera_per_minute.cam_01", value=42,
+        # )]
     """
 
     def __init__(self, rules: Sequence[AggregationRule]) -> None:
@@ -1081,7 +1169,7 @@ class TimeWindowAggregator[TEvent: BaseModel]:
     def flush(self) -> list[MetricEvent]: ...
 ```
 
-### 11.3 Integration
+### 12.3 Integration
 
 `TimeWindowAggregator` integrates as an `ObserverProtocol` component.
 The framework feeds it events without expecting output routing.
@@ -1089,9 +1177,9 @@ Flushed metrics go to the shared `MetricBuffer`.
 
 ---
 
-## 12. Error Handling
+## 13. Error Handling
 
-### 12.1 Error Model Hierarchy
+### 13.1 Error Model Hierarchy
 
 ```python
 class ConnectorError(BaseModel):
@@ -1118,14 +1206,14 @@ class PreprocessingError(BaseModel):
     timestamp_ms: int
 ```
 
-### 12.2 Error Flow
+### 13.2 Error Flow
 
 ```
-Connector Threads ──► error_queue ──────────┐  (intra-process queue)
+Source Threads ──────► error_queue ──────────┐  (intra-process queue)
                                              │
-Preprocessing Pool ──► error_queue ──────────┤  (intra-process queue)
+Decoder Pool ────────► error_queue ──────────┤  (intra-process queue)
                                              │
-Inference Workers ──► mp.result_queue ───────┤  (cross-process, InferenceError variant)
+Inference Workers ──► mp.result_queue ───────┤  (cross-process, InferenceError)
   (errors returned as InferenceError         │
    via multiprocessing result queue)         │
                                              ▼
@@ -1140,7 +1228,7 @@ Inference Workers ──► mp.result_queue ───────┤  (cross-pro
                             MetricBuffer → MetricEmitter → Redis "metrics"
 ```
 
-### 12.3 ErrorCollector
+### 13.3 ErrorCollector
 
 ```python
 class ErrorCollector:
@@ -1154,13 +1242,13 @@ class ErrorCollector:
         """Increment counter for error type in current window."""
 
     def flush(self) -> list[MetricEvent]:
-        """Drain buckets → MetricEvent per type with measure="error_count_{type}"."""
+        """Drain buckets → MetricEvent per type."""
 ```
 
-### 12.4 Connector Resilience
+### 13.4 Source and Sink Resilience
 
-Connectors catch specific exception types and route errors to the error queue.
-They **never crash**:
+Sources and sinks catch specific exception types and route errors to the error
+queue. They **never crash**:
 
 - `redis.ConnectionError` → error_queue + backoff sleep
 - `redis.TimeoutError` → normal for BLOCK reads, continue
@@ -1169,9 +1257,9 @@ They **never crash**:
 
 ---
 
-## 13. Recovery & Position Tracking
+## 14. Recovery & Position Tracking
 
-### 13.1 Consumer Group Semantics
+### 14.1 Consumer Group Semantics
 
 Redis consumer groups provide built-in position tracking:
 
@@ -1183,14 +1271,14 @@ Redis consumer groups provide built-in position tracking:
 Messages remain pending until acknowledged. On restart, pending messages
 are redelivered automatically.
 
-### 13.2 At-Least-Once Delivery
+### 14.2 At-Least-Once Delivery
 
-XACK is sent **only after** the result is successfully written to the output stream.
-If the app crashes between processing and output write, the message remains pending
-and will be reprocessed on restart. Trade-off: potential duplicate processing,
-acceptable for inference workloads (idempotent results).
+XACK is sent **only after** the result is successfully written to the output
+stream. If the app crashes between processing and output write, the message
+remains pending and will be reprocessed on restart. Trade-off: potential duplicate
+processing, acceptable for inference workloads (idempotent results).
 
-### 13.3 Newest-First Priority
+### 14.3 Newest-First Priority with Interleave Ratio + TTL
 
 On restart recovery, pending messages are sorted by Redis message ID descending
 (newest first). Two separate queues:
@@ -1198,38 +1286,63 @@ On restart recovery, pending messages are sorted by Redis message ID descending
 - `pending_queue` (PriorityQueue) — drained with newest-first ordering
 - `live_queue` (Queue) — normal FIFO for new messages
 
-Reader logic:
+Reader logic with configurable interleave ratio (default 4:1) and TTL (default
+60s):
 
 ```python
-def _combined_reader(live_queue, pending_queue, handler, stop_event):
+def _combined_reader(
+    live_queue,
+    pending_queue,
+    handler,
+    stop_event,
+    interleave_ratio: int = 4,
+    pending_ttl_s: float = 60.0,
+):
+    live_count = 0
     while not stop_event.is_set():
-        # 1. Always try live_queue first (non-blocking)
+        # 1. Try live_queue (up to interleave_ratio messages)
         try:
             envelope = live_queue.get_nowait()
             handler(envelope)
-            continue
+            live_count += 1
+            if live_count < interleave_ratio:
+                continue
+            live_count = 0
         except queue.Empty:
-            pass
-        # 2. Fall back to pending (newest-first)
+            live_count = 0
+
+        # 2. Interleave: process 1 pending message
         try:
             envelope = pending_queue.get_nowait()
+            age_s = _envelope_age_seconds(envelope)
+            if age_s > pending_ttl_s:
+                # Stale: XACK without processing, drop
+                acknowledge(envelope.message_id)
+                logger.warning(
+                    "Dropped stale pending message {} (age={}s)",
+                    envelope.message_id,
+                    age_s,
+                )
+                continue
             handler(envelope)
             continue
         except queue.Empty:
             pass
+
         # 3. Both empty — block on live briefly
         try:
             envelope = live_queue.get(timeout=0.1)
             handler(envelope)
+            live_count = 1
         except queue.Empty:
             continue
 ```
 
 ---
 
-## 14. Process & Thread Model
+## 15. Process & Thread Model
 
-### 14.1 Process Map
+### 15.1 Process Map
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -1237,21 +1350,22 @@ def _combined_reader(live_queue, pending_queue, handler, stop_event):
 │                                                                        │
 │  Main Thread:                                                          │
 │  - Application orchestrator                                            │
-│  - Queue reader (drains live + pending queues)                         │
-│  - Component dispatch (calls user process() methods)                   │
-│  - Puts InferenceRequest onto mp.request_queue                         │
-│  - Drains mp.result_queue → routes to output/error                     │
+│  - Queue reader (drains live + pending queues, interleave ratio)       │
+│  - Pipeline dispatch: unwrap Envelope → call Processor.__call__        │
+│  - Intercept InferenceInput → put onto mp.request_queue                │
+│  - Drain mp.result_queue → wrap in Envelope → feed next Processor      │
 │  - ErrorHandler (drains error queue)                                   │
+│  - current_context() set via contextvars before each __call__          │
 │                                                                        │
 │  ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐       │
-│  │ Thread: Input-1   │ │ Thread: Input-2   │ │ Thread: Output-1  │       │
-│  │ XREADGROUP        │ │ XREADGROUP        │ │ XADD              │       │
-│  │ stream_a          │ │ stream_b          │ │ results_stream    │       │
-│  │ → live_queue      │ │ → live_queue      │ │ ← output_queue    │       │
+│  │ Thread: Source-1  │ │ Thread: Source-2  │ │ Thread: Sink-1   │       │
+│  │ XREADGROUP        │ │ XREADGROUP        │ │ XADD             │       │
+│  │ stream_a          │ │ stream_b          │ │ results_stream   │       │
+│  │ → emit(event)     │ │ → emit(event)     │ │ ← output_queue   │       │
 │  └──────────────────┘ └──────────────────┘ └──────────────────┘       │
 │                                                                        │
 │  ┌──────────────────┐ ┌──────────────────┐                             │
-│  │ Thread: Output-2  │ │ Timer: Metrics    │                             │
+│  │ Thread: Sink-2    │ │ Timer: Metrics    │                             │
 │  │ XADD              │ │ - TritonMetrics   │                             │
 │  │ metrics_stream    │ │ - Error flush     │                             │
 │  │ ← metrics_queue   │ │ - Metric emit     │                             │
@@ -1265,53 +1379,70 @@ def _combined_reader(live_queue, pending_queue, handler, stop_event):
 │  ┌─────────────────────────┐  ┌─────────────────────────┐           │
 │  │  Worker-0                │  │  Worker-1                │           │
 │  │  gRPC client (own conn)  │  │  gRPC client (own conn)  │           │
-│  │  async_infer + futures   │  │  async_infer + futures   │           │
-│  │  RetryPolicy (3x exp)   │  │  RetryPolicy (3x exp)   │           │
+│  │  async_infer + callback  │  │  async_infer + callback  │           │
+│  │  retry via Timer         │  │  retry via Timer         │           │
 │  │  ModelVersionTracker     │  │  ModelVersionTracker     │           │
 │  │  Semaphore(8)            │  │  Semaphore(8)            │           │
 │  └─────────────────────────┘  └─────────────────────────┘           │
 └──────────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────────┐
-│  PREPROCESSING PROCESS POOL (ProcessPoolExecutor)                    │
+│  DECODER POOL (ThreadPoolExecutor default, ProcessPoolExecutor opt.) │
 │                                                                      │
-│  Worker-0: turbojpeg.decode() / cv2.imdecode()                       │
-│  Worker-1: turbojpeg.decode() / cv2.imdecode()                       │
-│  Worker-2: turbojpeg.decode() / cv2.imdecode()                       │
-│  Worker-3: turbojpeg.decode() / cv2.imdecode()                       │
+│  Single decoder type per config:                                     │
+│  - opencv: cv2.imdecode() — JPEG/PNG/AVIF/BMP                       │
+│  - turbojpeg: PyTurboJPEG — JPEG-only, faster                       │
 │                                                                      │
-│  (concurrent.futures.ProcessPoolExecutor — managed by main process)  │
+│  Both release GIL → ThreadPool is default and sufficient             │
+│  (configurable via decoder_pool_type: thread | process)              │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-### 14.2 Queue Topology
+### 15.2 Queue Topology
 
-| Queue | Type | Boundary | Producer | Consumer |
-|---|---|---|---|---|
-| `live_queue[stream]` | `queue.Queue[Envelope[T]]` | intra-process | Input connector thread | Main thread |
-| `pending_queue[stream]` | `queue.PriorityQueue[Envelope[T]]` | intra-process | Startup recovery | Main thread |
-| `output_queue[stream]` | `queue.Queue[dict]` | intra-process | Main thread | Output connector thread |
-| `error_queue` | `queue.Queue[Error]` | intra-process | All threads + inference result handler | Main thread |
-| `metric_buffer` | `MetricBuffer` | intra-process | All metric producers | MetricEmitter timer |
-| `request_queue` | `multiprocessing.Queue[InferenceRequest]` | **cross-process** | Main process | Inference workers |
-| `result_queue` | `multiprocessing.Queue[InferenceResult\|InferenceError]` | **cross-process** | Inference workers | Main process |
+All queues have configurable `maxsize` (via `QueueConfig`). When a queue is full,
+the item is dropped (not blocked), loguru logs an error, and a `queue_overflow`
+metric with the queue name tag is emitted.
 
-### 14.3 Serialization Across Process Boundary
+| Queue | Type | Boundary | maxsize | Producer | Consumer |
+|---|---|---|---|---|---|
+| `live_queue[stream]` | `Queue[Envelope[T]]` | intra | config | Source thread | Main thread |
+| `pending_queue[stream]` | `PriorityQueue[Envelope[T]]` | intra | config | Startup recovery | Main thread |
+| `output_queue[stream]` | `Queue[T]` | intra | config | Main thread | Sink thread |
+| `error_queue` | `Queue[Error]` | intra | config | All threads | Main thread |
+| `metric_buffer` | `MetricBuffer` | intra | config | All metric producers | MetricEmitter |
+| `request_queue` | `mp.Queue[InferenceInput]` | **cross** | config | Main process | Workers |
+| `result_queue` | `mp.Queue[InferenceOutput\|Error]` | **cross** | config | Workers | Main process |
+
+### 15.3 Backpressure: Drop on Full + Metrics
+
+When any queue is full:
+1. Drop the item (never block the producer)
+2. Log via loguru: `logger.error("queue {} full, dropping item", queue_name)`
+3. Emit `queue_overflow` metric with `tags={"queue": queue_name}`
+
+This prevents cascading backpressure from stalling the entire pipeline. Dropped
+items are visible in metrics dashboards for capacity planning.
+
+### 15.4 Serialization Across Process Boundary
 
 Objects crossing the `multiprocessing.Queue` boundary are serialized via pickle:
 
-- **InferenceRequest**: contains `model_name` (str), `model_version` (str),
+- **InferenceInput**: contains `model_name` (str), `model_version` (str),
   `raw_image` (numpy ndarray), `input_name` (str), `output_names` (tuple of str).
-  Numpy arrays pickle efficiently — a 640x640x3 float32 tensor is ~4.7MB serialized.
-- **InferenceResult**: contains `outputs` dict of numpy arrays.
+  Numpy arrays pickle efficiently — a 640x640x3 float32 tensor is ~4.7MB.
+- **InferenceOutput**: contains `outputs` dict of numpy arrays.
   Same efficient numpy pickle.
 - **InferenceError**: contains only strings and ints — trivial to pickle.
 
-For higher throughput, `multiprocessing.shared_memory` can be used as a future
-optimization to pass numpy arrays without copying. The current pickle-based
-approach is simpler and sufficient for typical camera stream throughputs.
+### 15.5 Phase 4C — Shared Memory IPC Optimization
 
-### 14.4 Inference Concurrency (per worker)
+After Phase 5 benchmarks confirm pickle IPC is the bottleneck, optimize with
+`multiprocessing.shared_memory` for numpy arrays across the process boundary.
+This eliminates the pickle serialization overhead for large tensors by passing
+only a shared memory handle and metadata (shape, dtype) through the queue.
+
+### 15.6 Inference Concurrency (per worker)
 
 Each worker process runs `tritonclient.grpc.InferenceServerClient.async_infer()`.
 This is non-blocking within the worker — it accepts a callback and returns
@@ -1322,11 +1453,11 @@ A `threading.Semaphore` per worker limits concurrent in-flight requests
 
 ---
 
-## 15. Envelope Type (`engine/event.py`)
+## 16. Envelope Type (`engine/event.py`)
 
 ```python
 @dataclass(slots=True)
-class Envelope[T]:
+class Envelope(Generic[T]):
     payload: T
     stream_name: str
     message_id: str
@@ -1337,7 +1468,20 @@ class Envelope[T]:
         self.timestamps[state] = time.monotonic_ns()
 
     def transit_time_ms(self, from_state: str, to_state: str) -> float:
-        return (self.timestamps[to_state] - self.timestamps[from_state]) / 1_000_000
+        return (
+            (self.timestamps[to_state] - self.timestamps[from_state])
+            / 1_000_000
+        )
+
+    def derive(self, payload: U) -> Envelope[U]:
+        """Create new Envelope with different payload, inheriting metadata."""
+        return Envelope(
+            payload=payload,
+            stream_name=self.stream_name,
+            message_id=self.message_id,
+            priority=self.priority,
+            timestamps=dict(self.timestamps),
+        )
 
     def __lt__(self, other: Envelope[Any]) -> bool:
         return self.priority < other.priority
@@ -1350,65 +1494,72 @@ def message_id_to_priority(message_id: str, is_pending: bool) -> int:
     if not is_pending:
         return 0                      # live messages — highest priority
     timestamp_str = message_id.split("-")[0]
-    return -int(timestamp_str)        # newer pending = smaller negative = higher priority
+    return -int(timestamp_str)        # newer = smaller negative = higher priority
 ```
 
 ---
 
-## 16. Component Registry & Type-Annotation Wiring
+## 17. Pipeline Registry & Type-Annotation Wiring
 
-### 16.1 How It Works
+### 17.1 How It Works
 
-When a user registers a component class, the registry:
+When a user registers a Processor class, the registry:
 
-1. Calls `typing.get_type_hints()` on the `process` method
-2. Extracts `Envelope[X]` parameter → gets `X` via `typing.get_args()`
-3. Extracts return type `Y`
-4. Builds directed graph: `X → Component → Y`
-5. Connects input connectors to components whose input type matches `event_model`
-6. Connects components whose output type is `dict[str, str | bytes]` to output connectors
-7. Recognizes `InferenceRequest` output as the inference layer entry point
+1. Calls `typing.get_type_hints()` on the `__call__` method
+2. Extracts `event: X` parameter type
+3. Extracts return type `Y | None` (strips `None` — means filter)
+4. Builds directed graph: `X → Processor → Y`
+5. Connects Sources whose output type matches Processor input types
+6. Connects Processors whose output type matches Sink input types
+7. Recognizes `InferenceInput` output as the framework intercept point —
+   pipeline is split here, routed through worker pool
 
 ```python
-class ComponentRegistry:
-    def register(self, component_class: type) -> None:
-        hints = typing.get_type_hints(component_class.process)
-        envelope_type = hints["envelope"]           # Envelope[SomeInput]
-        input_type = typing.get_args(envelope_type)[0]
+class PipelineRegistry:
+    def register(self, processor_class: type) -> None:
+        hints = typing.get_type_hints(processor_class.__call__)
+        input_type = hints["event"]
         output_type = hints["return"]
-        self._graph.add_node(component_class, input_type, output_type)
+        # Strip None from Optional/Union for wiring
+        if typing.get_origin(output_type) is types.UnionType:
+            output_type = next(
+                a for a in typing.get_args(output_type) if a is not type(None)
+            )
+        self._graph.add_node(processor_class, input_type, output_type)
 
     def build_graph(self) -> ProcessingGraph:
-        """Wire components. Raises ValueError on missing sources, cycles, or dangling outputs."""
+        """Wire processors, sources, sinks.
+        Raises ValueError on missing sources, cycles, or dangling outputs.
+        """
 ```
 
-### 16.2 Wiring Example
+### 17.2 Wiring Example
 
 ```
-StreamInputConfig(event_model=CameraImageEvent)
+SourceConfig(event_model=CameraImageEvent)
     │
-    │  type match: CameraImageEvent
+    │  Source.__call__(emit) pushes CameraImageEvent
     ▼
-CameraToInference[CameraImageEvent → InferenceRequest]        ← main process
+CameraToInference: Processor[CameraImageEvent, InferenceInput]
     │
-    │  type match: InferenceRequest → mp.request_queue
+    │  Framework intercepts InferenceInput → mp.request_queue
     ║  ═══════════════ process boundary ═══════════════
     │
     ▼
-InferenceWorkerPool (Worker-N picks up request)                ← worker process
-    │  gRPC async_infer → InferenceResult
+InferenceWorkerPool (Worker-N picks up request)
+    │  gRPC async_infer + callback → InferenceOutput
     │
     ║  ═══════════════ process boundary ═══════════════
     │  mp.result_queue
     ▼
-DetectionResultHandler[InferenceResult → dict[str, str | bytes]]  ← main process
+DetectionResultHandler: Processor[InferenceOutput, DetectionResult]
     │
-    │  type match: dict → output connector
+    │  type match: DetectionResult → Sink
     ▼
-StreamOutputConfig(stream_name="detection_results")
+SinkConfig(stream_name="detection_results")
 ```
 
-### 16.3 Example User Code
+### 17.3 Example User Code
 
 ```python
 class CameraImageEvent(BaseModel):
@@ -1417,22 +1568,48 @@ class CameraImageEvent(BaseModel):
     timestamp: int
 
 
-class CameraToInference:
-    """Implements ComponentProtocol[CameraImageEvent, InferenceRequest]."""
+class DetectionResult(BaseModel):
+    camera: str
+    detections: list[dict[str, float]]
+    timestamp: int
 
-    def __init__(self, decoder_pool: ParallelDecoderPool) -> None:
+
+class CameraToInference:
+    """Implements Processor[CameraImageEvent, InferenceInput]."""
+
+    def __init__(self, decoder_pool: DecoderPool) -> None:
         self._decoder_pool = decoder_pool
 
-    def process(self, envelope: Envelope[CameraImageEvent]) -> InferenceRequest:
-        future = self._decoder_pool.decode(envelope.payload.image_data)
+    def __call__(
+        self, event: CameraImageEvent,
+    ) -> InferenceInput:
+        future = self._decoder_pool.decode(event.image_data)
         decoded = future.result()     # block until decoded
         raw = decoded.astype(np.float32) / 255.0
-        return InferenceRequest(model_name="yolo26s", raw_image=raw)
+        return InferenceInput(
+            model_name="yolo26s", raw_image=raw,
+        )
+
+
+class DetectionResultHandler:
+    """Implements Processor[InferenceOutput, DetectionResult]."""
+
+    def __call__(
+        self, event: InferenceOutput,
+    ) -> DetectionResult:
+        # Extract detections from model output tensors
+        detections = _parse_detections(event.outputs)
+        ctx = current_context()
+        return DetectionResult(
+            camera=ctx.metadata.get("camera", "unknown"),
+            detections=detections,
+            timestamp=int(time.time() * 1000),
+        )
 ```
 
 ---
 
-## 17. Application Bootstrap
+## 18. Application Bootstrap
 
 ```python
 class Application:
@@ -1443,26 +1620,32 @@ class Application:
         """Main run sequence:
         1. Create Redis connections
         2. Create InferenceWorkerPool (spawns N worker processes)
-        3. Create ParallelDecoderPool (ProcessPoolExecutor)
-        4. Import and register user components (from config.components)
-        5. Build processing graph via ComponentRegistry
-        6. Create consumer groups for input streams
-        7. Load pending messages (newest-first) into pending queues
-        8. Start connector threads (input + output)
-        9. Start inference worker pool (worker processes)
-        10. Start timer threads:
+        3. Create DecoderPool (Thread or ProcessPoolExecutor per config)
+        4. Import and register user processors (from config.processors)
+        5. Build processing graph via PipelineRegistry
+        6. Create consumer groups for sources
+        7. Load pending messages (newest-first, drop stale via TTL)
+           into pending queues
+        8. Create stop Events, assign to each Source/Sink
+        9. Start source threads (each Source.__call__(emit) in own thread)
+        10. Start sink threads
+        11. Start inference worker pool (worker processes)
+        12. Start timer threads:
             - TritonMetricsCollector (periodic)
             - ErrorCollector flush (periodic)
             - MetricEmitter (periodic)
-        11. Run main loop:
-            - Drain live + pending queues
-            - Dispatch to components
-            - Submit InferenceRequest to worker pool (mp.request_queue)
+        13. Run main loop:
+            - Combined reader: drain live + pending queues
+              (interleave ratio, TTL check)
+            - Unwrap Envelope → set current_context() → Processor.__call__
+            - Intercept InferenceInput → submit to worker pool
             - Drain results from worker pool (mp.result_queue)
-            - Route results to output queue or error handler
+            - Wrap InferenceOutput in Envelope → feed next Processor
+            - Route final output to Sink queue
             - Handle errors
-        12. On shutdown signal (SIGINT/SIGTERM):
-            - Signal connector threads to stop
+        14. On shutdown signal (SIGINT/SIGTERM):
+            - Call source.stop.set() for each Source
+            - Call sink.stop.set() for each Sink
             - Drain remaining queue items
             - Shutdown inference worker pool (poison pills + join)
             - Shutdown decoder pool
@@ -1485,7 +1668,7 @@ def main(cfg: DictConfig) -> None:
 
 ---
 
-## 18. New Dependencies
+## 19. New Dependencies
 
 ### triton_redis_connector/pyproject.toml additions
 
@@ -1494,38 +1677,3 @@ hydra-core>=1.3.0
 PyTurboJPEG>=1.7.0
 opencv-python-headless>=4.9.0
 ```
-
-### New package: triton_shared_models/pyproject.toml
-
-```
-pydantic>=2.10.0
-loguru>=0.7.3
-```
-
-### New package: triton_metrics_aggregator/pyproject.toml
-
-```
-pydantic>=2.10.0
-loguru>=0.7.3
-triton-redis-connector  (workspace reference)
-```
-
----
-
-## 19. Design Decisions Summary
-
-| Decision | Choice | Rationale |
-|---|---|---|
-| Config system | Hydra | YAML composition, env interpolation, config groups |
-| Shared types | Extracted package | Clean separation, no circular deps |
-| Kafka support | Abstraction only | Protocol-based connectors, implement when needed |
-| Inference isolation | Multiprocessing worker pool | True parallelism, avoids GIL for gRPC ser/deser, fault isolation |
-| Preprocessing | ProcessPoolExecutor | CPU-bound decode benefits from separate processes |
-| Async scope | Triton async_infer in workers | Futures within each worker process; all other code is sync |
-| Connector threads | Threads in main process | Redis blocking reads need threads; no cross-process overhead |
-| ACK timing | After output write | At-least-once delivery guarantee |
-| Recovery order | Newest-first | Fresher data is more valuable after downtime |
-| Extension model | Protocol classes | Structural subtyping, no inheritance required |
-| Retry policy | 3x exponential backoff | 0.1s, 0.4s, 1.6s — fast initial retry, reasonable total wait |
-| Model rollout | Per-worker poll + in-flight tracking | Safe switch, no shared state between workers |
-| IPC mechanism | multiprocessing.Queue + pickle | Simple, sufficient for camera stream throughput. Shared memory as future optimization |
