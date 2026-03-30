@@ -29,8 +29,7 @@ def main() -> None:
         "--models",
         nargs="+",
         default=None,
-        help="Model names to export (default: all). Choices: "
-        + ", ".join(v.name for v in YOLO_MODELS),
+        help="Model names to export (default: all). Choices: " + ", ".join(v.name for v in YOLO_MODELS),
     )
 
     args = parser.parse_args()

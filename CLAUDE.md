@@ -51,17 +51,13 @@ packages/
     tests/                              — tests
 ```
 
-### Infrastructure (docker-compose)
+### Infrastructure (.devcontainer/docker-compose.yml)
 
 - **Redis** (`redis:7-alpine`) — port 6379, AOF persistence
 - **Triton** (`nvcr.io/nvidia/tritonserver:25.02-py3`) — ports 8000 (HTTP), 8001 (gRPC), 8002 (metrics)
 - **RedisInsight** (`redis/redisinsight:latest`) — port 5540, Redis web UI
 
-```bash
-docker compose up -d redis              # Redis only (dev without GPU)
-docker compose up -d                    # full stack (requires NVIDIA GPU)
-docker compose down                     # stop
-```
+All infrastructure runs via the devcontainer compose file.
 
 ## Code Style
 
@@ -92,4 +88,3 @@ uv run pre-commit run --all-files
 - **implementer** — code implementation, following project conventions
 - **tester** — tests, mocks, coverage, integration tests
 - **reviewer** — code review, quality and security checks
-- **devops** — Docker, infrastructure, CI/CD, Triton model configuration

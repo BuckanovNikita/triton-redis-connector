@@ -114,14 +114,10 @@ class TestTritonModelConfig:
         config = TritonModelConfig(
             name="defaults_test",
             inputs=[
-                TritonTensorSpec(
-                    name="x", data_type=TritonDataType.TYPE_FP32, dims=[1]
-                ),
+                TritonTensorSpec(name="x", data_type=TritonDataType.TYPE_FP32, dims=[1]),
             ],
             outputs=[
-                TritonTensorSpec(
-                    name="y", data_type=TritonDataType.TYPE_FP32, dims=[1]
-                ),
+                TritonTensorSpec(name="y", data_type=TritonDataType.TYPE_FP32, dims=[1]),
             ],
         )
         assert config.platform == "onnxruntime_onnx"

@@ -47,12 +47,8 @@ def _extract_tensor_spec(
         dims = list(tensor.dims)
     else:
         type_proto = tensor.type.tensor_type
-        data_type = ONNX_DTYPE_TO_TRITON.get(
-            type_proto.elem_type, TritonDataType.TYPE_FP32
-        )
-        dims = [
-            dim.dim_value if dim.dim_value > 0 else -1 for dim in type_proto.shape.dim
-        ]
+        data_type = ONNX_DTYPE_TO_TRITON.get(type_proto.elem_type, TritonDataType.TYPE_FP32)
+        dims = [dim.dim_value if dim.dim_value > 0 else -1 for dim in type_proto.shape.dim]
 
     return TritonTensorSpec(name=name, data_type=data_type, dims=dims)
 
@@ -153,9 +149,7 @@ def export_all_models(
         unknown = name_set - {v.name for v in variants}
         if unknown:
             known = ", ".join(v.name for v in YOLO_MODELS)
-            msg = (
-                f"Unknown model names: {', '.join(sorted(unknown))}. Available: {known}"
-            )
+            msg = f"Unknown model names: {', '.join(sorted(unknown))}. Available: {known}"
             raise ValueError(msg)
 
     repository_root.mkdir(parents=True, exist_ok=True)

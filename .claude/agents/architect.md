@@ -23,7 +23,7 @@ description: >
 ## Context Requirements
 
 Before making architectural decisions, review:
-- `docker-compose.yml` — current infrastructure topology
+- `.devcontainer/docker-compose.yml` — current infrastructure topology
 - `packages/triton_redis_connector/triton_redis_connector/` — existing connector code
 - `packages/triton_model_tools/triton_model_tools/` — existing tools code
 - `pyproject.toml` — workspace configuration and dependencies

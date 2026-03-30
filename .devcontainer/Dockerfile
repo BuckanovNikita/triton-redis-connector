@@ -32,7 +32,8 @@ ENV UV_LINK_MODE=copy
 ENV UV_COMPILE_BYTECODE=1
 
 RUN uv python install 3.12 \
-    && mkdir -p /home/vscode/.claude
+    && mkdir -p /home/vscode/.claude \
+    && curl -fsSL https://claude.ai/install.sh | sh
 
 COPY .devcontainer/managed-settings.json /tmp/managed-settings.json
 USER root

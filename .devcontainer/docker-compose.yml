@@ -6,7 +6,7 @@ services:
     volumes:
       - ..:/workspace:cached
       - /mnt/c/Users/bucka/.claude/CLAUDE.md:/home/vscode/CLAUDE.md
-      - /mnt/c/Users/bucka/.claude/skills:/home/vscode/.claude/skills
+      - /mnt/c/Users/bucka/.claude:/home/vscode/.claude
     command: sleep infinity
     depends_on:
       redis:
@@ -39,6 +39,12 @@ services:
     image: nvcr.io/nvidia/tritonserver:25.02-py3
     volumes:
       - ../model_repository:/models
+    shm_size: 1g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      stack: 67108864
     command: >
       tritonserver
         --model-repository=/models
@@ -52,6 +58,13 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
 volumes:
   redis_data:
