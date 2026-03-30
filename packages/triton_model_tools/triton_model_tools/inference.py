@@ -62,7 +62,7 @@ class TritonInferenceClient:
             outputs=outputs,
         )
 
-        return {name: np.array(result.as_numpy(name), dtype=np.float32) for name in output_names}
+        return {name: np.asarray(result.as_numpy(name), dtype=np.float32) for name in output_names}
 
     def infer_dali(
         self,

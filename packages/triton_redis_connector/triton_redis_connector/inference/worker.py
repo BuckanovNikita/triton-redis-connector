@@ -81,7 +81,7 @@ class InferenceWorker:
             elapsed_ms = (time.monotonic() - start) * 1000.0
 
             output_arrays: dict[str, np.ndarray[Any, np.dtype[np.float32]]] = {
-                name: np.array(result.as_numpy(name), dtype=np.float32) for name in event.output_names
+                name: np.asarray(result.as_numpy(name), dtype=np.float32) for name in event.output_names
             }
 
             result_holder[0] = InferenceOutput(

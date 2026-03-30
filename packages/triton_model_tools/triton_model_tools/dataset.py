@@ -13,7 +13,7 @@ from loguru import logger
 if TYPE_CHECKING:
     from pathlib import Path
 
-COCO_VAL2017_URL = "http://images.cocodataset.org/zips/val2017.zip"
+COCO_VAL2017_URL = "https://images.cocodataset.org/zips/val2017.zip"
 COCO_VAL2017_DIR_NAME = "val2017"
 IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png"})
 DOWNLOAD_CHUNK_SIZE = 8192
@@ -64,10 +64,15 @@ def download_coco_val(target_dir: Path, *, max_images: int | None = None) -> Pat
     """
     image_dir = target_dir / COCO_VAL2017_DIR_NAME
 
-    if image_dir.is_dir() and _count_images(image_dir) > 0:
+    if image_dir.is_dir():
         existing_count = _count_images(image_dir)
-        logger.info("COCO val2017 already exists at {} with {} images, skipping download", image_dir, existing_count)
-        return image_dir
+        if existing_count > 0:
+            logger.info(
+                "COCO val2017 already exists at {} ({} images), skipping",
+                image_dir,
+                existing_count,
+            )
+            return image_dir
 
     target_dir.mkdir(parents=True, exist_ok=True)
 

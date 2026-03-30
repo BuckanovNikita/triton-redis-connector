@@ -77,8 +77,8 @@ class ModelVersionTracker:
     def _poll_once(self) -> None:
         try:
             index = self._client.get_model_repository_index()
-        except Exception:  # noqa: BLE001
-            logger.warning("Failed to poll Triton model repository index")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to poll Triton model repository index: {}", exc)
             return
 
         models: dict[str, list[str]] = {}

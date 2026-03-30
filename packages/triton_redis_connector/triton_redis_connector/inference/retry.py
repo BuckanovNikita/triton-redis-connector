@@ -106,6 +106,7 @@ class RetryHandler:
             )
             timer.daemon = True
             with self._lock:
+                self._active_timers = [t for t in self._active_timers if t.is_alive()]
                 self._active_timers.append(timer)
             timer.start()
 
