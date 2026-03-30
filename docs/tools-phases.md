@@ -51,11 +51,13 @@ triton_model_tools/
 ### CLI Commands
 
 ```bash
-triton-model-tools export    [--format onnx|tensorrt|all] [--dali-ensemble] [--models ...]
-triton-model-tools infer     [--image-dir DIR] [--model M] [--mode raw|dali] [--output FILE]
-triton-model-tools benchmark [--image-dir DIR] [--models ...] [--formats ...] [--modes ...]
-triton-model-tools compare   [--image-dir DIR] [--triton-model M] [--ultralytics-model M.pt]
+triton-model-tools export       [--format onnx|tensorrt|all] [--dali-ensemble] [--models ...]
+triton-model-tools infer        [--image-dir DIR] [--model M] [--mode raw|dali] [--output FILE]
+triton-model-tools benchmark    [--image-dir DIR] [--models ...] [--formats ...] [--modes ...]
+triton-model-tools compare      [--image-dir DIR] [--triton-model M] [--ultralytics-model M.pt]
+                                [--fiftyone-dataset NAME] [--fiftyone-existing]
 triton-model-tools download-coco [--target-dir DIR] [--max-images N]
+triton-model-tools fiftyone-app  [--dataset NAME] [--port 5151]
 ```
 
 ### Full Testing Matrix
@@ -459,11 +461,12 @@ None new. Uses `urllib.request` (stdlib) for COCO download.
 
 ---
 
-## Phase 5 — Prediction Comparison Tool
+## Phase 5 — Prediction Comparison Tool + FiftyOne Integration
 
 **Goal**: Numerically compare Triton inference outputs against ultralytics native
 `model.predict()`. Measures detection accuracy drift across backends and
-preprocessing modes.
+preprocessing modes. Results can be imported into FiftyOne for visual inspection
+and interactive exploration.
 
 ### 5.1 New module: `comparison.py`
 
@@ -535,16 +538,186 @@ def compare_backends(
     """Compare multiple backend/mode combinations against ultralytics baseline."""
 ```
 
-### 5.2 CLI subcommand: `compare`
+### 5.2 New module: `fiftyone_export.py`
+
+FiftyOne integration for visual comparison of prediction drift. Supports both
+creating new datasets and adding predictions to existing ones.
+
+```python
+class FiftyOneExportConfig(BaseModel):
+    dataset_name: str = "triton_comparison"
+    existing_dataset: bool = False         # True = add to existing, False = create new
+    label_field_prefix: str = "predictions" # field name prefix for detection labels
+
+
+def export_to_fiftyone(
+    comparison: ComparisonSummary,
+    image_dir: Path,
+    ground_truth_results: list[ImageDetectionResult],
+    prediction_results: dict[str, list[ImageDetectionResult]],
+    config: FiftyOneExportConfig = FiftyOneExportConfig(),
+) -> fo.Dataset:
+    """Export comparison results to a FiftyOne dataset.
+
+    Creates/opens a FiftyOne dataset with:
+    - One sample per image
+    - Ground truth detections as fo.Detections field ("ground_truth")
+    - Each prediction source as a separate fo.Detections field
+      (e.g., "predictions_yolo11s_onnx_raw", "predictions_yolo11s_trt_dali")
+    - Per-detection metadata: confidence, IoU with matched GT, match status
+
+    Args:
+        comparison: ComparisonSummary with per-image metrics.
+        image_dir: Path to image directory.
+        ground_truth_results: Ultralytics predictions (treated as ground truth).
+        prediction_results: Dict mapping label (e.g., "yolo11s_onnx_raw") to
+            per-image detection results from Triton.
+        config: Export configuration.
+
+    Returns:
+        The FiftyOne Dataset object (can be launched with fo.launch_app).
+    """
+
+
+def _detections_to_fo(
+    detections: list[Detection],
+    image_width: int,
+    image_height: int,
+) -> fo.Detections:
+    """Convert Detection list to FiftyOne Detections.
+
+    FiftyOne uses relative coordinates [0,1] in [x, y, width, height] format.
+    Our Detection uses absolute [x1, y1, x2, y2].
+    """
+
+
+def add_predictions_to_dataset(
+    dataset: fo.Dataset,
+    prediction_results: list[ImageDetectionResult],
+    field_name: str,
+) -> None:
+    """Add a new prediction field to an existing FiftyOne dataset.
+
+    Matches samples by filepath. Each sample gets a new fo.Detections field
+    with the prediction detections. Useful for incrementally adding Triton
+    backend variants to an existing comparison dataset.
+
+    Args:
+        dataset: Existing FiftyOne dataset.
+        prediction_results: Per-image detections to add.
+        field_name: Name for the new detections field
+            (e.g., "predictions_yolo11s_trt_raw").
+    """
+
+
+def launch_comparison_app(
+    dataset: fo.Dataset,
+    port: int = 5151,
+) -> fo.Session:
+    """Launch FiftyOne App for interactive comparison.
+
+    The App allows:
+    - Side-by-side visual comparison of GT vs predictions
+    - Filtering by confidence, class, IoU
+    - Sorting by number of false positives / missed detections
+    - Interactive inspection of mismatched images
+    """
+```
+
+### 5.3 FiftyOne Dataset Structure
+
+For a comparison run with two backends, the dataset looks like:
+
+```
+Dataset: "triton_comparison"
+  Sample fields:
+    filepath:                          str
+    ground_truth:                      fo.Detections  (ultralytics predictions)
+    predictions_yolo11s_onnx_raw:      fo.Detections  (Triton ONNX raw)
+    predictions_yolo11s_trt_dali:      fo.Detections  (Triton TRT DALI)
+    comparison_yolo11s_onnx_raw:       fo.DictField   (per-image ComparisonMetrics)
+    comparison_yolo11s_trt_dali:       fo.DictField   (per-image ComparisonMetrics)
+
+  Each detection in fo.Detections has:
+    label:       str    (class name)
+    confidence:  float
+    bounding_box: [x, y, w, h]  (relative coords)
+    iou_with_gt: float | None   (IoU with matched GT detection, if matched)
+    matched:     bool           (whether this detection matched a GT box)
+```
+
+### 5.4 CLI subcommand: `compare`
 
 ```bash
+# Basic comparison — outputs JSON + optional FiftyOne dataset
 triton-model-tools compare \
   --image-dir ./data/val2017 \
   --triton-model yolo11s \
   --ultralytics-model yolo11s.pt \
   --mode raw \
   --iou-threshold 0.5 \
-  --output comparison.json
+  --output comparison.json \
+  --fiftyone-dataset triton_comparison
+
+# Add another backend to existing FiftyOne dataset
+triton-model-tools compare \
+  --image-dir ./data/val2017 \
+  --triton-model yolo11s_trt \
+  --ultralytics-model yolo11s.pt \
+  --mode dali \
+  --fiftyone-dataset triton_comparison \
+  --fiftyone-existing
+
+# Launch FiftyOne App to explore results
+triton-model-tools fiftyone-app --dataset triton_comparison --port 5151
+```
+
+### 5.5 Workflows
+
+**Workflow 1: Full comparison with new dataset**
+
+```bash
+# Export models
+triton-model-tools export --format all --dali-ensemble --models yolo11s
+
+# Run comparison for all backends, create FiftyOne dataset
+triton-model-tools compare \
+  --image-dir ./data/val2017 \
+  --triton-model yolo11s \
+  --ultralytics-model yolo11s.pt \
+  --mode raw \
+  --fiftyone-dataset yolo11s_drift
+
+triton-model-tools compare \
+  --image-dir ./data/val2017 \
+  --triton-model yolo11s_trt \
+  --ultralytics-model yolo11s.pt \
+  --mode raw \
+  --fiftyone-dataset yolo11s_drift \
+  --fiftyone-existing
+
+triton-model-tools compare \
+  --image-dir ./data/val2017 \
+  --triton-model yolo11s_dali_ensemble \
+  --ultralytics-model yolo11s.pt \
+  --mode dali \
+  --fiftyone-dataset yolo11s_drift \
+  --fiftyone-existing
+
+# Visualize
+triton-model-tools fiftyone-app --dataset yolo11s_drift
+```
+
+**Workflow 2: Add predictions to existing COCO FiftyOne dataset**
+
+```python
+import fiftyone.zoo as foz
+
+# Load COCO val from FiftyOne zoo (user may already have this)
+dataset = foz.load_zoo_dataset("coco-2017", split="validation")
+
+# Add Triton predictions via CLI
+# --fiftyone-dataset coco-2017-validation --fiftyone-existing
 ```
 
 ### Reuses from Phase 3
@@ -561,10 +734,41 @@ triton-model-tools compare \
 - `compare_inference` with mocked ultralytics + mocked Triton: known outputs,
   verify comparison metrics
 - Edge cases: empty detections, single detection, all matching, none matching
+- `_detections_to_fo`: verify coordinate conversion (absolute → relative, xyxy → xywh)
+- `export_to_fiftyone`: mock `fiftyone.Dataset`, verify samples added with correct
+  fields and detection counts
+- `add_predictions_to_dataset`: mock existing dataset, verify new field added,
+  samples matched by filepath
 
 ### Dependencies
 
-None new.
+New **optional** dependency: `fiftyone>=1.0.0`. Added as an extra in pyproject.toml:
+
+```toml
+[project.optional-dependencies]
+fiftyone = ["fiftyone>=1.0.0"]
+```
+
+Install with `uv pip install triton-model-tools[fiftyone]`.
+
+FiftyOne import is guarded with a runtime check — `comparison.py` and the core
+comparison logic work without FiftyOne installed. Only `fiftyone_export.py` requires
+it, and its functions raise `ImportError` with a clear message if fiftyone is missing.
+
+```python
+# In fiftyone_export.py
+try:
+    import fiftyone as fo
+except ImportError as exc:
+    _fiftyone_import_error = exc
+else:
+    _fiftyone_import_error = None
+
+def _require_fiftyone() -> None:
+    if _fiftyone_import_error is not None:
+        msg = "fiftyone is required: install with `uv pip install triton-model-tools[fiftyone]`"
+        raise ImportError(msg) from _fiftyone_import_error
+```
 
 ---
 
@@ -576,7 +780,7 @@ None new.
 | **2** | DALI ensemble generation | `export --dali-ensemble` creates 3-model ensemble |
 | **3** | Inference client + folder tool | `infer --image-dir DIR --mode raw\|dali` |
 | **4** | Benchmarking + COCO download | `benchmark` + `download-coco` commands |
-| **5** | Prediction comparison | `compare` Triton vs ultralytics |
+| **5** | Prediction comparison + FiftyOne | `compare` + FiftyOne visual inspection |
 
 ### Dependency Graph
 
@@ -610,6 +814,7 @@ packages/triton_model_tools/
     benchmark.py         # benchmarking engine
     dataset.py           # COCO val2017 downloader
     comparison.py        # prediction comparison tool
+    fiftyone_export.py   # FiftyOne dataset import/export
   tests/
     test_models.py           # updated
     test_repository.py       # updated
@@ -620,10 +825,22 @@ packages/triton_model_tools/
     test_benchmark.py
     test_dataset.py
     test_comparison.py
+    test_fiftyone_export.py
 ```
 
-### No New Dependencies
+### Dependencies
 
-All phases use existing dependencies (`ultralytics`, `tritonclient[all]`, `pydantic`,
+Phases 1-4 use existing dependencies (`ultralytics`, `tritonclient[all]`, `pydantic`,
 `loguru`, `numpy`, `Pillow`) plus Python stdlib (`urllib.request`, `ast`, `csv`,
 `json`, `time`, `statistics`). No new packages needed.
+
+Phase 5 adds one **optional** dependency:
+
+```toml
+[project.optional-dependencies]
+fiftyone = ["fiftyone>=1.0.0"]
+```
+
+Core comparison logic (`comparison.py`) works without FiftyOne. Only the visual
+exploration module (`fiftyone_export.py`) requires it, with a guarded import
+and clear error message.
