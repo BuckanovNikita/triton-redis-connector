@@ -1,0 +1,7 @@
+grpc_url: ${oc.env:TRITON_GRPC_URL,localhost:8001}
+num_inference_workers: 2
+max_concurrent_per_worker: 8
+max_retry_attempts: 3
+retry_base_delay_s: 0.1
+retry_backoff_multiplier: 4.0
+model_version_poll_interval_s: 5.0
