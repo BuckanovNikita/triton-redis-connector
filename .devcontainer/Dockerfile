@@ -31,4 +31,12 @@ ENV PATH="/home/vscode/.local/bin:$PATH"
 ENV UV_LINK_MODE=copy
 ENV UV_COMPILE_BYTECODE=1
 
-RUN uv python install 3.12
+RUN uv python install 3.12 \
+    && mkdir -p /home/vscode/.claude
+
+COPY .devcontainer/managed-settings.json /tmp/managed-settings.json
+USER root
+RUN mkdir -p /etc/claude-code \
+    && mv /tmp/managed-settings.json /etc/claude-code/managed-settings.json \
+    && chmod 644 /etc/claude-code/managed-settings.json
+USER vscode

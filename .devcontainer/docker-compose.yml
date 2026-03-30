@@ -5,6 +5,8 @@ services:
       dockerfile: .devcontainer/Dockerfile
     volumes:
       - ..:/workspace:cached
+      - /mnt/c/Users/bucka/.claude/CLAUDE.md:/home/vscode/CLAUDE.md
+      - /mnt/c/Users/bucka/.claude/skills:/home/vscode/.claude/skills
     command: sleep infinity
     depends_on:
       redis:
