@@ -1,0 +1,1 @@
+"""Camera inference example pipeline."""

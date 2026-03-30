@@ -297,6 +297,59 @@ def run_benchmark_matrix(configs: list[BenchmarkConfig], image_dir: Path) -> Ben
     return suite
 
 
+def build_full_matrix(
+    models: list[str],
+    triton_url: str = "localhost:8001",
+    target_size: int = 640,
+    num_images: int = 100,
+    warmup_runs: int = 5,
+) -> list[BenchmarkConfig]:
+    """Generate all BenchmarkConfig combinations for a full performance matrix.
+
+    Creates configs for each model across all backend/preprocess combinations:
+    - ONNX + raw letterbox
+    - ONNX + DALI ensemble
+    - TensorRT + raw letterbox
+    - TensorRT + DALI ensemble
+
+    Args:
+        models: List of model names (e.g. ["yolo11s", "yolo26s", "yolo12s"]).
+        triton_url: Triton gRPC URL.
+        target_size: Model input size.
+        num_images: Number of images per benchmark run.
+        warmup_runs: Number of warmup iterations per run.
+
+    Returns:
+        List of BenchmarkConfig for all combinations.
+
+    """
+    backends: list[Literal["onnx", "tensorrt"]] = ["onnx", "tensorrt"]
+    preprocess_modes: list[Literal["raw", "dali"]] = ["raw", "dali"]
+
+    configs: list[BenchmarkConfig] = [
+        BenchmarkConfig(
+            model_name=model_name,
+            backend=backend,
+            preprocess_mode=preprocess_mode,
+            triton_url=triton_url,
+            target_size=target_size,
+            num_images=num_images,
+            warmup_runs=warmup_runs,
+        )
+        for model_name in models
+        for backend in backends
+        for preprocess_mode in preprocess_modes
+    ]
+
+    logger.info(
+        "Built full benchmark matrix: {} models x {} configs = {} total",
+        len(models),
+        len(backends) * len(preprocess_modes),
+        len(configs),
+    )
+    return configs
+
+
 def save_benchmark_output(suite: BenchmarkSuite, output_path: Path) -> None:
     """Save benchmark suite to file (CSV if .csv extension, JSON otherwise).
 

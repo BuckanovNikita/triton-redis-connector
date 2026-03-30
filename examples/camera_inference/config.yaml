@@ -1,0 +1,40 @@
+app_name: camera-inference-example
+
+redis:
+  host: ${oc.env:REDIS_HOST,localhost}
+  port: ${oc.env:REDIS_PORT,6379}
+  db: 0
+  decode_responses: false
+
+sources:
+  - stream_name: camera_images
+    consumer_group: inference-workers
+    consumer_name: worker-1
+    event_model: CameraFrame
+    batch_size: 10
+    block_ms: 1000
+
+sinks:
+  - stream_name: detection_results
+    maxlen: 10000
+    approximate_maxlen: true
+
+processors: []
+
+inference:
+  grpc_url: ${oc.env:TRITON_URL,triton:8001}
+  num_inference_workers: 2
+  max_concurrent_per_worker: 8
+
+preprocessing:
+  decoder: opencv
+  decoder_pool_type: thread
+  decoder_pool_workers: 4
+  default_target_size: [640, 640]
+
+queues:
+  maxsize: 1000
+
+metrics:
+  output_stream: metrics
+  triton_poll_interval_s: 10.0

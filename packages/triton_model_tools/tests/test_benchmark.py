@@ -13,6 +13,7 @@ from triton_model_tools.benchmark import (
     BenchmarkResult,
     BenchmarkSuite,
     _compute_statistics,
+    build_full_matrix,
     run_benchmark,
     run_benchmark_matrix,
     run_ultralytics_benchmark,
@@ -313,3 +314,59 @@ class TestRunUltralyticsBaseline:
     def test_raises_on_empty_directory(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError, match="No image files found"):
             run_ultralytics_benchmark("yolo11s.pt", tmp_path, num_images=10)
+
+
+class TestBuildFullMatrix:
+    def test_single_model_produces_four_configs(self) -> None:
+        configs = build_full_matrix(models=["yolo11s"])
+
+        assert len(configs) == 4
+
+    def test_three_models_produce_twelve_configs(self) -> None:
+        configs = build_full_matrix(models=["yolo11s", "yolo26s", "yolo12s"])
+
+        assert len(configs) == 12
+
+    def test_all_backend_preprocess_combinations(self) -> None:
+        configs = build_full_matrix(models=["yolo11s"])
+
+        combos = {(c.backend, c.preprocess_mode) for c in configs}
+        assert combos == {
+            ("onnx", "raw"),
+            ("onnx", "dali"),
+            ("tensorrt", "raw"),
+            ("tensorrt", "dali"),
+        }
+
+    def test_custom_parameters_propagated(self) -> None:
+        configs = build_full_matrix(
+            models=["yolo11s"],
+            triton_url="triton:8001",
+            target_size=320,
+            num_images=50,
+            warmup_runs=10,
+        )
+
+        for config in configs:
+            assert config.triton_url == "triton:8001"
+            assert config.target_size == 320
+            assert config.num_images == 50
+            assert config.warmup_runs == 10
+
+    def test_model_names_preserved(self) -> None:
+        models = ["yolo11s", "yolo26s"]
+        configs = build_full_matrix(models=models)
+
+        model_names = {c.model_name for c in configs}
+        assert model_names == {"yolo11s", "yolo26s"}
+
+    def test_empty_models_returns_empty(self) -> None:
+        configs = build_full_matrix(models=[])
+
+        assert configs == []
+
+    def test_returns_benchmark_config_instances(self) -> None:
+        configs = build_full_matrix(models=["yolo11s"])
+
+        for config in configs:
+            assert isinstance(config, BenchmarkConfig)
