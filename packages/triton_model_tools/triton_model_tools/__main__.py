@@ -501,6 +501,81 @@ def _run_e2e_test(args: argparse.Namespace) -> None:
             )
 
 
+def _build_compare_parser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+) -> None:
+    compare_parser = subparsers.add_parser(
+        "compare",
+        help="Compare detection results between baseline and candidate",
+    )
+    compare_parser.add_argument(
+        "--baseline",
+        type=Path,
+        required=True,
+        help="Path to baseline detection results JSON file",
+    )
+    compare_parser.add_argument(
+        "--candidate",
+        type=Path,
+        required=True,
+        help="Path to candidate detection results JSON file",
+    )
+    compare_parser.add_argument(
+        "--output",
+        "-o",
+        type=Path,
+        default=None,
+        help="Output path for comparison results JSON",
+    )
+    compare_parser.add_argument(
+        "--iou-threshold",
+        type=float,
+        default=0.5,
+        help="IoU threshold for detection matching (default: 0.5)",
+    )
+    compare_parser.set_defaults(func=_run_compare)
+
+
+def _run_compare(args: argparse.Namespace) -> None:
+    import json  # noqa: PLC0415
+
+    from triton_model_tools.comparison import compare_inference  # noqa: PLC0415
+    from triton_model_tools.detection import ImageDetectionResult  # noqa: PLC0415
+
+    baseline_path: Path = args.baseline.resolve()
+    candidate_path: Path = args.candidate.resolve()
+    output_path: Path | None = args.output
+    iou_threshold: float = args.iou_threshold
+
+    logger.info("Detection Comparison")
+    logger.info("Baseline: {}", baseline_path)
+    logger.info("Candidate: {}", candidate_path)
+
+    with baseline_path.open() as f:
+        baseline_data = json.load(f)
+    with candidate_path.open() as f:
+        candidate_data = json.load(f)
+
+    baseline = [ImageDetectionResult.model_validate(item) for item in baseline_data]
+    candidate = [ImageDetectionResult.model_validate(item) for item in candidate_data]
+
+    summary = compare_inference(baseline, candidate, iou_threshold)
+
+    logger.info("Overall precision: {:.4f}", summary.overall.precision)
+    logger.info("Overall recall: {:.4f}", summary.overall.recall)
+    logger.info("Overall avg IoU: {:.4f}", summary.overall.avg_iou)
+    logger.info("Class mismatch rate: {:.4f}", summary.overall.class_mismatch_rate)
+    logger.info("False positives: {}", summary.overall.false_positive_count)
+    logger.info("Missed detections: {}", summary.overall.missed_count)
+
+    if output_path is not None:
+        resolved_output = output_path.resolve()
+        resolved_output.parent.mkdir(parents=True, exist_ok=True)
+        with resolved_output.open("w") as f:
+            json.dump(summary.model_dump(), f, indent=2)
+        logger.info("Comparison results saved to {}", resolved_output)
+
+
 def main() -> None:
     """Entry point for triton-model-tools CLI."""
     parser = argparse.ArgumentParser(
@@ -514,6 +589,7 @@ def main() -> None:
     _build_download_coco_parser(subparsers)
     _build_benchmark_parser(subparsers)
     _build_e2e_test_parser(subparsers)
+    _build_compare_parser(subparsers)
 
     args = parser.parse_args()
 

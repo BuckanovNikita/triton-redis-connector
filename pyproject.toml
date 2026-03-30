@@ -73,7 +73,7 @@ module = ["tritonclient.*", "tritonserver.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["ultralytics.*", "onnx.*", "onnxruntime.*", "cv2", "cv2.*", "numpy", "numpy.*"]
+module = ["ultralytics.*", "onnx.*", "onnxruntime.*", "cv2", "cv2.*", "numpy", "numpy.*", "fiftyone", "fiftyone.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
