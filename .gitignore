@@ -19,6 +19,7 @@ wheels/
 dmypy.json
 
 .pytest_cache/
+.import_linter_cache/
 .coverage
 coverage.xml
 htmlcov/

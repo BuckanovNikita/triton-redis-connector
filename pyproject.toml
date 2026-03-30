@@ -19,6 +19,7 @@ dev = [
     "ruff>=0.9.0",
     "vulture>=2.14",
     "types-redis>=4.6.0",
+    "import-linter>=2.11",
 ]
 
 [tool.ruff]
@@ -86,6 +87,76 @@ min_confidence = 80
 paths = [
     "packages/triton_redis_connector/triton_redis_connector",
     "packages/triton_model_tools/triton_model_tools",
+]
+
+# ---------------------------------------------------------------------------
+# import-linter: architecture contracts
+# ---------------------------------------------------------------------------
+
+[tool.importlinter]
+root_packages = [
+    "triton_redis_connector",
+    "triton_model_tools",
+]
+include_external_packages = false
+
+# Contract 1: Layer hierarchy inside triton_redis_connector
+# Layers ordered top-to-bottom; each may only import from layers below.
+# Enforces design.md: domain → engine → config/errors → protocols (leaf)
+# Parenthesized modules are optional (not yet created).
+[[tool.importlinter.contracts]]
+id = "connector-layers"
+name = "triton_redis_connector layer architecture"
+type = "layers"
+layers = [
+    "(triton_redis_connector.connectors) | (triton_redis_connector.inference) | (triton_redis_connector.preprocessing) | (triton_redis_connector.metrics)",
+    "(triton_redis_connector.engine)",
+    "(triton_redis_connector.config) | (triton_redis_connector.errors)",
+    "(triton_redis_connector.protocols)",
+]
+
+# Contract 2: Domain modules must not import each other.
+# connectors, inference, preprocessing, metrics communicate via engine/graph.
+# Uses pipe-delimited independent layer — import-linter enforces no
+# cross-imports between modules on the same layer line.
+# (Already enforced by connector-layers contract above. Explicit independence
+# contract will be added once these modules exist in the codebase.)
+
+# Contract 3: Package boundary — connector must not import model_tools
+[[tool.importlinter.contracts]]
+id = "connector-no-model-tools"
+name = "triton_redis_connector must not import triton_model_tools"
+type = "forbidden"
+source_modules = [
+    "triton_redis_connector",
+]
+forbidden_modules = [
+    "triton_model_tools",
+]
+
+# Contract 4: Package boundary — model_tools must not import connector
+[[tool.importlinter.contracts]]
+id = "model-tools-no-connector"
+name = "triton_model_tools must not import triton_redis_connector"
+type = "forbidden"
+source_modules = [
+    "triton_model_tools",
+]
+forbidden_modules = [
+    "triton_redis_connector",
+]
+
+# Contract 5: model_tools internal layers
+# __main__ (CLI) → exporter (logic) → repository (builder) → models (leaf)
+[[tool.importlinter.contracts]]
+id = "model-tools-layers"
+name = "triton_model_tools layer architecture"
+type = "layers"
+layers = [
+    "triton_model_tools.__main__",
+    "triton_model_tools.exporter",
+    "triton_model_tools.repository",
+    "triton_model_tools.models",
 ]
 
 [tool.coverage.run]
