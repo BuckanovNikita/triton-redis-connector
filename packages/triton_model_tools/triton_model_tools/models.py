@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import BaseModel
-from triton_shared_models.triton_config import TritonModelConfig
+from triton_shared_models.triton_config import (
+    EnsembleStep,
+    EnsembleStepMapping,
+    TritonModelConfig,
+)
 from triton_shared_models.triton_types import (
     TritonDataType,
     TritonInstanceKind,
@@ -14,6 +18,8 @@ from triton_shared_models.triton_types import (
 
 __all__ = [
     "YOLO_MODELS",
+    "EnsembleStep",
+    "EnsembleStepMapping",
     "TritonDataType",
     "TritonInstanceKind",
     "TritonModelConfig",

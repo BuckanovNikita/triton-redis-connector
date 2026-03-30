@@ -166,7 +166,7 @@ forbidden_modules = [
 ]
 
 # Contract 6: model_tools internal layers
-# __main__ (CLI) → exporter (logic) → repository (builder) → models (leaf)
+# __main__ (CLI) → exporter (logic) → repository/dali/nms (builders) → models (leaf)
 [[tool.importlinter.contracts]]
 id = "model-tools-layers"
 name = "triton_model_tools layer architecture"
@@ -174,7 +174,7 @@ type = "layers"
 layers = [
     "triton_model_tools.__main__",
     "triton_model_tools.exporter",
-    "triton_model_tools.repository",
+    "triton_model_tools.repository | triton_model_tools.dali | triton_model_tools.nms",
     "triton_model_tools.models",
 ]
 
