@@ -43,8 +43,8 @@ ignore = [
 fixable = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S105", "S106", "ANN401", "PLR2004", "PLC0415", "D101", "D102", "D103", "D104", "INP001", "S311", "SLF001", "TC002"]
-"**/tests/**" = ["S101", "S105", "S106", "ANN401", "PLR2004", "PLC0415", "D101", "D102", "D103", "D104", "INP001", "S311", "SLF001", "TC002"]
+"tests/**" = ["S101", "S105", "S106", "ANN401", "PLR2004", "PLC0415", "D101", "D102", "D103", "D104", "D107", "INP001", "S311", "SLF001", "TC002", "ARG002"]
+"**/tests/**" = ["S101", "S105", "S106", "ANN401", "PLR2004", "PLC0415", "D101", "D102", "D103", "D104", "D107", "INP001", "S311", "SLF001", "TC002", "ARG002"]
 "**/scripts/**" = ["ALL"]
 
 [tool.ruff.format]
@@ -73,7 +73,7 @@ module = ["tritonclient.*", "tritonserver.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["ultralytics.*", "onnx.*", "onnxruntime.*"]
+module = ["ultralytics.*", "onnx.*", "onnxruntime.*", "cv2", "cv2.*", "numpy", "numpy.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -86,12 +86,12 @@ testpaths = [
     "packages/triton_model_tools/tests",
     "packages/triton_shared_models/tests",
 ]
-addopts = ["-v", "--tb=short", "-n", "auto", "-m", "not integration"]
+addopts = ["-v", "--tb=short", "-n", "auto", "-m", "not integration", "--import-mode=importlib"]
 markers = ["integration: tests requiring Docker services (Redis, Triton)"]
 
 [tool.vulture]
 min_confidence = 80
-ignore_names = ["event", "shared", "envelope", "count", "new_payload"]
+ignore_names = ["event", "shared", "envelope", "count", "new_payload", "block_ms", "data", "image", "raw", "message_id", "target_size"]
 paths = [
     "packages/triton_redis_connector/triton_redis_connector",
     "packages/triton_model_tools/triton_model_tools",
@@ -177,9 +177,10 @@ name = "triton_model_tools layer architecture"
 type = "layers"
 layers = [
     "triton_model_tools.__main__",
-    "triton_model_tools.exporter | triton_model_tools.dali | triton_model_tools.nms",
+    "triton_model_tools.folder_inference",
+    "triton_model_tools.exporter | triton_model_tools.dali | triton_model_tools.nms | triton_model_tools.inference",
     "triton_model_tools.repository",
-    "triton_model_tools.models",
+    "triton_model_tools.models | triton_model_tools.detection",
 ]
 
 [tool.coverage.run]
