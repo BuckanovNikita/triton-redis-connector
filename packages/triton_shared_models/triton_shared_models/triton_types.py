@@ -27,9 +27,28 @@ class TritonInstanceKind(StrEnum):
     KIND_CPU = "KIND_CPU"
 
 
+class ExportFormat(StrEnum):
+    """Model export format for Triton backends."""
+
+    ONNX = "onnx"
+    TENSORRT = "tensorrt"
+
+
+EXPORT_FORMAT_TO_PLATFORM: dict[ExportFormat, str] = {
+    ExportFormat.ONNX: "onnxruntime_onnx",
+    ExportFormat.TENSORRT: "tensorrt_plan",
+}
+
+EXPORT_FORMAT_TO_FILENAME: dict[ExportFormat, str] = {
+    ExportFormat.ONNX: "model.onnx",
+    ExportFormat.TENSORRT: "model.plan",
+}
+
+
 class TritonTensorSpec(BaseModel):
     """Specification for a single Triton input or output tensor."""
 
     name: str
     data_type: TritonDataType
     dims: list[int]
+    is_shape_tensor: bool = False

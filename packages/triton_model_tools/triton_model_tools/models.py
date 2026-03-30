@@ -6,24 +6,38 @@ from typing import Any
 
 from pydantic import BaseModel
 from triton_shared_models.triton_config import (
+    DynamicBatchingConfig,
     EnsembleStep,
     EnsembleStepMapping,
+    ModelWarmupConfig,
+    OptimizationConfig,
     TritonModelConfig,
+    WarmupInputSpec,
 )
 from triton_shared_models.triton_types import (
+    EXPORT_FORMAT_TO_FILENAME,
+    EXPORT_FORMAT_TO_PLATFORM,
+    ExportFormat,
     TritonDataType,
     TritonInstanceKind,
     TritonTensorSpec,
 )
 
 __all__ = [
+    "EXPORT_FORMAT_TO_FILENAME",
+    "EXPORT_FORMAT_TO_PLATFORM",
     "YOLO_MODELS",
+    "DynamicBatchingConfig",
     "EnsembleStep",
     "EnsembleStepMapping",
+    "ExportFormat",
+    "ModelWarmupConfig",
+    "OptimizationConfig",
     "TritonDataType",
     "TritonInstanceKind",
     "TritonModelConfig",
     "TritonTensorSpec",
+    "WarmupInputSpec",
     "YoloModelVariant",
 ]
 
