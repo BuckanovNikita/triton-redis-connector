@@ -55,7 +55,8 @@ packages/
 ### Infrastructure (.devcontainer/docker-compose.yml)
 
 - **Redis** (`redis:7-alpine`) — port 6379, AOF persistence
-- **Triton** (`nvcr.io/nvidia/tritonserver:25.02-py3`) — ports 8000 (HTTP), 8001 (gRPC), 8002 (metrics). Runs with `--strict-model-config=true` — all config.pbtxt files must be complete (Triton will not infer missing fields).
+- **Triton** (`nvcr.io/nvidia/tritonserver:26.02-py3`) — ports 8000 (HTTP), 8001 (gRPC), 8002 (metrics). Runs with `--strict-model-config=true` — all config.pbtxt files must be complete (Triton will not infer missing fields).
+- **Triton SDK** (`nvcr.io/nvidia/tritonserver:26.02-py3-sdk`) — provides `perf_analyzer`, `model_analyzer`, and pre-installed `tritonclient` matching the server version. Shares workspace and model_repository volumes, reaches Triton via hostname `triton`.
 - **RedisInsight** (`redis/redisinsight:latest`) — port 5540, Redis web UI
 
 All infrastructure runs via the devcontainer compose file.

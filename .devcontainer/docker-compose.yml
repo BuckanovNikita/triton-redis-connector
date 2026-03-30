@@ -36,7 +36,7 @@ services:
       RI_REDIS_ALIAS_default: Local Redis
 
   triton:
-    image: nvcr.io/nvidia/tritonserver:25.02-py3
+    image: nvcr.io/nvidia/tritonserver:26.02-py3
     volumes:
       - ../model_repository:/models
     shm_size: 1g
@@ -65,6 +65,16 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  triton-sdk:
+    image: nvcr.io/nvidia/tritonserver:26.02-py3-sdk
+    volumes:
+      - ..:/workspace:cached
+      - ../model_repository:/models
+    depends_on:
+      triton:
+        condition: service_healthy
+    command: sleep infinity
 
 volumes:
   redis_data:
