@@ -208,6 +208,27 @@ inline (non-parallel) nodes. Thread/Process variants are self-contained — they
 read from their input queue and write to their output queue independently.
 The framework wires these queues during graph construction.
 
+### 3.1 import-linter: автоматическая проверка слоёв
+
+Границы слоёв проверяются автоматически через `import-linter` (хук pre-commit,
+запускается после pyright). Конфигурация в `pyproject.toml`, секция
+`[tool.importlinter]`. Четыре контракта:
+
+| Контракт | Тип | Правило |
+|---|---|---|
+| `connector-layers` | layers | `connectors\|inference\|preprocessing\|metrics` → `engine` → `config\|errors` → `protocols` |
+| `connector-no-model-tools` | forbidden | `triton_redis_connector` не импортирует `triton_model_tools` |
+| `model-tools-no-connector` | forbidden | `triton_model_tools` не импортирует `triton_redis_connector` |
+| `model-tools-layers` | layers | `__main__` → `exporter` → `repository` → `models` |
+
+Модули `triton_redis_connector`, которые ещё не созданы, помечены как
+опциональные (`()`) — контракт проходит, пока модуля нет, и автоматически
+активируется при его создании.
+
+Слои в `connector-layers` читаются сверху вниз: каждый слой может
+импортировать только из слоёв ниже. Модули, разделённые `|` на одном уровне,
+не могут импортировать друг друга (независимые siblings).
+
 ---
 
 ## 4. Data Flow

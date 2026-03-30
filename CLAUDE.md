@@ -31,6 +31,7 @@ uv run ruff check .                    # lint
 uv run ruff check --fix .              # auto-fix
 uv run mypy .                          # type check (mypy)
 uv run pyright                         # type check (pyright)
+uv run lint-imports                    # architecture layer contracts
 uv run vulture                         # dead code detection
 ```
 
@@ -70,7 +71,7 @@ All infrastructure runs via the devcontainer compose file.
 
 ## Pre-commit Hooks
 
-Pipeline: ruff format → ruff check → mypy → pyright → vulture → pytest → uv lock
+Pipeline: ruff format → ruff check → mypy → pyright → import-linter → vulture → pytest → uv lock
 
 ```bash
 uv run pre-commit run --all-files

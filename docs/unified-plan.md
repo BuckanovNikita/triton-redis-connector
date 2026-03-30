@@ -50,7 +50,20 @@ The SDK container provides `perf_analyzer`, `model_analyzer`, and pre-installed 
 
 DALI note: `nvidia-dali-cuda120==2.0.0` is bundled in the `26.02-py3` container. It is NOT a Python dependency of our packages — it runs inside Triton's DALI backend only.
 
-### 0.3 Update CLAUDE.md
+### 0.3 import-linter architecture contracts ✅
+
+Added `import-linter` to dev dependencies and pre-commit pipeline (runs after pyright, before vulture). Four contracts enforce layer boundaries from day one:
+
+| Contract | Type | Rule |
+|---|---|---|
+| `connector-layers` | layers | `connectors\|inference\|preprocessing\|metrics` → `engine` → `config\|errors` → `protocols` |
+| `connector-no-model-tools` | forbidden | `triton_redis_connector` ✗ `triton_model_tools` |
+| `model-tools-no-connector` | forbidden | `triton_model_tools` ✗ `triton_redis_connector` |
+| `model-tools-layers` | layers | `__main__` → `exporter` → `repository` → `models` |
+
+Connector layers use optional modules (`()` syntax) — contracts pass when modules don't exist yet, activate automatically as code is created. Independence contract for domain modules (connectors/inference/preprocessing/metrics) deferred until modules exist; the `|` pipe in the layers contract already prevents cross-imports between sibling modules.
+
+### 0.4 Update CLAUDE.md
 
 Reflect new container versions and SDK container in the infrastructure section.
 
@@ -220,6 +233,10 @@ Hydra init, default YAML files under `conf/`. Add `hydra-core` dep to connector.
 - `triton_model_tools` tests pass after shared model extraction
 - Hydra config loading tests
 - Protocol `runtime_checkable` isinstance checks on dummy impls for all 9 variants
+
+### Architecture contracts
+
+Once Phase 1 modules are created, the `connector-layers` import-linter contract (configured in Phase 0.3) automatically activates. Verify that all new modules respect the layer hierarchy: `connectors|inference|preprocessing|metrics` → `engine` → `config|errors` → `protocols`. After all domain modules exist, add the explicit `independence` contract to prevent cross-imports between sibling domain modules.
 
 ### Verification
 
