@@ -15,7 +15,11 @@ services:
       - "8002:8002"
     volumes:
       - ./model_repository:/models
-    command: tritonserver --model-repository=/models
+    command: >
+      tritonserver
+        --model-repository=/models
+        --exit-on-error=false
+        --strict-model-config=false
     deploy:
       resources:
         reservations:

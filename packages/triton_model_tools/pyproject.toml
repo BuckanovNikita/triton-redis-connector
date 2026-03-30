@@ -17,3 +17,6 @@ dependencies = [
     "numpy>=1.26.0",
     "Pillow>=10.0.0",
 ]
+
+[project.scripts]
+triton-model-export = "triton_model_tools.__main__:main"

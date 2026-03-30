@@ -70,6 +70,10 @@ ignore_missing_imports = true
 module = ["ultralytics.*", "onnx.*", "onnxruntime.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["pydantic", "pydantic.*", "loguru", "loguru.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = [
     "packages/triton_redis_connector/tests",
