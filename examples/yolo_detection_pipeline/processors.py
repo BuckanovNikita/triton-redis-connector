@@ -9,15 +9,15 @@ They live in examples/ because they cross import-linter sibling boundaries
 from __future__ import annotations
 
 import json
-import threading
 from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 from loguru import logger
+from triton_redis_connector.engine.bases import BaseThreadProcessor, BaseThreadSink
 from triton_redis_connector.engine.events import DecodedImage, DetectionResult, InferenceInput
-from triton_redis_connector.errors.models import InferenceError  # noqa: TC002
-from triton_redis_connector.inference.request import InferenceOutput  # noqa: TC002
+from triton_redis_connector.errors.models import InferenceError
+from triton_redis_connector.inference.request import InferenceOutput
 from triton_redis_connector.preprocessing.decoder import OpenCVDecoder
 from triton_redis_connector.preprocessing.letterbox import LetterBoxPreprocessor
 from triton_redis_connector.protocols import Envelope
@@ -26,15 +26,12 @@ DEFAULT_CONFIDENCE_THRESHOLD = 0.25
 DEFAULT_IOU_THRESHOLD = 0.45
 
 
-class EnvelopeExtractor:
+class EnvelopeExtractor(BaseThreadProcessor[Envelope[bytes], bytes]):
     """ThreadProcessor: extracts raw bytes payload from Envelope[bytes].
 
     Bridges RedisStreamSource (which produces Envelope[bytes]) to
     downstream processors that consume raw bytes.
     """
-
-    def __init__(self) -> None:  # noqa: D107
-        self.stop = threading.Event()
 
     def __call__(self, event: Envelope[bytes]) -> bytes | None:
         """Extract payload bytes from an Envelope."""
@@ -43,7 +40,7 @@ class EnvelopeExtractor:
         return None
 
 
-class ImageDeserializer:
+class ImageDeserializer(BaseThreadProcessor[bytes, DecodedImage]):
     """ThreadProcessor: decodes raw image bytes into DecodedImage.
 
     Reads raw bytes from the pipeline, decodes using OpenCV, and produces
@@ -51,7 +48,7 @@ class ImageDeserializer:
     """
 
     def __init__(self) -> None:  # noqa: D107
-        self.stop = threading.Event()
+        super().__init__()
         self._decoder = OpenCVDecoder()
 
     def __call__(self, event: bytes) -> DecodedImage | None:
@@ -69,7 +66,7 @@ class ImageDeserializer:
             return None
 
 
-class PreprocessorNode:
+class PreprocessorNode(BaseThreadProcessor[DecodedImage, InferenceInput]):
     """ThreadProcessor: letterbox preprocessing + InferenceInput construction.
 
     Transforms a decoded BGR image into a model-ready float32 tensor
@@ -81,7 +78,7 @@ class PreprocessorNode:
         model_name: str = "yolo11s",
         target_size: tuple[int, int] = (640, 640),
     ) -> None:
-        self.stop = threading.Event()
+        super().__init__()
         self._preprocessor = LetterBoxPreprocessor()
         self._model_name = model_name
         self._target_size = target_size
@@ -97,7 +94,7 @@ class PreprocessorNode:
         )
 
 
-class DetectionPostProcessor:
+class DetectionPostProcessor(BaseThreadProcessor[InferenceOutput, DetectionResult]):
     """ThreadProcessor: parses YOLO output tensors into DetectionResult.
 
     Implements standard YOLO postprocessing: confidence filtering,
@@ -110,7 +107,7 @@ class DetectionPostProcessor:
         conf_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
         iou_threshold: float = DEFAULT_IOU_THRESHOLD,
     ) -> None:
-        self.stop = threading.Event()
+        super().__init__()
         self._conf_threshold = conf_threshold
         self._iou_threshold = iou_threshold
 
@@ -171,15 +168,12 @@ class DetectionPostProcessor:
         ]
 
 
-class OutputSerializer:
+class OutputSerializer(BaseThreadProcessor[DetectionResult, Envelope[bytes]]):
     """ThreadProcessor: serializes DetectionResult to Envelope[bytes] for Redis sink.
 
     Converts DetectionResult pydantic model to JSON bytes wrapped in an
     Envelope for the RedisStreamSink to write via XADD.
     """
-
-    def __init__(self) -> None:  # noqa: D107
-        self.stop = threading.Event()
 
     def __call__(self, event: DetectionResult) -> Envelope[bytes] | None:
         """Serialize DetectionResult to Envelope[bytes]."""
@@ -191,11 +185,8 @@ class OutputSerializer:
         )
 
 
-class ErrorLogSink:
+class ErrorLogSink(BaseThreadSink[InferenceError]):
     """ThreadSink: logs inference errors without dropping them silently."""
-
-    def __init__(self) -> None:  # noqa: D107
-        self.stop = threading.Event()
 
     def __call__(self, event: InferenceError) -> None:
         """Log the inference error."""

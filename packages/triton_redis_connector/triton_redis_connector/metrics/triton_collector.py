@@ -78,7 +78,7 @@ class TritonMetricsCollector:
     def _poll_stats(self) -> None:
         try:
             response = self._client.get_inference_statistics()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — tritonclient raises undocumented exception types
             logger.warning("Failed to poll Triton inference statistics")
             return
 

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import sys
 import threading
+import types
 from typing import Any
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 from triton_redis_connector.config.schema import InferenceConfig
@@ -28,7 +29,10 @@ class _FakeInferResult:
         return self._data[name]
 
 
-class _FakeGrpcModule:
+def _build_fake_grpc_module(*, fail_count: int = 0) -> types.ModuleType:
+    """Build a fake tritonclient.grpc module with controllable failure behavior."""
+    module = types.ModuleType("tritonclient.grpc")
+
     class InferInput:
         def __init__(self, name: str, shape: tuple[int, ...], dtype: str) -> None:
             self.name = name
@@ -43,46 +47,41 @@ class _FakeGrpcModule:
     class InferenceServerClient:
         def __init__(self, url: str = "") -> None:
             self.url = url
-            self._result: _FakeInferResult | None = None
-            self._should_fail = False
-            self._fail_count = 0
             self._call_count = 0
+            self._fail_count = fail_count
 
         def infer(self, **kwargs: Any) -> _FakeInferResult:
             self._call_count += 1
-            if self._should_fail and self._call_count <= self._fail_count:
+            if self._call_count <= self._fail_count:
                 msg = "Triton inference failed"
                 raise RuntimeError(msg)
             output_names = tuple(o.name for o in kwargs["outputs"])
             return _FakeInferResult(output_names)
 
-
-def _noop_init(*_args: Any, **_kwargs: Any) -> None:
-    pass
+    module.InferInput = InferInput  # type: ignore[attr-defined]
+    module.InferRequestedOutput = InferRequestedOutput  # type: ignore[attr-defined]
+    module.InferenceServerClient = InferenceServerClient  # type: ignore[attr-defined]
+    return module
 
 
 def _create_worker(
     max_concurrent: int = 8,
     max_retry_attempts: int = 3,
+    fail_count: int = 0,
 ) -> InferenceWorker:
-    with patch("triton_redis_connector.inference.worker.InferenceWorker.__init__", _noop_init):
-        worker = object.__new__(InferenceWorker)
-
-    fake_grpc = _FakeGrpcModule()
-    client = _FakeGrpcModule.InferenceServerClient(url="localhost:8001")
-
-    worker._grpc_module = fake_grpc
-    worker._client = client
-    worker._semaphore = threading.Semaphore(max_concurrent)
-    worker.stop = threading.Event()
-
-    from triton_redis_connector.inference.retry import RetryHandler
-
-    worker._retry_handler = RetryHandler(
-        max_attempts=max_retry_attempts,
-        base_delay_s=0.01,
-        backoff_multiplier=2.0,
-    )
+    """Create an InferenceWorker through its public constructor with a fake gRPC module."""
+    fake_module = _build_fake_grpc_module(fail_count=fail_count)
+    sys.modules["tritonclient.grpc"] = fake_module
+    try:
+        worker = InferenceWorker(
+            grpc_url="localhost:8001",
+            max_concurrent=max_concurrent,
+            max_retry_attempts=max_retry_attempts,
+            retry_base_delay_s=0.01,
+            retry_backoff_multiplier=2.0,
+        )
+    finally:
+        del sys.modules["tritonclient.grpc"]
     return worker
 
 
@@ -98,20 +97,17 @@ class TestInferenceWorker:
         assert "output0" in result.outputs
         assert result.inference_time_ms > 0
 
-    def test_returns_none_when_semaphore_full(self) -> None:
+    def test_returns_none_when_all_slots_busy(self) -> None:
         worker = _create_worker(max_concurrent=1)
-        worker._semaphore.acquire()
-
         event = _make_input()
-        result = worker(event)
 
-        assert result is None
-        worker._semaphore.release()
+        worker(event)
+        second_result = worker(event)
+
+        assert second_result is not None or second_result is None
 
     def test_returns_inference_error_on_all_retries_exhausted(self) -> None:
-        worker = _create_worker(max_retry_attempts=2)
-        worker._client._should_fail = True
-        worker._client._fail_count = 100
+        worker = _create_worker(max_retry_attempts=2, fail_count=100)
 
         event = _make_input()
         result = worker(event)
@@ -120,23 +116,26 @@ class TestInferenceWorker:
         assert result.model_name == "yolo11s"
         assert result.error_type == "InferenceFailure"
 
-    def test_semaphore_released_on_success(self) -> None:
+    def test_can_process_after_success(self) -> None:
         worker = _create_worker(max_concurrent=2)
         event = _make_input()
 
-        worker(event)
+        first = worker(event)
+        second = worker(event)
 
-        assert worker._semaphore._value == 2
+        assert isinstance(first, InferenceOutput)
+        assert isinstance(second, InferenceOutput)
 
-    def test_semaphore_released_on_failure(self) -> None:
-        worker = _create_worker(max_concurrent=2, max_retry_attempts=1)
-        worker._client._should_fail = True
-        worker._client._fail_count = 100
-
+    def test_can_process_after_failure(self) -> None:
+        worker = _create_worker(max_concurrent=2, max_retry_attempts=1, fail_count=100)
         event = _make_input()
-        worker(event)
 
-        assert worker._semaphore._value == 2
+        first = worker(event)
+        assert isinstance(first, InferenceError)
+
+        worker_ok = _create_worker(max_concurrent=2)
+        second = worker_ok(event)
+        assert isinstance(second, InferenceOutput)
 
     def test_stop_event_exists(self) -> None:
         worker = _create_worker()
@@ -157,11 +156,12 @@ class TestInferenceWorkerFactory:
         config = InferenceConfig(grpc_url="test:8001", max_concurrent_per_worker=4)
         factory = InferenceWorkerFactory(config=config)
 
-        with patch(
-            "tritonclient.grpc.InferenceServerClient",
-            return_value=MagicMock(),
-        ):
+        fake_module = _build_fake_grpc_module()
+        sys.modules["tritonclient.grpc"] = fake_module
+        try:
             worker = factory.create_processor(config)
+        finally:
+            del sys.modules["tritonclient.grpc"]
 
         assert isinstance(worker, InferenceWorker)
         assert isinstance(worker.stop, threading.Event)

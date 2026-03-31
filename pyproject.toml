@@ -186,8 +186,9 @@ name = "triton_model_tools layer architecture"
 type = "layers"
 layers = [
     "triton_model_tools.__main__",
-    "triton_model_tools.folder_inference | triton_model_tools.benchmark | triton_model_tools.e2e_test",
-    "triton_model_tools.exporter | triton_model_tools.dali | triton_model_tools.nms | triton_model_tools.inference | triton_model_tools.dataset | triton_model_tools.perf_analyzer",
+    "triton_model_tools.pipeline_predict | triton_model_tools.pipeline_benchmark",
+    "triton_model_tools.folder_inference | triton_model_tools.benchmark | triton_model_tools.e2e_test | triton_model_tools.predict",
+    "triton_model_tools.exporter | triton_model_tools.dali | triton_model_tools.nms | triton_model_tools.inference | triton_model_tools.dataset | triton_model_tools.perf_analyzer | triton_model_tools.benchmark_stats | triton_model_tools.detection_io",
     "triton_model_tools.repository",
     "triton_model_tools.models | triton_model_tools.detection",
 ]

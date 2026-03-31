@@ -73,7 +73,7 @@ class RetryHandler:
             execute_fn()
             on_success(None)
             semaphore.release()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — retry must catch any transient failure from Triton gRPC
             if attempt + 1 >= self._max_attempts:
                 logger.error(
                     "All {} retry attempts exhausted: {}",

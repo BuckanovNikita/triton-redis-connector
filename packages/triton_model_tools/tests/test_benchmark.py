@@ -12,12 +12,12 @@ from triton_model_tools.benchmark import (
     BenchmarkConfig,
     BenchmarkResult,
     BenchmarkSuite,
-    _compute_statistics,
     build_full_matrix,
     run_benchmark,
     run_benchmark_matrix,
     run_ultralytics_benchmark,
 )
+from triton_model_tools.benchmark_stats import compute_statistics
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -167,7 +167,7 @@ class TestComputeStatistics:
     def test_basic_statistics(self) -> None:
         latencies = [10.0, 20.0, 30.0, 40.0, 50.0]
 
-        total_s, avg_ms, throughput, p50, _p95, _p99 = _compute_statistics(latencies)
+        total_s, avg_ms, throughput, p50, _p95, _p99 = compute_statistics(latencies)
 
         assert total_s == pytest.approx(0.15)
         assert avg_ms == pytest.approx(30.0)
@@ -177,7 +177,7 @@ class TestComputeStatistics:
     def test_single_value(self) -> None:
         latencies = [42.0]
 
-        _total_s, avg_ms, _throughput, p50, p95, p99 = _compute_statistics(latencies)
+        _total_s, avg_ms, _throughput, p50, p95, p99 = compute_statistics(latencies)
 
         assert avg_ms == pytest.approx(42.0)
         assert p50 == pytest.approx(42.0)

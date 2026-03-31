@@ -8,10 +8,10 @@ import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
-import numpy as np
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
+from triton_model_tools.benchmark_stats import MILLISECONDS_PER_SECOND, compute_statistics
 from triton_model_tools.inference import (
     DEFAULT_CONFIDENCE_THRESHOLD,
     DEFAULT_IOU_THRESHOLD,
@@ -23,13 +23,10 @@ from triton_model_tools.inference import (
 if TYPE_CHECKING:
     from pathlib import Path
 
+    import numpy as np
     import numpy.typing as npt
 
 IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"})
-MILLISECONDS_PER_SECOND = 1000.0
-PERCENTILE_50 = 50
-PERCENTILE_95 = 95
-PERCENTILE_99 = 99
 
 
 class BenchmarkConfig(BaseModel):
@@ -142,17 +139,6 @@ def _load_image(path: Path) -> npt.NDArray[np.uint8]:
     return img
 
 
-def _compute_statistics(latencies_ms: list[float]) -> tuple[float, float, float, float, float, float]:
-    arr = np.array(latencies_ms, dtype=np.float64)
-    total_s = float(np.sum(arr)) / MILLISECONDS_PER_SECOND
-    avg_ms = float(np.mean(arr))
-    throughput = len(latencies_ms) / total_s if total_s > 0 else 0.0
-    p50 = float(np.percentile(arr, PERCENTILE_50))
-    p95 = float(np.percentile(arr, PERCENTILE_95))
-    p99 = float(np.percentile(arr, PERCENTILE_99))
-    return total_s, avg_ms, throughput, p50, p95, p99
-
-
 def run_benchmark(config: BenchmarkConfig, image_dir: Path) -> BenchmarkResult:
     """Run Triton inference benchmark.
 
@@ -197,7 +183,7 @@ def run_benchmark(config: BenchmarkConfig, image_dir: Path) -> BenchmarkResult:
         elapsed_ms = (time.perf_counter() - start) * MILLISECONDS_PER_SECOND
         latencies_ms.append(elapsed_ms)
 
-    total_s, avg_ms, throughput, p50, p95, p99 = _compute_statistics(latencies_ms)
+    total_s, avg_ms, throughput, p50, p95, p99 = compute_statistics(latencies_ms)
 
     logger.info(
         "Benchmark complete: avg={:.2f}ms p50={:.2f}ms p95={:.2f}ms p99={:.2f}ms throughput={:.1f}fps",
@@ -250,7 +236,7 @@ def run_ultralytics_benchmark(
         elapsed_ms = (time.perf_counter() - start) * MILLISECONDS_PER_SECOND
         latencies_ms.append(elapsed_ms)
 
-    total_s, avg_ms, throughput, p50, p95, p99 = _compute_statistics(latencies_ms)
+    total_s, avg_ms, throughput, p50, p95, p99 = compute_statistics(latencies_ms)
 
     logger.info(
         "Ultralytics benchmark complete: avg={:.2f}ms p50={:.2f}ms throughput={:.1f}fps",

@@ -177,6 +177,45 @@ class ConnectorE2ETestHarness:
         fields: dict[bytes, bytes],
         msg_id: bytes,
     ) -> ImageDetectionResult:
+        data_field = fields.get(b"data")
+        if data_field is not None:
+            return self._parse_pipeline_format(data_field, fields, msg_id)
+        return self._parse_legacy_format(fields, msg_id)
+
+    def _parse_pipeline_format(
+        self,
+        data_field: bytes,
+        fields: dict[bytes, bytes],
+        msg_id: bytes,
+    ) -> ImageDetectionResult:
+        """Parse pipeline output where DetectionResult JSON is in the 'data' field."""
+        parsed: dict[str, Any] = json.loads(data_field)
+        detections_raw = parsed.get("detections_json", "[]")
+        detections = _deserialize_detections(detections_raw)
+        model_name = parsed.get("model_name", self._config.model_name)
+        inference_time_ms = float(parsed.get("inference_time_ms", 0.0))
+        source_stream = fields.get(b"source_stream", b"").decode()
+        image_name = parsed.get("message_id", "") or source_stream or msg_id.decode()
+
+        logger.debug(
+            "Parsed pipeline result {}: {} detections",
+            msg_id.decode(),
+            len(detections),
+        )
+
+        return ImageDetectionResult(
+            image_path=image_name,
+            model_name=model_name,
+            detections=detections,
+            inference_time_ms=inference_time_ms,
+        )
+
+    def _parse_legacy_format(
+        self,
+        fields: dict[bytes, bytes],
+        msg_id: bytes,
+    ) -> ImageDetectionResult:
+        """Parse legacy format with individual fields (image_name, detections, etc.)."""
         image_name = fields.get(b"image_name", b"unknown").decode()
         model_name = fields.get(b"model_name", self._config.model_name.encode()).decode()
         inference_time_str = fields.get(b"inference_time_ms", b"0.0").decode()

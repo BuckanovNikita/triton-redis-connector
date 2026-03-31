@@ -501,6 +501,384 @@ def _run_e2e_test(args: argparse.Namespace) -> None:
             )
 
 
+def _build_pipeline_benchmark_parser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+) -> None:
+    pb_parser = subparsers.add_parser(
+        "pipeline-benchmark",
+        help="Measure E2E performance of the Redis detection pipeline",
+    )
+    pb_parser.add_argument(
+        "--image-dir",
+        type=Path,
+        required=True,
+        help="Directory containing images to benchmark with",
+    )
+    pb_parser.add_argument(
+        "-m",
+        "--model",
+        type=str,
+        required=True,
+        help="Triton model name (e.g. yolo11s)",
+    )
+    pb_parser.add_argument(
+        "--redis-url",
+        type=str,
+        default="redis://redis:6379",
+        help="Redis URL (default: redis://redis:6379)",
+    )
+    pb_parser.add_argument(
+        "--input-stream",
+        type=str,
+        default="camera_images",
+        help="Redis input stream name (default: camera_images)",
+    )
+    pb_parser.add_argument(
+        "--output-stream",
+        type=str,
+        default="detection_results",
+        help="Redis output stream name (default: detection_results)",
+    )
+    pb_parser.add_argument(
+        "--num-iterations",
+        type=int,
+        default=3,
+        help="Number of benchmark iterations (default: 3)",
+    )
+    pb_parser.add_argument(
+        "--warmup-runs",
+        type=int,
+        default=1,
+        help="Number of warmup iterations (default: 1)",
+    )
+    pb_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=60.0,
+        help="Timeout in seconds for collecting results per iteration (default: 60.0)",
+    )
+    pb_parser.add_argument(
+        "--output",
+        "-o",
+        type=Path,
+        default=None,
+        help="Output file path for results JSON",
+    )
+    pb_parser.set_defaults(func=_run_pipeline_benchmark)
+
+
+def _run_pipeline_benchmark(args: argparse.Namespace) -> None:
+    from triton_model_tools.pipeline_benchmark import (  # noqa: PLC0415
+        PipelineBenchmarkConfig,
+        run_pipeline_benchmark,
+    )
+
+    image_dir: Path = args.image_dir.resolve()
+    model_name: str = args.model
+    redis_url: str = args.redis_url
+    input_stream: str = args.input_stream
+    output_stream: str = args.output_stream
+    num_iterations: int = args.num_iterations
+    warmup_runs: int = args.warmup_runs
+    timeout_s: float = args.timeout
+    output_path: Path | None = args.output
+
+    logger.info("Pipeline E2E Benchmark")
+    logger.info("Image dir: {}", image_dir)
+    logger.info("Model: {}", model_name)
+    logger.info("Redis: {}", redis_url)
+
+    config = PipelineBenchmarkConfig(
+        redis_url=redis_url,
+        input_stream=input_stream,
+        output_stream=output_stream,
+        model_name=model_name,
+        num_iterations=num_iterations,
+        warmup_runs=warmup_runs,
+        timeout_s=timeout_s,
+    )
+
+    result = run_pipeline_benchmark(config, image_dir)
+
+    logger.info(
+        "Results: {} images, avg={:.2f}ms, throughput={:.1f}fps",
+        result.num_images,
+        result.avg_latency_ms,
+        result.throughput_fps,
+    )
+    logger.info(
+        "Latencies: p50={:.2f}ms p95={:.2f}ms p99={:.2f}ms",
+        result.p50_latency_ms,
+        result.p95_latency_ms,
+        result.p99_latency_ms,
+    )
+
+    if output_path is not None:
+        import json  # noqa: PLC0415
+
+        resolved_output = output_path.resolve()
+        resolved_output.parent.mkdir(parents=True, exist_ok=True)
+        with resolved_output.open("w") as f:
+            json.dump(result.model_dump(), f, indent=2)
+        logger.info("Benchmark results saved to {}", resolved_output)
+
+
+def _build_compare_folders_parser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+) -> None:
+    cf_parser = subparsers.add_parser(
+        "compare-folders",
+        help="Compare detection txt results from two folders (baseline vs candidate)",
+    )
+    cf_parser.add_argument(
+        "--baseline-dir",
+        type=Path,
+        required=True,
+        help="Directory with baseline detection txt files",
+    )
+    cf_parser.add_argument(
+        "--candidate-dir",
+        type=Path,
+        required=True,
+        help="Directory with candidate detection txt files",
+    )
+    cf_parser.add_argument(
+        "-m",
+        "--model",
+        type=str,
+        required=True,
+        help="Model name for detection results",
+    )
+    cf_parser.add_argument(
+        "--iou-threshold",
+        type=float,
+        default=0.5,
+        help="IoU threshold for detection matching (default: 0.5)",
+    )
+    cf_parser.add_argument(
+        "--output",
+        "-o",
+        type=Path,
+        default=None,
+        help="Output path for comparison results JSON",
+    )
+    cf_parser.set_defaults(func=_run_compare_folders)
+
+
+def _run_compare_folders(args: argparse.Namespace) -> None:
+    import json as json_mod  # noqa: PLC0415
+
+    from triton_model_tools.comparison import compare_inference  # noqa: PLC0415
+    from triton_model_tools.detection_io import load_folder_detections  # noqa: PLC0415
+
+    baseline_dir: Path = args.baseline_dir.resolve()
+    candidate_dir: Path = args.candidate_dir.resolve()
+    model_name: str = args.model
+    iou_threshold: float = args.iou_threshold
+    output_path: Path | None = args.output
+
+    logger.info("Folder Comparison")
+    logger.info("Baseline: {}", baseline_dir)
+    logger.info("Candidate: {}", candidate_dir)
+    logger.info("Model: {}", model_name)
+
+    baseline = load_folder_detections(baseline_dir, model_name)
+    candidate = load_folder_detections(candidate_dir, model_name)
+    summary = compare_inference(baseline, candidate, iou_threshold)
+
+    logger.info("Overall precision: {:.4f}", summary.overall.precision)
+    logger.info("Overall recall: {:.4f}", summary.overall.recall)
+    logger.info("Overall avg IoU: {:.4f}", summary.overall.avg_iou)
+    logger.info("Class mismatch rate: {:.4f}", summary.overall.class_mismatch_rate)
+    logger.info("False positives: {}", summary.overall.false_positive_count)
+    logger.info("Missed detections: {}", summary.overall.missed_count)
+
+    if output_path is not None:
+        resolved_output = output_path.resolve()
+        resolved_output.parent.mkdir(parents=True, exist_ok=True)
+        with resolved_output.open("w") as f:
+            json_mod.dump(summary.model_dump(), f, indent=2)
+        logger.info("Comparison results saved to {}", resolved_output)
+
+
+def _build_pipeline_predict_parser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+) -> None:
+    pp_parser = subparsers.add_parser(
+        "pipeline-predict",
+        help="Run images through Redis pipeline and save detection txt files",
+    )
+    pp_parser.add_argument(
+        "--image-dir",
+        type=Path,
+        required=True,
+        help="Directory containing images to push through the pipeline",
+    )
+    pp_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Directory to save detection txt files",
+    )
+    pp_parser.add_argument(
+        "-m",
+        "--model",
+        type=str,
+        required=True,
+        help="Triton model name (e.g. yolo11s)",
+    )
+    pp_parser.add_argument(
+        "--redis-url",
+        type=str,
+        default="redis://redis:6379",
+        help="Redis URL (default: redis://redis:6379)",
+    )
+    pp_parser.add_argument(
+        "--input-stream",
+        type=str,
+        default="camera_images",
+        help="Redis input stream name (default: camera_images)",
+    )
+    pp_parser.add_argument(
+        "--output-stream",
+        type=str,
+        default="detection_results",
+        help="Redis output stream name (default: detection_results)",
+    )
+    pp_parser.add_argument(
+        "--consumer-group",
+        type=str,
+        default="pipeline-predict",
+        help="Redis consumer group name (default: pipeline-predict)",
+    )
+    pp_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=30.0,
+        help="Timeout in seconds for collecting results (default: 30.0)",
+    )
+    pp_parser.set_defaults(func=_run_pipeline_predict)
+
+
+def _run_pipeline_predict(args: argparse.Namespace) -> None:
+    from triton_model_tools.e2e_test import E2ETestConfig  # noqa: PLC0415
+    from triton_model_tools.pipeline_predict import run_pipeline_predict  # noqa: PLC0415
+
+    image_dir: Path = args.image_dir.resolve()
+    output_dir: Path = args.output_dir.resolve()
+    model_name: str = args.model
+    redis_url: str = args.redis_url
+    input_stream: str = args.input_stream
+    output_stream: str = args.output_stream
+    consumer_group: str = args.consumer_group
+    timeout_s: float = args.timeout
+
+    logger.info("Pipeline Prediction")
+    logger.info("Image dir: {}", image_dir)
+    logger.info("Output dir: {}", output_dir)
+    logger.info("Model: {}", model_name)
+    logger.info("Redis: {}", redis_url)
+
+    config = E2ETestConfig(
+        redis_url=redis_url,
+        input_stream=input_stream,
+        output_stream=output_stream,
+        model_name=model_name,
+        consumer_group=consumer_group,
+        timeout_s=timeout_s,
+    )
+
+    result = run_pipeline_predict(image_dir, output_dir, config)
+
+    logger.info("Results: {} images processed", len(result.results))
+    logger.info("Total time: {:.2f}s", result.total_time_s)
+    logger.info("Average time: {:.1f}ms per image", result.avg_time_ms)
+
+
+def _build_predict_parser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+) -> None:
+    predict_parser = subparsers.add_parser(
+        "predict",
+        help="Run ultralytics YOLO prediction on an image folder and save txt results",
+    )
+    predict_parser.add_argument(
+        "--image-dir",
+        type=Path,
+        required=True,
+        help="Directory containing images to predict on",
+    )
+    predict_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Directory to save detection txt files",
+    )
+    predict_parser.add_argument(
+        "-m",
+        "--model",
+        type=str,
+        default="yolo11s.pt",
+        help="Ultralytics model path or name (default: yolo11s.pt)",
+    )
+    predict_parser.add_argument(
+        "--target-size",
+        type=int,
+        default=640,
+        help="Model input size (default: 640)",
+    )
+    predict_parser.add_argument(
+        "--conf-threshold",
+        type=float,
+        default=0.25,
+        help="Confidence threshold (default: 0.25)",
+    )
+    predict_parser.add_argument(
+        "--iou-threshold",
+        type=float,
+        default=0.45,
+        help="IoU threshold for NMS (default: 0.45)",
+    )
+    predict_parser.set_defaults(func=_run_predict)
+
+
+def _run_predict(args: argparse.Namespace) -> None:
+    from triton_model_tools.predict import PredictConfig, run_ultralytics_predict  # noqa: PLC0415
+
+    image_dir: Path = args.image_dir.resolve()
+    output_dir: Path = args.output_dir.resolve()
+    model: str = args.model
+    target_size: int = args.target_size
+    conf_threshold: float = args.conf_threshold
+    iou_threshold: float = args.iou_threshold
+
+    logger.info("Ultralytics YOLO Prediction")
+    logger.info("Image dir: {}", image_dir)
+    logger.info("Output dir: {}", output_dir)
+    logger.info("Model: {}", model)
+
+    config = PredictConfig(
+        model_path=model,
+        conf_threshold=conf_threshold,
+        iou_threshold=iou_threshold,
+        target_size=target_size,
+    )
+
+    result = run_ultralytics_predict(image_dir, output_dir, config)
+
+    logger.info("Results: {} images processed", len(result.results))
+    logger.info("Total time: {:.2f}s", result.total_time_s)
+    logger.info("Average time: {:.1f}ms per image", result.avg_time_ms)
+
+    for img_result in result.results:
+        logger.info(
+            "  {}: {} detections ({:.1f}ms)",
+            img_result.image_path,
+            len(img_result.detections),
+            img_result.inference_time_ms,
+        )
+
+
 def _build_compare_parser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
 ) -> None:
@@ -689,6 +1067,10 @@ def main() -> None:
     _build_full_benchmark_parser(subparsers)
     _build_e2e_test_parser(subparsers)
     _build_compare_parser(subparsers)
+    _build_predict_parser(subparsers)
+    _build_pipeline_predict_parser(subparsers)
+    _build_compare_folders_parser(subparsers)
+    _build_pipeline_benchmark_parser(subparsers)
 
     args = parser.parse_args()
 
