@@ -41,6 +41,7 @@ uv run vulture                         # dead code detection
 
 ```
 pyproject.toml                          — virtual workspace root (no build-system)
+pyrightconfig.json                      — pyright config (exclude paths must match package layout)
 packages/
   triton_redis_connector/               — core connector
     pyproject.toml                      — deps: redis, tritonclient, pydantic, loguru, dishka
@@ -48,9 +49,22 @@ packages/
     tests/                              — tests
   triton_model_tools/                   — model tools
     pyproject.toml                      — deps: ultralytics, onnx, onnxruntime, tritonclient
-    triton_model_tools/                 — source code
-    tests/                              — tests
+    triton_model_tools/                 — source code (subpackages below)
+      models/                           — shared types: Detection, YoloModelVariant, YOLO_MODELS
+      export/                           — YOLO → ONNX/TRT → Triton repository (+ templates/, scripts/)
+      inference/                        — Triton gRPC client, pre/postprocessing, batch inference
+      testing/                          — E2E test harness (Redis pipeline integration)
+      benchmarks/                       — performance measurement, comparison, dataset tools
+    tests/                              — tests (flat, not mirroring subpackage structure)
 ```
+
+### Import Layer Architecture (import-linter contract)
+
+```
+__main__ (CLI) → benchmarks → testing → inference | export → models (leaf)
+```
+
+Modules within a `|` group are siblings at the same layer and must NOT cross-import.
 
 ### Infrastructure (.devcontainer/docker-compose.yml)
 
@@ -69,6 +83,8 @@ All infrastructure runs via the devcontainer compose file.
 - **No dynamic access**: avoid `getattr`/`hasattr`/`__dict__`
 - **Avoid comments**: improve names and code structure instead
 - **Avoid short functions**: inline functions under 4 lines if used fewer than 4 times
+- **Imports**: top-level, never lazy — unless the dependency is truly optional (not in pyproject.toml) or it's a CLI subcommand handler in `__main__.py`. All deps listed in pyproject.toml are non-optional and must be imported at module level.
+- **Config file sync**: when moving/renaming files, update ALL config paths: mypy `exclude` in `pyproject.toml`, pyright `exclude` in `pyrightconfig.json`, vulture `paths`/`ignore_names`, and import-linter contracts
 
 ## Pre-commit Hooks
 
