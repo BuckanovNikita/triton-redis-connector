@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
-    from triton_model_tools.detection import Detection, ImageDetectionResult
+    from triton_model_tools.models.detection import Detection, ImageDetectionResult
 
 
 class ComparisonMetrics(BaseModel):

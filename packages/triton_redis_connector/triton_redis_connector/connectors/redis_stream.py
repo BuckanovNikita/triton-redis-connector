@@ -11,7 +11,7 @@ import time
 from collections import deque
 from typing import TYPE_CHECKING, cast
 
-from loguru import logger  # pyright: ignore[reportMissingImports]
+from loguru import logger
 
 from triton_redis_connector.protocols import Envelope
 
@@ -100,7 +100,7 @@ class RedisStreamOutputConnector:
         """Write a message to the output stream, returning the assigned message ID."""
         result = cast(
             "bytes",
-            self._client.xadd(  # pyright: ignore[reportUnknownMemberType]
+            self._client.xadd(
                 name=self._config.stream_name,
                 fields=data,
                 maxlen=self._config.maxlen,

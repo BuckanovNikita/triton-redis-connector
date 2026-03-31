@@ -102,7 +102,7 @@ def build_pipeline() -> Application:
         decode_responses=False,
     )
 
-    redis_client.ping()  # pyright: ignore[reportUnknownMemberType]
+    redis_client.ping()
     logger.info("Connected to Redis at {}:{}", redis_config.host, redis_config.port)
 
     group_manager = ConsumerGroupManager()

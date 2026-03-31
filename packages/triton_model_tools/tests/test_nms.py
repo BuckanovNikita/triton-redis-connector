@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from typing import TYPE_CHECKING
 
-from triton_model_tools.nms import (
+from triton_model_tools.export.nms import (
     _NMS_SCRIPT_PATH,
     NMS_MODEL_NAME,
     NmsModelConfig,

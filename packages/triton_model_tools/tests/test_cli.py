@@ -121,7 +121,7 @@ class TestMainEntryPoint:
         mock_export = MagicMock(return_value=[tmp_path / "models" / "yolo11s"])
         with (
             patch("sys.argv", ["triton-model-tools", "export", "-r", repo_dir]),
-            patch("triton_model_tools.exporter.export_all_models", mock_export),
+            patch("triton_model_tools.export.exporter.export_all_models", mock_export),
         ):
             main()
 
@@ -136,7 +136,7 @@ class TestMainEntryPoint:
         mock_export = MagicMock(side_effect=ValueError("bad model"))
         with (
             patch("sys.argv", ["triton-model-tools", "export", "-r", repo_dir]),
-            patch("triton_model_tools.exporter.export_all_models", mock_export),
+            patch("triton_model_tools.export.exporter.export_all_models", mock_export),
             pytest.raises(SystemExit, match="1"),
         ):
             main()
@@ -146,7 +146,7 @@ class TestMainEntryPoint:
         mock_export = MagicMock(side_effect=KeyboardInterrupt)
         with (
             patch("sys.argv", ["triton-model-tools", "export", "-r", repo_dir]),
-            patch("triton_model_tools.exporter.export_all_models", mock_export),
+            patch("triton_model_tools.export.exporter.export_all_models", mock_export),
             pytest.raises(SystemExit, match="130"),
         ):
             main()
@@ -156,7 +156,7 @@ class TestMainEntryPoint:
         mock_export = MagicMock(return_value=[tmp_path / "models" / "yolo11s"])
         with (
             patch("sys.argv", ["triton-model-tools", "export", "-r", repo_dir, "-m", "yolo11s"]),
-            patch("triton_model_tools.exporter.export_all_models", mock_export),
+            patch("triton_model_tools.export.exporter.export_all_models", mock_export),
         ):
             main()
 
@@ -174,8 +174,8 @@ class TestMainEntryPoint:
         mock_build_ensemble = MagicMock()
         with (
             patch("sys.argv", ["triton-model-tools", "export", "-r", repo_dir, "--dali-ensemble"]),
-            patch("triton_model_tools.exporter.export_all_models", mock_export),
-            patch("triton_model_tools.dali.build_ensemble_directory", mock_build_ensemble),
+            patch("triton_model_tools.export.exporter.export_all_models", mock_export),
+            patch("triton_model_tools.export.dali.build_ensemble_directory", mock_build_ensemble),
         ):
             main()
 
@@ -189,8 +189,8 @@ class TestMainEntryPoint:
         mock_build_nms = MagicMock()
         with (
             patch("sys.argv", ["triton-model-tools", "export", "-r", repo_dir, "--nms"]),
-            patch("triton_model_tools.exporter.export_all_models", mock_export),
-            patch("triton_model_tools.nms.build_nms_model_directory", mock_build_nms),
+            patch("triton_model_tools.export.exporter.export_all_models", mock_export),
+            patch("triton_model_tools.export.nms.build_nms_model_directory", mock_build_nms),
         ):
             main()
 
@@ -210,9 +210,9 @@ class TestMainEntryPoint:
                 "sys.argv",
                 ["triton-model-tools", "export", "-r", repo_dir, "--dali-ensemble", "--nms"],
             ),
-            patch("triton_model_tools.exporter.export_all_models", mock_export),
-            patch("triton_model_tools.dali.build_ensemble_directory", mock_build_ensemble),
-            patch("triton_model_tools.nms.build_nms_model_directory", mock_build_nms),
+            patch("triton_model_tools.export.exporter.export_all_models", mock_export),
+            patch("triton_model_tools.export.dali.build_ensemble_directory", mock_build_ensemble),
+            patch("triton_model_tools.export.nms.build_nms_model_directory", mock_build_nms),
         ):
             main()
 
@@ -334,9 +334,9 @@ class TestFullBenchmarkSubcommandParsing:
                     str(output_path),
                 ],
             ),
-            patch("triton_model_tools.benchmark.build_full_matrix", mock_build),
-            patch("triton_model_tools.benchmark.run_benchmark_matrix", mock_run),
-            patch("triton_model_tools.benchmark.save_benchmark_output", mock_save),
+            patch("triton_model_tools.benchmarks.benchmark.build_full_matrix", mock_build),
+            patch("triton_model_tools.benchmarks.benchmark.run_benchmark_matrix", mock_run),
+            patch("triton_model_tools.benchmarks.benchmark.save_benchmark_output", mock_save),
         ):
             main()
 

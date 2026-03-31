@@ -10,23 +10,20 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
+from ultralytics import YOLO  # type: ignore[attr-defined]
 
-from triton_model_tools.benchmark_stats import MILLISECONDS_PER_SECOND, compute_statistics
-from triton_model_tools.inference import (
+from triton_model_tools.benchmarks.stats import MILLISECONDS_PER_SECOND, compute_statistics
+from triton_model_tools.inference.client import TritonInferenceClient
+from triton_model_tools.inference.detection_io import collect_image_paths, load_image
+from triton_model_tools.inference.postprocessing import (
     DEFAULT_CONFIDENCE_THRESHOLD,
     DEFAULT_IOU_THRESHOLD,
-    TritonInferenceClient,
     YoloPostprocessor,
-    YoloPreprocessor,
 )
+from triton_model_tools.inference.preprocessing import YoloPreprocessor
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import numpy as np
-    import numpy.typing as npt
-
-IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"})
 
 
 class BenchmarkConfig(BaseModel):
@@ -121,24 +118,6 @@ class BenchmarkSuite(BaseModel):
         logger.info("Benchmark results written to {}", path)
 
 
-def _collect_image_paths(image_dir: Path, max_count: int) -> list[Path]:
-    paths = sorted(p for p in image_dir.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS)
-    if not paths:
-        msg = f"No image files found in {image_dir}"
-        raise FileNotFoundError(msg)
-    return paths[:max_count]
-
-
-def _load_image(path: Path) -> npt.NDArray[np.uint8]:
-    import cv2  # noqa: PLC0415  # pyright: ignore[reportMissingTypeStubs]
-
-    img: npt.NDArray[np.uint8] | None = cv2.imread(str(path))  # type: ignore[assignment]  # pyright: ignore[reportUnknownMemberType,reportAssignmentType]
-    if img is None:
-        msg = f"Failed to load image: {path}"
-        raise FileNotFoundError(msg)
-    return img
-
-
 def run_benchmark(config: BenchmarkConfig, image_dir: Path) -> BenchmarkResult:
     """Run Triton inference benchmark.
 
@@ -150,7 +129,7 @@ def run_benchmark(config: BenchmarkConfig, image_dir: Path) -> BenchmarkResult:
         BenchmarkResult with timing statistics.
 
     """
-    image_paths = _collect_image_paths(image_dir, config.num_images)
+    image_paths = collect_image_paths(image_dir, max_count=config.num_images)
     logger.info("Running benchmark: model={} backend={} images={}", config.model_name, config.backend, len(image_paths))
 
     client = TritonInferenceClient(url=config.triton_url)
@@ -161,14 +140,14 @@ def run_benchmark(config: BenchmarkConfig, image_dir: Path) -> BenchmarkResult:
 
     if config.warmup_runs > 0:
         logger.info("Running {} warmup iterations", config.warmup_runs)
-        warmup_image = _load_image(image_paths[0])
+        warmup_image = load_image(image_paths[0])
         warmup_tensor, _, _ = preprocessor.preprocess(warmup_image)
         for _ in range(config.warmup_runs):
             client.infer_raw(config.model_name, warmup_tensor, output_names)
 
     latencies_ms: list[float] = []
     for image_path in image_paths:
-        image = _load_image(image_path)
+        image = load_image(image_path)
 
         start = time.perf_counter()
         tensor, scale, pad_offset = preprocessor.preprocess(image)
@@ -222,17 +201,15 @@ def run_ultralytics_benchmark(
         BenchmarkResult with timing statistics.
 
     """
-    image_paths = _collect_image_paths(image_dir, num_images)
+    image_paths = collect_image_paths(image_dir, max_count=num_images)
     logger.info("Running ultralytics baseline benchmark: model={} images={}", model_path, len(image_paths))
 
-    from ultralytics import YOLO  # type: ignore[attr-defined]  # noqa: PLC0415
-
-    model: Any = YOLO(model_path)  # pyright: ignore[reportUnknownVariableType]
+    model: Any = YOLO(model_path)
 
     latencies_ms: list[float] = []
     for image_path in image_paths:
         start = time.perf_counter()
-        model.predict(str(image_path), verbose=False)  # pyright: ignore[reportUnknownMemberType]
+        model.predict(str(image_path), verbose=False)
         elapsed_ms = (time.perf_counter() - start) * MILLISECONDS_PER_SECOND
         latencies_ms.append(elapsed_ms)
 

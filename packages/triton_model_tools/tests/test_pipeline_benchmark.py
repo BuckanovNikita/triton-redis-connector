@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-from triton_model_tools.benchmark_stats import compute_statistics
-from triton_model_tools.pipeline_benchmark import PipelineBenchmarkConfig, PipelineBenchmarkResult
+from triton_model_tools.benchmarks.pipeline_benchmark import PipelineBenchmarkConfig, PipelineBenchmarkResult
 
 
 class TestPipelineBenchmarkConfig:
@@ -48,23 +47,3 @@ class TestPipelineBenchmarkResult:
         )
         assert result.avg_latency_ms == 100.0
         assert result.num_images == 10
-
-
-class TestComputeStatistics:
-    def test_basic_statistics(self) -> None:
-        latencies = [10.0, 20.0, 30.0, 40.0, 50.0]
-        total_s, avg_ms, throughput, p50, _p95, _p99 = compute_statistics(latencies)
-
-        assert avg_ms == pytest.approx(30.0)
-        assert p50 == pytest.approx(30.0)
-        assert total_s == pytest.approx(0.15)
-        assert throughput > 0
-
-    def test_single_value(self) -> None:
-        latencies = [100.0]
-        _total_s, avg_ms, _throughput, p50, p95, p99 = compute_statistics(latencies)
-
-        assert avg_ms == pytest.approx(100.0)
-        assert p50 == pytest.approx(100.0)
-        assert p95 == pytest.approx(100.0)
-        assert p99 == pytest.approx(100.0)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-from triton_model_tools.detection import (
+from triton_model_tools.models.detection import (
     Detection,
     FolderInferenceResult,
     ImageDetectionResult,

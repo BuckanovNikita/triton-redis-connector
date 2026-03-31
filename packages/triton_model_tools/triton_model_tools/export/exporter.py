@@ -5,8 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+import onnx
 from loguru import logger
+from ultralytics import YOLO  # type: ignore[attr-defined]
 
+from triton_model_tools.export.repository import build_model_directory
 from triton_model_tools.models import (
     EXPORT_FORMAT_TO_FILENAME,
     EXPORT_FORMAT_TO_PLATFORM,
@@ -16,14 +19,11 @@ from triton_model_tools.models import (
     TritonModelConfig,
     TritonTensorSpec,
 )
-from triton_model_tools.repository import build_model_directory
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    import onnx
-
-    from triton_model_tools.models import YoloModelVariant
+    from triton_model_tools.models.registry import YoloModelVariant
 
 ONNX_DTYPE_TO_TRITON: dict[int, TritonDataType] = {
     1: TritonDataType.TYPE_FP32,
@@ -43,8 +43,6 @@ def _extract_tensor_spec(
     tensor: onnx.TensorProto | onnx.ValueInfoProto,
 ) -> TritonTensorSpec:
     """Extract tensor name, dtype, and shape from an ONNX graph tensor."""
-    import onnx  # noqa: PLC0415
-
     name = tensor.name
 
     if isinstance(tensor, onnx.TensorProto):
@@ -70,9 +68,7 @@ def inspect_onnx_model(
         Tuple of (input_specs, output_specs) extracted from the ONNX graph.
 
     """
-    import onnx  # noqa: PLC0415
-
-    model = onnx.load(str(onnx_path))  # pyright: ignore[reportUnknownMemberType]
+    model = onnx.load(str(onnx_path))
     inputs = [_extract_tensor_spec(inp) for inp in model.graph.input]
     outputs = [_extract_tensor_spec(out) for out in model.graph.output]
 
@@ -93,8 +89,6 @@ def _export_onnx(variant: YoloModelVariant, repository_root: Path) -> Path:
         Path to the created Triton model directory.
 
     """
-    from ultralytics import YOLO  # type: ignore[attr-defined]  # noqa: PLC0415
-
     logger.info("Exporting {} (ONNX) from {}", variant.name, variant.ultralytics_model)
 
     yolo_model = YOLO(variant.ultralytics_model)
@@ -147,8 +141,6 @@ def _export_tensorrt(variant: YoloModelVariant, repository_root: Path) -> Path:
         Path to the created Triton model directory.
 
     """
-    from ultralytics import YOLO  # type: ignore[attr-defined]  # noqa: PLC0415
-
     trt_model_name = f"{variant.name}{TENSORRT_NAME_SUFFIX}"
     logger.info("Exporting {} (TensorRT) from {}", trt_model_name, variant.ultralytics_model)
 

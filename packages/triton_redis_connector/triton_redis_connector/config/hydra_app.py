@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from hydra import compose, initialize_config_dir  # pyright: ignore[reportMissingTypeStubs]
+from hydra import compose, initialize_config_dir
 from loguru import logger
-from omegaconf import OmegaConf  # pyright: ignore[reportMissingTypeStubs]
+from omegaconf import OmegaConf
 
 from triton_redis_connector.config.schema import AppConfig
 

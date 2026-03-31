@@ -6,12 +6,12 @@ import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
-from triton_model_tools.detection import Detection, ImageDetectionResult
-from triton_model_tools.fiftyone_export import (
+from triton_model_tools.benchmarks.fiftyone_export import (
     FIFTYONE_INSTALL_MSG,
     export_to_fiftyone,
     launch_fiftyone_app,
 )
+from triton_model_tools.models.detection import Detection, ImageDetectionResult
 
 
 def _sample_results() -> list[ImageDetectionResult]:

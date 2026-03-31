@@ -6,13 +6,13 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from triton_model_tools.detection_io import save_detections_to_txt
-from triton_model_tools.e2e_test import ConnectorE2ETestHarness, E2ETestConfig
+from triton_model_tools.inference.detection_io import save_detections_to_txt
+from triton_model_tools.testing.e2e_test import ConnectorE2ETestHarness, E2ETestConfig
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from triton_model_tools.detection import FolderInferenceResult
+    from triton_model_tools.models.detection import FolderInferenceResult
 
 
 def run_pipeline_predict(

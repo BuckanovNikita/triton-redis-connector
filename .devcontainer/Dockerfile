@@ -15,6 +15,7 @@ RUN apt-get update \
         procps \
         sudo \
         openssh-client \
+        libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 
 ARG USERNAME=vscode

@@ -7,7 +7,7 @@ provider architecture will support cross-layer wiring.
 
 from __future__ import annotations
 
-from dishka import Provider  # pyright: ignore[reportUnknownVariableType]
+from dishka import Provider
 
 from triton_redis_connector.providers.scopes import ConnectorScope
 

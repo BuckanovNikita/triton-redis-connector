@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from triton_model_tools.detection import ImageDetectionResult
+    from triton_model_tools.models.detection import ImageDetectionResult
 
 FIFTYONE_INSTALL_MSG = "fiftyone is required for visual inspection. Install it with: pip install fiftyone"
 
@@ -29,21 +29,21 @@ def export_to_fiftyone(
 
     """
     try:
-        import fiftyone as fo  # noqa: PLC0415  # pyright: ignore[reportMissingTypeStubs,reportMissingModuleSource,reportMissingImports]
+        import fiftyone as fo  # noqa: PLC0415
     except ImportError as exc:
         raise ImportError(FIFTYONE_INSTALL_MSG) from exc
 
-    dataset: Any = fo.Dataset(name=dataset_name, overwrite=True)  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
+    dataset: Any = fo.Dataset(name=dataset_name, overwrite=True)
 
     samples: list[Any] = []
     for img_result in results:
-        sample: Any = fo.Sample(filepath=img_result.image_path)  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
+        sample: Any = fo.Sample(filepath=img_result.image_path)
 
         detections_list: list[Any] = []
         for det in img_result.detections:
             img_w = max(det.x2, 1.0)
             img_h = max(det.y2, 1.0)
-            fo_det: Any = fo.Detection(  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
+            fo_det: Any = fo.Detection(
                 label=det.class_name or str(det.class_id),
                 bounding_box=[
                     det.x1 / img_w,
@@ -55,10 +55,10 @@ def export_to_fiftyone(
             )
             detections_list.append(fo_det)
 
-        sample.detections = fo.Detections(detections=detections_list)  # pyright: ignore[reportUnknownMemberType]
+        sample.detections = fo.Detections(detections=detections_list)
         samples.append(sample)
 
-    dataset.add_samples(samples)  # pyright: ignore[reportUnknownMemberType]
+    dataset.add_samples(samples)
 
 
 def launch_fiftyone_app(
@@ -76,11 +76,11 @@ def launch_fiftyone_app(
 
     """
     try:
-        import fiftyone as fo  # noqa: PLC0415  # pyright: ignore[reportMissingTypeStubs,reportMissingModuleSource,reportMissingImports]
+        import fiftyone as fo  # noqa: PLC0415
     except ImportError as exc:
         raise ImportError(FIFTYONE_INSTALL_MSG) from exc
 
     export_to_fiftyone(results, dataset_name)
-    dataset: Any = fo.load_dataset(dataset_name)  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
-    session: Any = fo.launch_app(dataset)  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
-    session.wait()  # pyright: ignore[reportUnknownMemberType]
+    dataset: Any = fo.load_dataset(dataset_name)
+    session: Any = fo.launch_app(dataset)
+    session.wait()

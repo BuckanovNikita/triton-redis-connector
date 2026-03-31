@@ -11,7 +11,16 @@ import types
 import typing
 from enum import StrEnum, auto
 
-from loguru import logger  # pyright: ignore[reportMissingImports]
+from loguru import logger
+
+from triton_redis_connector.protocols import (
+    ProcessPoolProcessor,
+    ProcessSource,
+    ThreadPoolProcessor,
+    ThreadProcessor,
+    ThreadSink,
+    ThreadSource,
+)
 
 
 class ExecutionVariant(StrEnum):
@@ -75,7 +84,7 @@ class PipelineRegistry:
         graph_node = GraphNode(name=name, instance=node, variant=variant)
 
         call_method = node.__call__  # type: ignore[operator]
-        hints = typing.get_type_hints(call_method)  # pyright: ignore[reportUnknownArgumentType]
+        hints = typing.get_type_hints(call_method)
 
         if variant not in SOURCE_VARIANTS:
             input_type = self._get_input_type(hints)
@@ -238,15 +247,6 @@ class PipelineRegistry:
 
     def _has_stop_event(self, node: object) -> bool:
         """Check if a node has a threading.Event stop attribute via protocol checks."""
-        from triton_redis_connector.protocols import (  # noqa: PLC0415
-            ProcessPoolProcessor,
-            ProcessSource,
-            ThreadPoolProcessor,
-            ThreadProcessor,
-            ThreadSink,
-            ThreadSource,
-        )
-
         return isinstance(
             node,
             (ThreadSource, ProcessSource, ThreadProcessor, ThreadPoolProcessor, ProcessPoolProcessor, ThreadSink),

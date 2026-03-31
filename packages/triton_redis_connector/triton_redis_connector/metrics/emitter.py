@@ -71,7 +71,7 @@ class MetricEmitter:
         for event in events:
             fields = {k: str(v) for k, v in event.model_dump().items()}
             try:
-                self._client.xadd(  # pyright: ignore[reportUnknownMemberType]
+                self._client.xadd(
                     name=self._stream,
                     fields=fields,
                     maxlen=10_000,

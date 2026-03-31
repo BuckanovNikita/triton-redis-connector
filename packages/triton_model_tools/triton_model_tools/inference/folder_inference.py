@@ -7,42 +7,20 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from triton_model_tools.detection import FolderInferenceResult, ImageDetectionResult
-from triton_model_tools.inference import (
+from triton_model_tools.inference.client import TritonInferenceClient
+from triton_model_tools.inference.detection_io import collect_image_paths, load_image
+from triton_model_tools.inference.postprocessing import (
     DEFAULT_CONFIDENCE_THRESHOLD,
     DEFAULT_IOU_THRESHOLD,
-    TritonInferenceClient,
     YoloPostprocessor,
-    YoloPreprocessor,
 )
+from triton_model_tools.inference.preprocessing import YoloPreprocessor
+from triton_model_tools.models.detection import FolderInferenceResult, ImageDetectionResult
+
+MILLISECONDS_PER_SECOND = 1000.0
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import numpy as np
-    import numpy.typing as npt
-
-IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"})
-MILLISECONDS_PER_SECOND = 1000.0
-
-
-def _load_image(path: Path) -> npt.NDArray[np.uint8]:
-    import cv2  # noqa: PLC0415  # pyright: ignore[reportMissingTypeStubs]
-
-    img: npt.NDArray[np.uint8] | None = cv2.imread(str(path))  # type: ignore[assignment]  # pyright: ignore[reportUnknownMemberType,reportAssignmentType]
-    if img is None:
-        msg = f"Failed to load image: {path}"
-        raise FileNotFoundError(msg)
-    return img
-
-
-def _collect_image_paths(image_dir: Path) -> list[Path]:
-    paths = sorted(p for p in image_dir.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS)
-    if not paths:
-        msg = f"No image files found in {image_dir}"
-        raise FileNotFoundError(msg)
-    logger.info("Found {} images in {}", len(paths), image_dir)
-    return paths
 
 
 def run_folder_inference(  # noqa: PLR0913
@@ -74,7 +52,7 @@ def run_folder_inference(  # noqa: PLR0913
     """
     resolved_output_names = output_names if output_names is not None else ["output0"]
 
-    image_paths = _collect_image_paths(image_dir)
+    image_paths = collect_image_paths(image_dir)
     client = TritonInferenceClient(url=triton_url)
     preprocessor = YoloPreprocessor(target_size=target_size)
     postprocessor = YoloPostprocessor(end2end=end2end)
@@ -84,7 +62,7 @@ def run_folder_inference(  # noqa: PLR0913
 
     for image_path in image_paths:
         logger.info("Processing {}", image_path.name)
-        image = _load_image(image_path)
+        image = load_image(image_path)
 
         img_start = time.perf_counter()
 

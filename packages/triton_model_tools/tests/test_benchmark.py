@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-from triton_model_tools.benchmark import (
+from triton_model_tools.benchmarks.benchmark import (
     BenchmarkConfig,
     BenchmarkResult,
     BenchmarkSuite,
@@ -17,7 +17,7 @@ from triton_model_tools.benchmark import (
     run_benchmark_matrix,
     run_ultralytics_benchmark,
 )
-from triton_model_tools.benchmark_stats import compute_statistics
+from triton_model_tools.benchmarks.stats import compute_statistics
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -186,8 +186,8 @@ class TestComputeStatistics:
 
 
 class TestRunBenchmark:
-    @patch("triton_model_tools.benchmark._load_image")
-    @patch("triton_model_tools.benchmark.TritonInferenceClient")
+    @patch("triton_model_tools.benchmarks.benchmark.load_image")
+    @patch("triton_model_tools.benchmarks.benchmark.TritonInferenceClient")
     def test_runs_benchmark_with_warmup(
         self,
         mock_client_cls: MagicMock,
@@ -221,8 +221,8 @@ class TestRunBenchmark:
         assert result.throughput_fps > 0
         assert mock_client.infer_raw.call_count == 5 + 2
 
-    @patch("triton_model_tools.benchmark._load_image")
-    @patch("triton_model_tools.benchmark.TritonInferenceClient")
+    @patch("triton_model_tools.benchmarks.benchmark.load_image")
+    @patch("triton_model_tools.benchmarks.benchmark.TritonInferenceClient")
     def test_no_warmup(
         self,
         mock_client_cls: MagicMock,
@@ -260,8 +260,8 @@ class TestRunBenchmark:
 
 
 class TestRunBenchmarkMatrix:
-    @patch("triton_model_tools.benchmark._load_image")
-    @patch("triton_model_tools.benchmark.TritonInferenceClient")
+    @patch("triton_model_tools.benchmarks.benchmark.load_image")
+    @patch("triton_model_tools.benchmarks.benchmark.TritonInferenceClient")
     def test_runs_all_configs(
         self,
         mock_client_cls: MagicMock,
@@ -300,10 +300,8 @@ class TestRunUltralyticsBaseline:
 
         mock_model = MagicMock()
         mock_yolo_cls = MagicMock(return_value=mock_model)
-        mock_ultralytics = MagicMock()
-        mock_ultralytics.YOLO = mock_yolo_cls
 
-        with patch.dict("sys.modules", {"ultralytics": mock_ultralytics}):
+        with patch("triton_model_tools.benchmarks.benchmark.YOLO", mock_yolo_cls):
             result = run_ultralytics_benchmark("yolo11s.pt", tmp_path, num_images=3)
 
         assert isinstance(result, BenchmarkResult)

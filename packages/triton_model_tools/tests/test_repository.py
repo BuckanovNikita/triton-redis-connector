@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from triton_model_tools.export.repository import build_model_directory
 from triton_model_tools.models import (
     TritonDataType,
     TritonModelConfig,
     TritonTensorSpec,
 )
-from triton_model_tools.repository import build_model_directory
 
 if TYPE_CHECKING:
     from pathlib import Path

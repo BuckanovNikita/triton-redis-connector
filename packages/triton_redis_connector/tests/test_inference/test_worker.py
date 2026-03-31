@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import sys
 import threading
 import types
 from typing import Any
+from unittest.mock import patch
 
 import numpy as np
 from triton_redis_connector.config.schema import InferenceConfig
@@ -69,20 +69,16 @@ def _create_worker(
     max_retry_attempts: int = 3,
     fail_count: int = 0,
 ) -> InferenceWorker:
-    """Create an InferenceWorker through its public constructor with a fake gRPC module."""
+    """Create an InferenceWorker with a fake gRPC module patched in."""
     fake_module = _build_fake_grpc_module(fail_count=fail_count)
-    sys.modules["tritonclient.grpc"] = fake_module
-    try:
-        worker = InferenceWorker(
+    with patch("triton_redis_connector.inference.worker.grpcclient", fake_module):
+        return InferenceWorker(
             grpc_url="localhost:8001",
             max_concurrent=max_concurrent,
             max_retry_attempts=max_retry_attempts,
             retry_base_delay_s=0.01,
             retry_backoff_multiplier=2.0,
         )
-    finally:
-        del sys.modules["tritonclient.grpc"]
-    return worker
 
 
 class TestInferenceWorker:
@@ -157,11 +153,8 @@ class TestInferenceWorkerFactory:
         factory = InferenceWorkerFactory(config=config)
 
         fake_module = _build_fake_grpc_module()
-        sys.modules["tritonclient.grpc"] = fake_module
-        try:
+        with patch("triton_redis_connector.inference.worker.grpcclient", fake_module):
             worker = factory.create_processor(config)
-        finally:
-            del sys.modules["tritonclient.grpc"]
 
         assert isinstance(worker, InferenceWorker)
         assert isinstance(worker.stop, threading.Event)

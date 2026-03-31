@@ -5,7 +5,7 @@ Provides pipeline orchestration objects: PipelineRegistry, QueueBus, Application
 
 from __future__ import annotations
 
-from dishka import Provider, provide  # pyright: ignore[reportUnknownVariableType]
+from dishka import Provider, provide
 
 from triton_redis_connector.config.schema import AppConfig, QueueConfig  # noqa: TC001 — dishka needs runtime access
 from triton_redis_connector.engine.app import Application

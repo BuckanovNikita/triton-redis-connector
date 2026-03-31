@@ -7,7 +7,7 @@ worker processes.
 
 from __future__ import annotations
 
-from dishka import Provider, provide  # pyright: ignore[reportUnknownVariableType]
+from dishka import Provider, provide
 
 from triton_redis_connector.config.schema import InferenceConfig  # noqa: TC001 — dishka needs runtime access
 from triton_redis_connector.inference.worker import InferenceWorkerFactory

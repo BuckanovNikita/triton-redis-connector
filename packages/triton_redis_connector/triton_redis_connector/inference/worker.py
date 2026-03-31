@@ -12,6 +12,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import tritonclient.grpc as grpcclient  # pyright: ignore[reportMissingTypeStubs]
 from loguru import logger
 
 from triton_redis_connector.errors.models import InferenceError
@@ -37,8 +38,6 @@ class InferenceWorker:
         retry_base_delay_s: float = 0.1,
         retry_backoff_multiplier: float = 4.0,
     ) -> None:
-        import tritonclient.grpc as grpcclient  # pyright: ignore[reportMissingTypeStubs]  # noqa: PLC0415
-
         self._grpc_module: Any = grpcclient
         self._client: Any = grpcclient.InferenceServerClient(url=grpc_url)
         self._semaphore = threading.Semaphore(max_concurrent)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from typing import TYPE_CHECKING
 
-from triton_model_tools.dali import (
+from triton_model_tools.export.dali import (
     DALI_ENSEMBLE_SUFFIX,
     DALI_NMS_ENSEMBLE_SUFFIX,
     DALI_PREPROCESS_SUFFIX,

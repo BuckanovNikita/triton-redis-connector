@@ -10,13 +10,22 @@ from __future__ import annotations
 import queue
 import threading
 import time
-from typing import TYPE_CHECKING
+import typing
+from typing import TYPE_CHECKING, cast
 
-from loguru import logger  # pyright: ignore[reportMissingImports]
+from loguru import logger
 
 from triton_redis_connector.engine.context import EventContext, reset_context, set_context
 from triton_redis_connector.engine.registry import INLINE_VARIANTS, SINK_VARIANTS, SOURCE_VARIANTS
-from triton_redis_connector.protocols import Envelope
+from triton_redis_connector.protocols import (
+    Envelope,
+    ProcessPoolProcessor,
+    ProcessSource,
+    ThreadPoolProcessor,
+    ThreadProcessor,
+    ThreadSink,
+    ThreadSource,
+)
 
 if TYPE_CHECKING:
     from triton_redis_connector.config.schema import AppConfig
@@ -85,16 +94,16 @@ class Application:
             if self._shutdown.is_set():
                 break
             if node.variant in SOURCE_VARIANTS:
-                event: object = node.instance()  # type: ignore[operator]  # pyright: ignore[reportUnknownMemberType]
+                event: object = node.instance()  # type: ignore[operator]
                 if event is not None:
                     dispatched_any = True
-                    self._route_event(event, dispatch_order)  # pyright: ignore[reportUnknownArgumentType]
+                    self._route_event(event, dispatch_order)
         return dispatched_any
 
     def _route_event(self, event: object, dispatch_order: list[GraphNode]) -> None:
         """Route an event through inline processors and sinks by type matching."""
         event_type = type(event)
-        envelope: Envelope[object] = event if isinstance(event, Envelope) else Envelope(payload=event)  # pyright: ignore[reportUnknownVariableType]
+        envelope: Envelope[object] = event if isinstance(event, Envelope) else Envelope(payload=event)
 
         token = set_context(
             EventContext(
@@ -109,9 +118,9 @@ class Application:
                 if node.variant in SOURCE_VARIANTS:
                     continue
                 if event_type in node.input_types:
-                    result: object = node.instance(event)  # type: ignore[operator]  # pyright: ignore[reportUnknownMemberType]
+                    result: object = node.instance(event)  # type: ignore[operator]
                     if result is not None:
-                        self._route_event(result, dispatch_order)  # pyright: ignore[reportUnknownArgumentType]
+                        self._route_event(result, dispatch_order)
         finally:
             reset_context(token)
 
@@ -148,7 +157,7 @@ class Application:
         while not self._shutdown.is_set():
             try:
                 if node.variant in SOURCE_VARIANTS:
-                    result = node.instance()  # type: ignore[operator]
+                    result = cast("object", node.instance())  # type: ignore[operator]
                     if result is not None:
                         self._route_to_consumers(node, result)
                 elif node.variant in SINK_VARIANTS:
@@ -158,7 +167,7 @@ class Application:
                 else:
                     event = self._read_from_input_queue(node, timeout=0.1)
                     if event is not None:
-                        result = node.instance(event)  # type: ignore[operator]
+                        result = cast("object", node.instance(event))  # type: ignore[operator]
                         if result is not None:
                             self._route_to_consumers(node, result)
             except (RuntimeError, ValueError, TypeError, OSError, queue.Full):
@@ -189,8 +198,6 @@ class Application:
     @staticmethod
     def _type_matches(instance: object, target_type: type) -> bool:
         """Check if an instance matches a target type, handling generic aliases."""
-        import typing  # noqa: PLC0415
-
         origin = typing.get_origin(target_type)
         if origin is not None:
             return isinstance(instance, origin)
@@ -200,7 +207,7 @@ class Application:
         """Read one event from a parallel node's input queue."""
         queue_name = f"{node.name}:input"
         try:
-            result: object = self._queue_bus.get(queue_name, timeout=timeout)  # pyright: ignore[reportUnknownVariableType]
+            result: object = self._queue_bus.get(queue_name, timeout=timeout)
         except queue.Empty:
             return None
         else:
@@ -237,15 +244,6 @@ class Application:
 
     def _get_stop_event(self, instance: object) -> threading.Event | None:
         """Retrieve the stop event from a parallel variant using protocol isinstance checks."""
-        from triton_redis_connector.protocols import (  # noqa: PLC0415
-            ProcessPoolProcessor,
-            ProcessSource,
-            ThreadPoolProcessor,
-            ThreadProcessor,
-            ThreadSink,
-            ThreadSource,
-        )
-
         if isinstance(
             instance,
             (ThreadSource, ProcessSource, ThreadProcessor, ThreadPoolProcessor, ProcessPoolProcessor, ThreadSink),

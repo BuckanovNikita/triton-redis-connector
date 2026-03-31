@@ -7,22 +7,24 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any
 
+import redis as redis_lib
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
-from triton_model_tools.detection import (
+from triton_model_tools.inference.detection_io import collect_image_paths
+from triton_model_tools.models.detection import (
     Detection,
     FolderInferenceResult,
     ImageDetectionResult,
 )
+
+MILLISECONDS_PER_SECOND = 1000.0
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     import redis
 
-MILLISECONDS_PER_SECOND = 1000.0
-IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"})
 POLL_INTERVAL_S = 0.5
 CONSUMER_NAME = "e2e-harness"
 
@@ -42,24 +44,14 @@ class E2ETestConfig(BaseModel):
     timeout_s: float = Field(default=30.0, gt=0.0)
 
 
-def _collect_image_paths(image_dir: Path) -> list[Path]:
-    paths = sorted(p for p in image_dir.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS)
-    if not paths:
-        msg = f"No image files found in {image_dir}"
-        raise FileNotFoundError(msg)
-    logger.info("Found {} images in {}", len(paths), image_dir)
-    return paths
-
-
-def _ensure_consumer_group(
+def ensure_consumer_group(
     redis_client: redis.Redis[bytes],
     stream: str,
     group: str,
 ) -> None:
-    import redis as redis_lib  # noqa: PLC0415
-
+    """Create a Redis consumer group, ignoring BUSYGROUP if it already exists."""
     try:
-        redis_client.xgroup_create(  # pyright: ignore[reportUnknownMemberType]
+        redis_client.xgroup_create(
             name=stream,
             groupname=group,
             id="0",
@@ -82,14 +74,12 @@ class ConnectorE2ETestHarness:
 
     def __init__(self, config: E2ETestConfig) -> None:
         """Initialize harness with config, connect to Redis, and create consumer group."""
-        import redis as redis_lib  # noqa: PLC0415
-
         self._config = config
         self._redis: redis.Redis[bytes] = redis_lib.Redis.from_url(
             config.redis_url,
             decode_responses=False,
         )
-        _ensure_consumer_group(self._redis, config.output_stream, config.consumer_group)
+        ensure_consumer_group(self._redis, config.output_stream, config.consumer_group)
 
     @property
     def config(self) -> E2ETestConfig:
@@ -102,7 +92,7 @@ class ConnectorE2ETestHarness:
         for image_path in image_paths:
             image_bytes = image_path.read_bytes()
             request_id = uuid.uuid4().hex
-            raw_id: Any = self._redis.xadd(  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
+            raw_id: Any = self._redis.xadd(
                 name=self._config.input_stream,
                 fields={
                     b"data": image_bytes,
@@ -111,7 +101,7 @@ class ConnectorE2ETestHarness:
                     b"image_name": image_path.name.encode(),
                 },
             )
-            decoded_id: str = raw_id.decode() if isinstance(raw_id, bytes) else str(raw_id)  # pyright: ignore[reportUnknownArgumentType]
+            decoded_id: str = raw_id.decode() if isinstance(raw_id, bytes) else str(raw_id)
             message_ids.append(decoded_id)
             logger.debug(
                 "Pushed image {} as message {} (request_id={})",
@@ -139,7 +129,7 @@ class ConnectorE2ETestHarness:
         block_ms = int(POLL_INTERVAL_S * MILLISECONDS_PER_SECOND)
 
         while len(results) < expected_count and time.monotonic() < deadline:
-            raw_messages: Any = self._redis.xreadgroup(  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
+            raw_messages: Any = self._redis.xreadgroup(
                 groupname=self._config.consumer_group,
                 consumername=CONSUMER_NAME,
                 streams={self._config.output_stream: ">"},
@@ -150,9 +140,9 @@ class ConnectorE2ETestHarness:
             if not raw_messages:
                 continue
 
-            for _stream_name, entries in raw_messages:  # pyright: ignore[reportUnknownVariableType]
-                for msg_id, fields in entries:  # pyright: ignore[reportUnknownVariableType]
-                    result = self._parse_result_message(fields, msg_id)  # pyright: ignore[reportUnknownArgumentType]
+            for _stream_name, entries in raw_messages:
+                for msg_id, fields in entries:
+                    result = self._parse_result_message(fields, msg_id)
                     results.append(result)
                     self._redis.xack(  # type: ignore[no-untyped-call]
                         self._config.output_stream,
@@ -240,7 +230,7 @@ class ConnectorE2ETestHarness:
 
     def run_through_connector(self, image_dir: Path) -> FolderInferenceResult:
         """Full E2E: push images -> wait for connector to process -> collect results."""
-        image_paths = _collect_image_paths(image_dir)
+        image_paths = collect_image_paths(image_dir)
 
         total_start = time.perf_counter()
         self.push_test_images(image_paths)

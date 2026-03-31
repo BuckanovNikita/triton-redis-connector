@@ -1,172 +1,19 @@
-"""Triton inference client with YOLO pre/postprocessing."""
+"""YOLO postprocessing: NMS and confidence thresholding."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 from loguru import logger
 
-from triton_model_tools.detection import Detection
+from triton_model_tools.models.detection import Detection
 
 if TYPE_CHECKING:
     import numpy.typing as npt
 
-LETTERBOX_PAD_VALUE = 114
-YOLO_NORMALIZE_DIVISOR = 255.0
 DEFAULT_CONFIDENCE_THRESHOLD = 0.25
 DEFAULT_IOU_THRESHOLD = 0.45
-
-
-class TritonInferenceClient:
-    """Synchronous gRPC client for Triton Inference Server."""
-
-    def __init__(self, url: str = "localhost:8001") -> None:
-        """Create a Triton gRPC inference client.
-
-        Args:
-            url: Triton server gRPC endpoint.
-
-        """
-        import tritonclient.grpc as grpcclient  # pyright: ignore[reportMissingTypeStubs]  # noqa: PLC0415
-
-        self._client: Any = grpcclient.InferenceServerClient(url=url)
-        self._grpc: Any = grpcclient
-
-    def infer_raw(
-        self,
-        model_name: str,
-        tensor: npt.NDArray[np.float32],
-        output_names: list[str],
-    ) -> dict[str, npt.NDArray[np.float32]]:
-        """Run inference with a preprocessed float32 tensor.
-
-        Args:
-            model_name: Triton model name.
-            tensor: Input tensor with batch dimension (e.g. [1, 3, 640, 640]).
-            output_names: Names of requested output tensors.
-
-        Returns:
-            Dict mapping output name to numpy array.
-
-        """
-        grpc = self._grpc
-        input_tensor = grpc.InferInput("images", tensor.shape, "FP32")
-        input_tensor.set_data_from_numpy(tensor)
-
-        outputs = [grpc.InferRequestedOutput(name) for name in output_names]
-
-        result = self._client.infer(
-            model_name=model_name,
-            inputs=[input_tensor],
-            outputs=outputs,
-        )
-
-        return {name: np.asarray(result.as_numpy(name), dtype=np.float32) for name in output_names}
-
-    def infer_dali(
-        self,
-        model_name: str,
-        image_bytes: bytes,
-    ) -> dict[str, npt.NDArray[np.float32]]:
-        """Run DALI ensemble inference with raw image bytes.
-
-        Args:
-            model_name: Triton DALI ensemble model name.
-            image_bytes: Raw image file bytes (JPEG/PNG).
-
-        Returns:
-            Dict mapping output name to numpy array.
-
-        """
-        grpc = self._grpc
-        raw_input = np.frombuffer(image_bytes, dtype=np.uint8)
-        input_array = raw_input.reshape(1, -1)
-
-        input_tensor = grpc.InferInput("INPUT", input_array.shape, "UINT8")
-        input_tensor.set_data_from_numpy(input_array)
-
-        output = grpc.InferRequestedOutput("OUTPUT")
-        result = self._client.infer(
-            model_name=model_name,
-            inputs=[input_tensor],
-            outputs=[output],
-        )
-        output_data: npt.NDArray[np.float32] = np.array(
-            result.as_numpy("OUTPUT"),
-            dtype=np.float32,
-        )
-        return {"OUTPUT": output_data}
-
-
-class YoloPreprocessor:
-    """Replicates ultralytics LetterBox preprocessing.
-
-    Steps:
-    1. Resize maintaining aspect ratio (scale to fit, not stretch)
-    2. Pad with (114, 114, 114) to target_size (letterbox)
-    3. BGR -> RGB
-    4. HWC -> CHW
-    5. /255.0
-    6. float32
-    7. batch dim
-
-    """
-
-    def __init__(self, target_size: int = 640) -> None:
-        """Initialize with the model's expected input size."""
-        self.target_size = target_size
-
-    def preprocess(
-        self,
-        image: npt.NDArray[np.uint8],
-    ) -> tuple[npt.NDArray[np.float32], float, tuple[int, int]]:
-        """Preprocess a BGR image using letterbox method.
-
-        Args:
-            image: BGR image as HWC uint8 array.
-
-        Returns:
-            Tuple of (tensor, scale_factor, (pad_left, pad_top)).
-
-        """
-        import cv2  # noqa: PLC0415  # pyright: ignore[reportMissingTypeStubs]
-
-        orig_h, orig_w = image.shape[:2]
-        scale = min(self.target_size / orig_h, self.target_size / orig_w)
-
-        new_w = int(orig_w * scale)
-        new_h = int(orig_h * scale)
-
-        resized: npt.NDArray[np.uint8] = cv2.resize(  # type: ignore[assignment]  # pyright: ignore[reportUnknownMemberType,reportAssignmentType]
-            image,
-            (new_w, new_h),
-            interpolation=cv2.INTER_LINEAR,  # pyright: ignore[reportUnknownMemberType]
-        )
-
-        pad_w = self.target_size - new_w
-        pad_h = self.target_size - new_h
-        pad_left = pad_w // 2
-        pad_top = pad_h // 2
-        pad_right = pad_w - pad_left
-        pad_bottom = pad_h - pad_top
-
-        padded: npt.NDArray[np.uint8] = cv2.copyMakeBorder(  # type: ignore[assignment]  # pyright: ignore[reportUnknownMemberType,reportAssignmentType]
-            resized,
-            pad_top,
-            pad_bottom,
-            pad_left,
-            pad_right,
-            cv2.BORDER_CONSTANT,  # pyright: ignore[reportUnknownMemberType]
-            value=(LETTERBOX_PAD_VALUE, LETTERBOX_PAD_VALUE, LETTERBOX_PAD_VALUE),
-        )
-
-        rgb = padded[:, :, ::-1]
-        chw = np.transpose(rgb, (2, 0, 1))
-        normalized = chw.astype(np.float32) / YOLO_NORMALIZE_DIVISOR
-        batched: npt.NDArray[np.float32] = np.expand_dims(normalized, axis=0)
-
-        return batched, scale, (pad_left, pad_top)
 
 
 def _nms_numpy(

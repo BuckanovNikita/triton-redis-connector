@@ -10,7 +10,14 @@
         ".venv",
         "build",
         "dist",
-        "packages/triton_model_tools/triton_model_tools/scripts"
+        "packages/triton_model_tools/triton_model_tools/export/scripts",
+        "packages/triton_model_tools/triton_model_tools/benchmarks/fiftyone_export.py",
+        "**/node_modules",
+        "**/.*"
     ],
-    "reportMissingTypeStubs": "warning"
+    "reportMissingTypeStubs": "warning",
+    "reportPrivateUsage": true,
+    "reportUnknownMemberType": "warning",
+    "reportUnknownVariableType": "warning",
+    "reportUnknownArgumentType": "warning"
 }

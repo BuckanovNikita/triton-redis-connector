@@ -5,7 +5,7 @@ Provides MetricBuffer, MetricEmitter, and error-handling objects at APP scope.
 
 from __future__ import annotations
 
-from dishka import Provider, provide  # pyright: ignore[reportUnknownVariableType]
+from dishka import Provider, provide
 
 from triton_redis_connector.config.schema import MetricsConfig  # noqa: TC001
 from triton_redis_connector.errors.collector import ErrorCollector

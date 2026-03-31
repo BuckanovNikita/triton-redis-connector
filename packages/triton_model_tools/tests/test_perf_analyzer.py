@@ -6,7 +6,7 @@ import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
-from triton_model_tools.perf_analyzer import (
+from triton_model_tools.benchmarks.perf_analyzer import (
     PerfAnalyzerConfig,
     PerfAnalyzerResult,
     _build_perf_analyzer_command,
@@ -123,7 +123,7 @@ class TestParseCsv:
 
 
 class TestRunPerfAnalyzer:
-    @patch("triton_model_tools.perf_analyzer.subprocess.run")
+    @patch("triton_model_tools.benchmarks.perf_analyzer.subprocess.run")
     def test_successful_run(self, mock_run: MagicMock) -> None:
         mock_run.return_value = subprocess.CompletedProcess(
             args=["perf_analyzer"],
@@ -146,7 +146,7 @@ class TestRunPerfAnalyzer:
         assert call_args[1]["text"] is True
         assert call_args[1]["check"] is True
 
-    @patch("triton_model_tools.perf_analyzer.subprocess.run")
+    @patch("triton_model_tools.benchmarks.perf_analyzer.subprocess.run")
     def test_timeout_propagates(self, mock_run: MagicMock) -> None:
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="perf_analyzer", timeout=300)
 
@@ -155,7 +155,7 @@ class TestRunPerfAnalyzer:
         with pytest.raises(subprocess.TimeoutExpired):
             run_perf_analyzer(config)
 
-    @patch("triton_model_tools.perf_analyzer.subprocess.run")
+    @patch("triton_model_tools.benchmarks.perf_analyzer.subprocess.run")
     def test_nonzero_exit_raises(self, mock_run: MagicMock) -> None:
         mock_run.side_effect = subprocess.CalledProcessError(
             returncode=1,

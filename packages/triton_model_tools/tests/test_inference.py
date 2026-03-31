@@ -12,8 +12,8 @@ from triton_model_tools.inference import (
     TritonInferenceClient,
     YoloPostprocessor,
     YoloPreprocessor,
-    _nms_numpy,
 )
+from triton_model_tools.inference.postprocessing import _nms_numpy
 
 
 class TestYoloPreprocessor:
@@ -341,7 +341,7 @@ class TestTritonInferenceClient:
         mock_result.as_numpy.return_value = np.ones((1, 84, 8400), dtype=np.float32)
         mock_client_instance.infer.return_value = mock_result
 
-        with patch.dict("sys.modules", {"tritonclient": MagicMock(), "tritonclient.grpc": mock_grpc}):
+        with patch("triton_model_tools.inference.client.grpcclient", mock_grpc):
             client = TritonInferenceClient(url="localhost:8001")
             tensor = np.random.default_rng(42).random((1, 3, 640, 640)).astype(np.float32)
             results = client.infer_raw("yolo11s", tensor, ["output0"])
@@ -357,7 +357,7 @@ class TestTritonInferenceClient:
         mock_result.as_numpy.return_value = np.ones((1, 84, 8400), dtype=np.float32)
         mock_client_instance.infer.return_value = mock_result
 
-        with patch.dict("sys.modules", {"tritonclient": MagicMock(), "tritonclient.grpc": mock_grpc}):
+        with patch("triton_model_tools.inference.client.grpcclient", mock_grpc):
             client = TritonInferenceClient(url="localhost:8001")
             result = client.infer_dali("yolo11s_dali_ensemble", b"\xff\xd8\xff\xe0fake_jpeg_bytes")
 

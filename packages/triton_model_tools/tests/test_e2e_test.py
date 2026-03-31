@@ -8,14 +8,13 @@ from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
-from triton_model_tools.detection import (
+from triton_model_tools.models.detection import (
     FolderInferenceResult,
     ImageDetectionResult,
 )
-from triton_model_tools.e2e_test import (
+from triton_model_tools.testing.e2e_test import (
     ConnectorE2ETestHarness,
     E2ETestConfig,
-    _collect_image_paths,
     _deserialize_detections,
 )
 
@@ -69,23 +68,6 @@ class TestE2ETestConfig:
     def test_invalid_timeout(self) -> None:
         with pytest.raises(Exception):  # noqa: B017, PT011
             E2ETestConfig(timeout_s=0.0)
-
-
-class TestCollectImagePaths:
-    def test_finds_images(self, tmp_path: Path) -> None:
-        (tmp_path / "a.jpg").write_bytes(b"fake")
-        (tmp_path / "b.png").write_bytes(b"fake")
-        (tmp_path / "c.txt").write_text("not an image")
-
-        paths = _collect_image_paths(tmp_path)
-
-        assert len(paths) == 2
-        suffixes = {p.suffix for p in paths}
-        assert suffixes == {".jpg", ".png"}
-
-    def test_raises_on_empty_directory(self, tmp_path: Path) -> None:
-        with pytest.raises(FileNotFoundError, match="No image files found"):
-            _collect_image_paths(tmp_path)
 
 
 class TestDeserializeDetections:

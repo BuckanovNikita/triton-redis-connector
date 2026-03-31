@@ -5,16 +5,27 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from triton_model_tools.models import YOLO_MODELS
 
+if TYPE_CHECKING:
+    from typing import Any, Protocol
+
+    class SubParsers(Protocol):
+        """Protocol for argparse subparsers action (avoids private _SubParsersAction)."""
+
+        def add_parser(self, name: str, **kwargs: Any) -> argparse.ArgumentParser:  # noqa: ANN401, D102
+            ...
+
+
 AVAILABLE_MODEL_NAMES = ", ".join(v.name for v in YOLO_MODELS)
 
 
 def _build_export_parser(
-    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+    subparsers: SubParsers,
 ) -> None:
     export_parser = subparsers.add_parser(
         "export",
@@ -59,7 +70,7 @@ def _build_export_parser(
 
 
 def _run_export(args: argparse.Namespace) -> None:
-    from triton_model_tools.exporter import export_all_models  # noqa: PLC0415
+    from triton_model_tools.export.exporter import export_all_models  # noqa: PLC0415
 
     repository_root: Path = args.repository_root.resolve()
     model_names: list[str] | None = args.models
@@ -90,7 +101,7 @@ def _run_export(args: argparse.Namespace) -> None:
 
     nms_model_name: str | None = None
     if generate_nms:
-        from triton_model_tools.nms import (  # noqa: PLC0415
+        from triton_model_tools.export.nms import (  # noqa: PLC0415
             NMS_MODEL_NAME,
             NmsModelConfig,
             build_nms_model_directory,
@@ -103,7 +114,7 @@ def _run_export(args: argparse.Namespace) -> None:
         nms_model_name = NMS_MODEL_NAME
 
     if generate_dali:
-        from triton_model_tools.dali import (  # noqa: PLC0415
+        from triton_model_tools.export.dali import (  # noqa: PLC0415
             DaliPipelineConfig,
             build_ensemble_directory,
         )
@@ -121,7 +132,7 @@ def _run_export(args: argparse.Namespace) -> None:
 
 
 def _build_infer_parser(
-    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+    subparsers: SubParsers,
 ) -> None:
     infer_parser = subparsers.add_parser(
         "infer",
@@ -174,7 +185,7 @@ def _build_infer_parser(
 
 
 def _run_infer(args: argparse.Namespace) -> None:
-    from triton_model_tools.folder_inference import run_folder_inference  # noqa: PLC0415
+    from triton_model_tools.inference.folder_inference import run_folder_inference  # noqa: PLC0415
 
     image_dir: Path = args.image_dir.resolve()
     model_name: str = args.model
@@ -223,7 +234,7 @@ def _run_infer(args: argparse.Namespace) -> None:
 
 
 def _build_download_coco_parser(
-    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+    subparsers: SubParsers,
 ) -> None:
     download_parser = subparsers.add_parser(
         "download-coco",
@@ -245,7 +256,7 @@ def _build_download_coco_parser(
 
 
 def _run_download_coco(args: argparse.Namespace) -> None:
-    from triton_model_tools.dataset import download_coco_val  # noqa: PLC0415
+    from triton_model_tools.benchmarks.dataset import download_coco_val  # noqa: PLC0415
 
     target_dir: Path = args.target_dir.resolve()
     max_images: int | None = args.max_images
@@ -260,7 +271,7 @@ def _run_download_coco(args: argparse.Namespace) -> None:
 
 
 def _build_benchmark_parser(
-    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+    subparsers: SubParsers,
 ) -> None:
     bench_parser = subparsers.add_parser(
         "benchmark",
@@ -326,7 +337,7 @@ def _build_benchmark_parser(
 
 
 def _run_benchmark(args: argparse.Namespace) -> None:
-    from triton_model_tools.benchmark import (  # noqa: PLC0415
+    from triton_model_tools.benchmarks.benchmark import (  # noqa: PLC0415
         BenchmarkConfig,
         BenchmarkSuite,
         run_benchmark,
@@ -378,7 +389,7 @@ def _run_benchmark(args: argparse.Namespace) -> None:
 
 
 def _build_e2e_test_parser(
-    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+    subparsers: SubParsers,
 ) -> None:
     e2e_parser = subparsers.add_parser(
         "e2e-test",
@@ -443,7 +454,7 @@ def _build_e2e_test_parser(
 
 
 def _run_e2e_test(args: argparse.Namespace) -> None:
-    from triton_model_tools.e2e_test import (  # noqa: PLC0415
+    from triton_model_tools.testing.e2e_test import (  # noqa: PLC0415
         ConnectorE2ETestHarness,
         E2ETestConfig,
     )
@@ -502,7 +513,7 @@ def _run_e2e_test(args: argparse.Namespace) -> None:
 
 
 def _build_pipeline_benchmark_parser(
-    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+    subparsers: SubParsers,
 ) -> None:
     pb_parser = subparsers.add_parser(
         "pipeline-benchmark",
@@ -568,7 +579,7 @@ def _build_pipeline_benchmark_parser(
 
 
 def _run_pipeline_benchmark(args: argparse.Namespace) -> None:
-    from triton_model_tools.pipeline_benchmark import (  # noqa: PLC0415
+    from triton_model_tools.benchmarks.pipeline_benchmark import (  # noqa: PLC0415
         PipelineBenchmarkConfig,
         run_pipeline_benchmark,
     )
@@ -624,7 +635,7 @@ def _run_pipeline_benchmark(args: argparse.Namespace) -> None:
 
 
 def _build_compare_folders_parser(
-    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+    subparsers: SubParsers,
 ) -> None:
     cf_parser = subparsers.add_parser(
         "compare-folders",
@@ -668,8 +679,8 @@ def _build_compare_folders_parser(
 def _run_compare_folders(args: argparse.Namespace) -> None:
     import json as json_mod  # noqa: PLC0415
 
-    from triton_model_tools.comparison import compare_inference  # noqa: PLC0415
-    from triton_model_tools.detection_io import load_folder_detections  # noqa: PLC0415
+    from triton_model_tools.benchmarks.comparison import compare_inference  # noqa: PLC0415
+    from triton_model_tools.inference.detection_io import load_folder_detections  # noqa: PLC0415
 
     baseline_dir: Path = args.baseline_dir.resolve()
     candidate_dir: Path = args.candidate_dir.resolve()
@@ -702,7 +713,7 @@ def _run_compare_folders(args: argparse.Namespace) -> None:
 
 
 def _build_pipeline_predict_parser(
-    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+    subparsers: SubParsers,
 ) -> None:
     pp_parser = subparsers.add_parser(
         "pipeline-predict",
@@ -761,8 +772,8 @@ def _build_pipeline_predict_parser(
 
 
 def _run_pipeline_predict(args: argparse.Namespace) -> None:
-    from triton_model_tools.e2e_test import E2ETestConfig  # noqa: PLC0415
-    from triton_model_tools.pipeline_predict import run_pipeline_predict  # noqa: PLC0415
+    from triton_model_tools.testing.e2e_test import E2ETestConfig  # noqa: PLC0415
+    from triton_model_tools.testing.pipeline_predict import run_pipeline_predict  # noqa: PLC0415
 
     image_dir: Path = args.image_dir.resolve()
     output_dir: Path = args.output_dir.resolve()
@@ -796,7 +807,7 @@ def _run_pipeline_predict(args: argparse.Namespace) -> None:
 
 
 def _build_predict_parser(
-    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+    subparsers: SubParsers,
 ) -> None:
     predict_parser = subparsers.add_parser(
         "predict",
@@ -843,7 +854,7 @@ def _build_predict_parser(
 
 
 def _run_predict(args: argparse.Namespace) -> None:
-    from triton_model_tools.predict import PredictConfig, run_ultralytics_predict  # noqa: PLC0415
+    from triton_model_tools.inference.predict import PredictConfig, run_ultralytics_predict  # noqa: PLC0415
 
     image_dir: Path = args.image_dir.resolve()
     output_dir: Path = args.output_dir.resolve()
@@ -880,7 +891,7 @@ def _run_predict(args: argparse.Namespace) -> None:
 
 
 def _build_compare_parser(
-    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+    subparsers: SubParsers,
 ) -> None:
     compare_parser = subparsers.add_parser(
         "compare",
@@ -917,8 +928,8 @@ def _build_compare_parser(
 def _run_compare(args: argparse.Namespace) -> None:
     import json  # noqa: PLC0415
 
-    from triton_model_tools.comparison import compare_inference  # noqa: PLC0415
-    from triton_model_tools.detection import ImageDetectionResult  # noqa: PLC0415
+    from triton_model_tools.benchmarks.comparison import compare_inference  # noqa: PLC0415
+    from triton_model_tools.models.detection import ImageDetectionResult  # noqa: PLC0415
 
     baseline_path: Path = args.baseline.resolve()
     candidate_path: Path = args.candidate.resolve()
@@ -955,7 +966,7 @@ def _run_compare(args: argparse.Namespace) -> None:
 
 
 def _build_full_benchmark_parser(
-    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+    subparsers: SubParsers,
 ) -> None:
     fb_parser = subparsers.add_parser(
         "full-benchmark",
@@ -1008,7 +1019,7 @@ def _build_full_benchmark_parser(
 
 
 def _run_full_benchmark(args: argparse.Namespace) -> None:
-    from triton_model_tools.benchmark import (  # noqa: PLC0415
+    from triton_model_tools.benchmarks.benchmark import (  # noqa: PLC0415
         build_full_matrix,
         run_benchmark_matrix,
         save_benchmark_output,

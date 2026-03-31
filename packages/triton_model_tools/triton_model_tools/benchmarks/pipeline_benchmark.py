@@ -6,11 +6,13 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any
 
+import redis as redis_lib
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
-from triton_model_tools.benchmark_stats import MILLISECONDS_PER_SECOND, compute_statistics
-from triton_model_tools.e2e_test import CONSUMER_NAME, IMAGE_EXTENSIONS, POLL_INTERVAL_S, _ensure_consumer_group
+from triton_model_tools.benchmarks.stats import MILLISECONDS_PER_SECOND, compute_statistics
+from triton_model_tools.inference.detection_io import collect_image_paths
+from triton_model_tools.testing.e2e_test import CONSUMER_NAME, POLL_INTERVAL_S, ensure_consumer_group
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -49,14 +51,6 @@ class PipelineBenchmarkResult(BaseModel):
     num_iterations: int = Field(ge=0)
 
 
-def _collect_image_paths(image_dir: Path) -> list[Path]:
-    paths = sorted(p for p in image_dir.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS)
-    if not paths:
-        msg = f"No image files found in {image_dir}"
-        raise FileNotFoundError(msg)
-    return paths
-
-
 def _push_images(
     redis_client: redis.Redis[bytes],
     input_stream: str,
@@ -68,7 +62,7 @@ def _push_images(
     for image_path in image_paths:
         image_bytes = image_path.read_bytes()
         push_times[image_path.name] = time.monotonic()
-        redis_client.xadd(  # pyright: ignore[reportUnknownMemberType]
+        redis_client.xadd(
             name=input_stream,
             fields={
                 b"data": image_bytes,
@@ -93,7 +87,7 @@ def _collect_with_timestamps(
     block_ms = int(POLL_INTERVAL_S * MILLISECONDS_PER_SECOND)
 
     while len(collect_times) < expected_count and time.monotonic() < deadline:
-        raw_messages: Any = redis_client.xreadgroup(  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
+        raw_messages: Any = redis_client.xreadgroup(
             groupname=consumer_group,
             consumername=CONSUMER_NAME,
             streams={output_stream: ">"},
@@ -104,8 +98,8 @@ def _collect_with_timestamps(
         if not raw_messages:
             continue
 
-        for _stream_name, entries in raw_messages:  # pyright: ignore[reportUnknownVariableType]
-            for msg_id, _fields in entries:  # pyright: ignore[reportUnknownVariableType]
+        for _stream_name, entries in raw_messages:
+            for msg_id, _fields in entries:
                 collect_times.append(time.monotonic())
                 redis_client.xack(  # type: ignore[no-untyped-call]
                     output_stream,
@@ -135,9 +129,7 @@ def run_pipeline_benchmark(
         PipelineBenchmarkResult with latency statistics.
 
     """
-    import redis as redis_lib  # noqa: PLC0415
-
-    image_paths = _collect_image_paths(image_dir)
+    image_paths = collect_image_paths(image_dir)
     logger.info(
         "Pipeline benchmark: model={} images={} iterations={}",
         config.model_name,
@@ -149,7 +141,7 @@ def run_pipeline_benchmark(
         config.redis_url,
         decode_responses=False,
     )
-    _ensure_consumer_group(redis_client, config.output_stream, config.consumer_group)
+    ensure_consumer_group(redis_client, config.output_stream, config.consumer_group)
 
     if config.warmup_runs > 0:
         logger.info("Running {} warmup iterations", config.warmup_runs)

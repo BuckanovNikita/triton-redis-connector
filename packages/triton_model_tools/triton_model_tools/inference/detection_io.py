@@ -10,12 +10,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import cv2
 from loguru import logger
 
-from triton_model_tools.detection import Detection, ImageDetectionResult
+from triton_model_tools.models.detection import Detection, ImageDetectionResult
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    import numpy as np
+    import numpy.typing as npt
 
 IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"})
 TXT_EXTENSION = ".txt"
@@ -82,3 +86,47 @@ def load_folder_detections(
 
     logger.info("Loaded {} detection files from {}", len(results), txt_dir)
     return results
+
+
+def collect_image_paths(image_dir: Path, *, max_count: int | None = None) -> list[Path]:
+    """Collect and sort image file paths from a directory.
+
+    Args:
+        image_dir: Directory to scan for image files.
+        max_count: If set, return at most this many paths.
+
+    Returns:
+        Sorted list of image file paths.
+
+    Raises:
+        FileNotFoundError: If no image files are found.
+
+    """
+    paths = sorted(p for p in image_dir.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS)
+    if not paths:
+        msg = f"No image files found in {image_dir}"
+        raise FileNotFoundError(msg)
+    logger.info("Found {} images in {}", len(paths), image_dir)
+    if max_count is not None:
+        return paths[:max_count]
+    return paths
+
+
+def load_image(path: Path) -> npt.NDArray[np.uint8]:
+    """Load an image from disk using OpenCV.
+
+    Args:
+        path: Path to the image file.
+
+    Returns:
+        Image as a numpy array (BGR, uint8).
+
+    Raises:
+        FileNotFoundError: If image cannot be loaded.
+
+    """
+    img: npt.NDArray[np.uint8] | None = cv2.imread(str(path))  # type: ignore[assignment]
+    if img is None:
+        msg = f"Failed to load image: {path}"
+        raise FileNotFoundError(msg)
+    return img

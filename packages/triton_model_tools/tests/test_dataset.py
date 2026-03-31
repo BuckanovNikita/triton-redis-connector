@@ -7,7 +7,7 @@ import zipfile
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
-from triton_model_tools.dataset import (
+from triton_model_tools.benchmarks.dataset import (
     COCO_VAL2017_DIR_NAME,
     download_coco_val,
 )
@@ -34,7 +34,7 @@ class TestDownloadCocoVal:
 
         assert result == val_dir
 
-    @patch("triton_model_tools.dataset.urllib.request.urlopen")
+    @patch("triton_model_tools.benchmarks.dataset.urllib.request.urlopen")
     def test_downloads_and_extracts(self, mock_urlopen: MagicMock, tmp_path: Path) -> None:
         zip_data = _create_fake_coco_zip()
         mock_response = MagicMock()
@@ -51,7 +51,7 @@ class TestDownloadCocoVal:
         extracted_files = list(result.iterdir())
         assert len(extracted_files) == 10
 
-    @patch("triton_model_tools.dataset.urllib.request.urlopen")
+    @patch("triton_model_tools.benchmarks.dataset.urllib.request.urlopen")
     def test_max_images_limits_extraction(self, mock_urlopen: MagicMock, tmp_path: Path) -> None:
         zip_data = _create_fake_coco_zip()
         mock_response = MagicMock()
@@ -67,7 +67,7 @@ class TestDownloadCocoVal:
         extracted_files = list(result.iterdir())
         assert len(extracted_files) == 3
 
-    @patch("triton_model_tools.dataset.urllib.request.urlopen")
+    @patch("triton_model_tools.benchmarks.dataset.urllib.request.urlopen")
     def test_creates_target_dir_if_not_exists(self, mock_urlopen: MagicMock, tmp_path: Path) -> None:
         zip_data = _create_fake_coco_zip()
         mock_response = MagicMock()
@@ -87,7 +87,7 @@ class TestDownloadCocoVal:
         val_dir = tmp_path / COCO_VAL2017_DIR_NAME
         val_dir.mkdir()
 
-        with patch("triton_model_tools.dataset.urllib.request.urlopen") as mock_urlopen:
+        with patch("triton_model_tools.benchmarks.dataset.urllib.request.urlopen") as mock_urlopen:
             zip_data = _create_fake_coco_zip()
             mock_response = MagicMock()
             mock_response.read.side_effect = [zip_data, b""]

@@ -9,7 +9,7 @@ from __future__ import annotations
 import queue
 from typing import TYPE_CHECKING, Any
 
-from loguru import logger  # pyright: ignore[reportMissingImports]
+from loguru import logger
 
 if TYPE_CHECKING:
     from triton_redis_connector.config.schema import QueueConfig

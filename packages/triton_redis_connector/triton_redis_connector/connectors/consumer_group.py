@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from loguru import logger  # pyright: ignore[reportMissingImports]
-from redis.exceptions import ResponseError  # pyright: ignore[reportMissingModuleSource]
+from loguru import logger
+from redis.exceptions import ResponseError
 
 if TYPE_CHECKING:
     from redis import Redis
@@ -23,17 +23,17 @@ class ConsumerGroupManager:
     def ensure_group_exists(self, client: Redis[bytes], stream: str, group: str) -> None:
         """Create consumer group idempotently, ignoring BUSYGROUP if already exists."""
         try:
-            client.xgroup_create(  # pyright: ignore[reportUnknownMemberType]
+            client.xgroup_create(
                 name=stream,
                 groupname=group,
                 id="0",
                 mkstream=True,
             )
-            logger.info("Created consumer group {} on stream {}", group, stream)  # pyright: ignore[reportUnknownMemberType]
+            logger.info("Created consumer group {} on stream {}", group, stream)
         except ResponseError as exc:
             if "BUSYGROUP" not in str(exc):
                 raise
-            logger.debug("Consumer group {} already exists on stream {}", group, stream)  # pyright: ignore[reportUnknownMemberType]
+            logger.debug("Consumer group {} already exists on stream {}", group, stream)
 
     def read_pending_newest_first(
         self,
@@ -52,7 +52,7 @@ class ConsumerGroupManager:
         """
         raw = cast(
             "_StreamMessages | None",
-            client.xreadgroup(  # pyright: ignore[reportUnknownMemberType]
+            client.xreadgroup(
                 groupname=group,
                 consumername=consumer,
                 streams={stream: "0-0"},
@@ -84,7 +84,7 @@ class ConsumerGroupManager:
         """
         raw = cast(
             "_StreamMessages | None",
-            client.xreadgroup(  # pyright: ignore[reportUnknownMemberType]
+            client.xreadgroup(
                 groupname=group,
                 consumername=consumer,
                 streams={stream: ">"},
@@ -99,7 +99,7 @@ class ConsumerGroupManager:
 
     def acknowledge(self, client: Redis[bytes], stream: str, group: str, message_id: str) -> None:
         """Acknowledge a message after successful processing via XACK."""
-        client.xack(stream, group, message_id)  # type: ignore[no-untyped-call]  # pyright: ignore[reportUnknownMemberType]
+        client.xack(stream, group, message_id)  # type: ignore[no-untyped-call]
 
     def _parse_stream_messages(
         self,

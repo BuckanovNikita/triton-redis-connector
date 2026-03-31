@@ -41,7 +41,7 @@ def populate_redis(  # noqa: PLR0913
     Returns list of all message IDs created.
     """
     client: Redis[bytes] = Redis(host=redis_host, port=redis_port, db=0, decode_responses=False)
-    client.ping()  # pyright: ignore[reportUnknownMemberType]
+    client.ping()
     logger.info("Connected to Redis at {}:{}", redis_host, redis_port)
 
     image_paths = sorted(p for p in image_dir.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png"})
@@ -62,7 +62,7 @@ def populate_redis(  # noqa: PLR0913
 
         for path in image_paths:
             raw_bytes = path.read_bytes()
-            msg_id_bytes = client.xadd(  # pyright: ignore[reportUnknownMemberType]
+            msg_id_bytes = client.xadd(
                 name=stream_name,
                 fields={"data": raw_bytes, "filename": path.name.encode()},
                 maxlen=DEFAULT_MAXLEN,
@@ -78,7 +78,7 @@ def populate_redis(  # noqa: PLR0913
                 msg_id,
             )
 
-    stream_len = client.xlen(stream_name)  # pyright: ignore[reportUnknownMemberType]
+    stream_len = client.xlen(stream_name)
     logger.info(
         "Done: pushed {} messages total. Stream {} length: {}",
         len(all_message_ids),

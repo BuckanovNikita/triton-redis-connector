@@ -13,11 +13,9 @@ from triton_model_tools/inference.py. Both share the same algorithm:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import numpy as np
-    import numpy.typing as npt
+import cv2
+import numpy as np
+import numpy.typing as npt
 
 LETTERBOX_PAD_VALUE = 114
 NORMALIZE_DIVISOR = 255.0
@@ -44,9 +42,6 @@ class LetterBoxPreprocessor:
             Tuple of (NCHW float32 tensor, scale_factor, (pad_left, pad_top)).
 
         """
-        import cv2  # pyright: ignore[reportMissingTypeStubs]  # noqa: PLC0415
-        import numpy as np  # noqa: PLC0415
-
         target_h, target_w = target_size
         orig_h, orig_w = image.shape[:2]
 
@@ -54,10 +49,10 @@ class LetterBoxPreprocessor:
         new_w = int(orig_w * scale)
         new_h = int(orig_h * scale)
 
-        resized: npt.NDArray[np.uint8] = cv2.resize(  # type: ignore[assignment]  # pyright: ignore[reportUnknownMemberType,reportAssignmentType]
+        resized: npt.NDArray[np.uint8] = cv2.resize(  # type: ignore[assignment]
             image,
             (new_w, new_h),
-            interpolation=cv2.INTER_LINEAR,  # pyright: ignore[reportUnknownMemberType]
+            interpolation=cv2.INTER_LINEAR,
         )
 
         pad_w = target_w - new_w
@@ -67,13 +62,13 @@ class LetterBoxPreprocessor:
         pad_right = pad_w - pad_left
         pad_bottom = pad_h - pad_top
 
-        padded: npt.NDArray[np.uint8] = cv2.copyMakeBorder(  # type: ignore[assignment]  # pyright: ignore[reportUnknownMemberType,reportAssignmentType]
+        padded: npt.NDArray[np.uint8] = cv2.copyMakeBorder(  # type: ignore[assignment]
             resized,
             pad_top,
             pad_bottom,
             pad_left,
             pad_right,
-            cv2.BORDER_CONSTANT,  # pyright: ignore[reportUnknownMemberType]
+            cv2.BORDER_CONSTANT,
             value=(LETTERBOX_PAD_VALUE, LETTERBOX_PAD_VALUE, LETTERBOX_PAD_VALUE),
         )
 

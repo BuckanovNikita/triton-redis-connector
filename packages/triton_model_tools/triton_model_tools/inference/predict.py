@@ -7,9 +7,10 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
+from ultralytics import YOLO  # type: ignore[attr-defined]
 
-from triton_model_tools.detection import Detection, FolderInferenceResult, ImageDetectionResult
-from triton_model_tools.detection_io import IMAGE_EXTENSIONS, save_detections_to_txt
+from triton_model_tools.inference.detection_io import collect_image_paths, save_detections_to_txt
+from triton_model_tools.models.detection import Detection, FolderInferenceResult, ImageDetectionResult
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -30,14 +31,6 @@ class PredictConfig(BaseModel):
     target_size: int = Field(default=640, gt=0)
 
 
-def _collect_image_paths(image_dir: Path) -> list[Path]:
-    paths = sorted(p for p in image_dir.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS)
-    if not paths:
-        msg = f"No image files found in {image_dir}"
-        raise FileNotFoundError(msg)
-    return paths
-
-
 def run_ultralytics_predict(
     image_dir: Path,
     output_dir: Path,
@@ -54,9 +47,7 @@ def run_ultralytics_predict(
         FolderInferenceResult with all detection results and timing.
 
     """
-    from ultralytics import YOLO  # type: ignore[attr-defined]  # noqa: PLC0415
-
-    image_paths = _collect_image_paths(image_dir)
+    image_paths = collect_image_paths(image_dir)
     logger.info(
         "Running ultralytics predict: model={} images={} output={}",
         config.model_path,
@@ -64,7 +55,7 @@ def run_ultralytics_predict(
         output_dir,
     )
 
-    model: Any = YOLO(config.model_path)  # pyright: ignore[reportUnknownVariableType]
+    model: Any = YOLO(config.model_path)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     results_list: list[ImageDetectionResult] = []
@@ -72,7 +63,7 @@ def run_ultralytics_predict(
 
     for image_path in image_paths:
         start = time.perf_counter()
-        predictions = model.predict(  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
+        predictions = model.predict(
             str(image_path),
             conf=config.conf_threshold,
             iou=config.iou_threshold,
@@ -82,19 +73,19 @@ def run_ultralytics_predict(
         elapsed_ms = (time.perf_counter() - start) * MILLISECONDS_PER_SECOND
 
         detections: list[Detection] = []
-        for result in predictions:  # pyright: ignore[reportUnknownVariableType]
-            boxes = result.boxes  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
-            if boxes is not None and len(boxes) > 0:  # pyright: ignore[reportUnknownArgumentType]
-                for i in range(len(boxes)):  # pyright: ignore[reportUnknownArgumentType]
-                    xyxy = boxes.xyxy[i]  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
-                    conf = float(boxes.conf[i])  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType]
-                    cls_id = int(boxes.cls[i])  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType]
+        for result in predictions:
+            boxes = result.boxes
+            if boxes is not None and len(boxes) > 0:
+                for i in range(len(boxes)):
+                    xyxy = boxes.xyxy[i]
+                    conf = float(boxes.conf[i])
+                    cls_id = int(boxes.cls[i])
                     detections.append(
                         Detection(
-                            x1=float(xyxy[0]),  # pyright: ignore[reportUnknownArgumentType]
-                            y1=float(xyxy[1]),  # pyright: ignore[reportUnknownArgumentType]
-                            x2=float(xyxy[2]),  # pyright: ignore[reportUnknownArgumentType]
-                            y2=float(xyxy[3]),  # pyright: ignore[reportUnknownArgumentType]
+                            x1=float(xyxy[0]),
+                            y1=float(xyxy[1]),
+                            x2=float(xyxy[2]),
+                            y2=float(xyxy[3]),
                             confidence=conf,
                             class_id=cls_id,
                         ),

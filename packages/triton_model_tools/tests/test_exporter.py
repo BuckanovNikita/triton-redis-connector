@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from triton_model_tools.exporter import (
+from triton_model_tools.export.exporter import (
     TENSORRT_NAME_SUFFIX,
     _export_onnx,
     _export_tensorrt,
@@ -54,9 +54,8 @@ class TestExportOnnx:
         mock_yolo_cls = _make_mock_yolo(export_dir, ".onnx")
 
         with (
-            patch("triton_model_tools.exporter.YOLO", mock_yolo_cls, create=True),
-            patch.dict("sys.modules", {"ultralytics": MagicMock(YOLO=mock_yolo_cls)}),
-            patch("triton_model_tools.exporter.inspect_onnx_model") as mock_inspect,
+            patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls),
+            patch("triton_model_tools.export.exporter.inspect_onnx_model") as mock_inspect,
         ):
             from triton_model_tools.models import TritonDataType, TritonTensorSpec
 
@@ -78,8 +77,8 @@ class TestExportOnnx:
         mock_yolo_cls = _make_mock_yolo(export_dir, ".onnx")
 
         with (
-            patch.dict("sys.modules", {"ultralytics": MagicMock(YOLO=mock_yolo_cls)}),
-            patch("triton_model_tools.exporter.inspect_onnx_model") as mock_inspect,
+            patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls),
+            patch("triton_model_tools.export.exporter.inspect_onnx_model") as mock_inspect,
         ):
             from triton_model_tools.models import TritonDataType, TritonTensorSpec
 
@@ -102,8 +101,8 @@ class TestExportOnnx:
         exported_file = export_dir / "model.onnx"
 
         with (
-            patch.dict("sys.modules", {"ultralytics": MagicMock(YOLO=mock_yolo_cls)}),
-            patch("triton_model_tools.exporter.inspect_onnx_model") as mock_inspect,
+            patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls),
+            patch("triton_model_tools.export.exporter.inspect_onnx_model") as mock_inspect,
         ):
             from triton_model_tools.models import TritonDataType, TritonTensorSpec
 
@@ -124,7 +123,7 @@ class TestExportTensorrt:
         export_dir = tmp_path / "exports"
         mock_yolo_cls = _make_mock_yolo(export_dir, ".engine")
 
-        with patch.dict("sys.modules", {"ultralytics": MagicMock(YOLO=mock_yolo_cls)}):
+        with patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls):
             model_dir = _export_tensorrt(variant, repo_root)
 
         expected_name = f"yolo11s{TENSORRT_NAME_SUFFIX}"
@@ -138,7 +137,7 @@ class TestExportTensorrt:
         export_dir = tmp_path / "exports"
         mock_yolo_cls = _make_mock_yolo(export_dir, ".engine")
 
-        with patch.dict("sys.modules", {"ultralytics": MagicMock(YOLO=mock_yolo_cls)}):
+        with patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls):
             model_dir = _export_tensorrt(variant, repo_root)
 
         config_text = (model_dir / "config.pbtxt").read_text()
@@ -152,7 +151,7 @@ class TestExportTensorrt:
         export_dir = tmp_path / "exports"
         mock_yolo_cls = _make_mock_yolo(export_dir, ".engine")
 
-        with patch.dict("sys.modules", {"ultralytics": MagicMock(YOLO=mock_yolo_cls)}):
+        with patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls):
             model_dir = _export_tensorrt(variant, repo_root)
 
         plan_file = model_dir / "1" / EXPORT_FORMAT_TO_FILENAME[ExportFormat.TENSORRT]
@@ -165,7 +164,7 @@ class TestExportTensorrt:
         export_dir = tmp_path / "exports"
         mock_yolo_cls = _make_mock_yolo(export_dir, ".engine")
 
-        with patch.dict("sys.modules", {"ultralytics": MagicMock(YOLO=mock_yolo_cls)}):
+        with patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls):
             _export_tensorrt(variant, repo_root)
 
         mock_instance = mock_yolo_cls.return_value
@@ -181,7 +180,7 @@ class TestExportTensorrt:
         export_dir = tmp_path / "exports"
         mock_yolo_cls = _make_mock_yolo(export_dir, ".engine")
 
-        with patch.dict("sys.modules", {"ultralytics": MagicMock(YOLO=mock_yolo_cls)}):
+        with patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls):
             model_dir = _export_tensorrt(variant, repo_root)
 
         config_text = (model_dir / "config.pbtxt").read_text()
@@ -195,7 +194,7 @@ class TestExportTensorrt:
         mock_yolo_cls = _make_mock_yolo(export_dir, ".engine")
         engine_file = export_dir / "model.engine"
 
-        with patch.dict("sys.modules", {"ultralytics": MagicMock(YOLO=mock_yolo_cls)}):
+        with patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls):
             _export_tensorrt(variant, repo_root)
 
         assert not engine_file.exists()
@@ -207,7 +206,7 @@ class TestExportTensorrt:
         export_dir = tmp_path / "exports"
         mock_yolo_cls = _make_mock_yolo(export_dir, ".engine")
 
-        with patch.dict("sys.modules", {"ultralytics": MagicMock(YOLO=mock_yolo_cls)}):
+        with patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls):
             model_dir = _export_tensorrt(variant, repo_root)
 
         config_text = (model_dir / "config.pbtxt").read_text()
@@ -228,8 +227,6 @@ class TestExportModel:
         mock_yolo_cls_onnx = _make_mock_yolo(export_dir / "onnx", ".onnx")
         mock_yolo_cls_trt = _make_mock_yolo(export_dir / "trt", ".engine")
 
-        mock_ultralytics = MagicMock()
-
         call_count = 0
 
         def yolo_side_effect(_model_path: str) -> Any:
@@ -239,11 +236,11 @@ class TestExportModel:
                 return mock_yolo_cls_onnx.return_value
             return mock_yolo_cls_trt.return_value
 
-        mock_ultralytics.YOLO = MagicMock(side_effect=yolo_side_effect)
+        mock_yolo = MagicMock(side_effect=yolo_side_effect)
 
         with (
-            patch.dict("sys.modules", {"ultralytics": mock_ultralytics}),
-            patch("triton_model_tools.exporter.inspect_onnx_model") as mock_inspect,
+            patch("triton_model_tools.export.exporter.YOLO", mock_yolo),
+            patch("triton_model_tools.export.exporter.inspect_onnx_model") as mock_inspect,
         ):
             from triton_model_tools.models import TritonDataType, TritonTensorSpec
 
@@ -275,7 +272,7 @@ class TestExportAllModels:
     def test_passes_format_to_export_model(self, tmp_path: Path) -> None:
         repo_root = tmp_path / "repo"
 
-        with patch("triton_model_tools.exporter.export_model") as mock_export_model:
+        with patch("triton_model_tools.export.exporter.export_model") as mock_export_model:
             mock_export_model.return_value = [repo_root / "yolo11s_trt"]
             results = export_all_models(
                 repository_root=repo_root,
@@ -291,7 +288,7 @@ class TestExportAllModels:
     def test_fmt_all_collects_all_results(self, tmp_path: Path) -> None:
         repo_root = tmp_path / "repo"
 
-        with patch("triton_model_tools.exporter.export_model") as mock_export_model:
+        with patch("triton_model_tools.export.exporter.export_model") as mock_export_model:
             mock_export_model.return_value = [
                 repo_root / "yolo11s",
                 repo_root / f"yolo11s{TENSORRT_NAME_SUFFIX}",
@@ -307,7 +304,7 @@ class TestExportAllModels:
     def test_default_fmt_is_onnx(self, tmp_path: Path) -> None:
         repo_root = tmp_path / "repo"
 
-        with patch("triton_model_tools.exporter.export_model") as mock_export_model:
+        with patch("triton_model_tools.export.exporter.export_model") as mock_export_model:
             mock_export_model.return_value = [repo_root / "yolo11s"]
             export_all_models(
                 repository_root=repo_root,

@@ -110,26 +110,26 @@ class ModelVersionTracker:
     def _extract_model_name(model_info: Any) -> str | None:  # noqa: ANN401
         """Extract model name from a repository index entry."""
         if isinstance(model_info, dict):
-            raw_name = model_info.get("name")  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
-            return str(raw_name) if raw_name else None  # pyright: ignore[reportUnknownArgumentType]
-        name_attr: str | None = model_info.name or None  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
+            raw_name = model_info.get("name")
+            return str(raw_name) if raw_name else None
+        name_attr: str | None = model_info.name or None
         return name_attr
 
     @staticmethod
     def _extract_model_version(model_info: Any) -> str:  # noqa: ANN401
         """Extract model version from a repository index entry."""
         if isinstance(model_info, dict):
-            raw_version = model_info.get("version", "")  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
-            return str(raw_version)  # pyright: ignore[reportUnknownArgumentType]
-        return str(model_info.version) if model_info.version else ""  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType]
+            raw_version = model_info.get("version", "")
+            return str(raw_version)
+        return str(model_info.version) if model_info.version else ""
 
     @staticmethod
     def _extract_model_state(model_info: Any) -> str:  # noqa: ANN401
         """Extract model state from a repository index entry."""
         if isinstance(model_info, dict):
-            raw_state = model_info.get("state", "")  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
-            return str(raw_state)  # pyright: ignore[reportUnknownArgumentType]
-        return str(model_info.state) if model_info.state else ""  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType]
+            raw_state = model_info.get("state", "")
+            return str(raw_state)
+        return str(model_info.state) if model_info.state else ""
 
     @staticmethod
     def _version_sort_key(version: str) -> int:

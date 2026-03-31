@@ -68,7 +68,7 @@ def stream_images(  # noqa: PLR0913
 ) -> None:
     """Circularly stream images to Redis at the given frame rate."""
     client: Redis[bytes] = Redis(host=redis_host, port=redis_port, db=0, decode_responses=False)
-    client.ping()  # pyright: ignore[reportUnknownMemberType]
+    client.ping()
     logger.info("Connected to Redis at {}:{}", redis_host, redis_port)
 
     images = load_images(image_dir, max_images)
@@ -84,7 +84,7 @@ def stream_images(  # noqa: PLR0913
 
         frame_start = time.monotonic()
 
-        client.xadd(  # pyright: ignore[reportUnknownMemberType]
+        client.xadd(
             name=stream_name,
             fields={"data": raw_bytes, "filename": filename.encode()},
             maxlen=DEFAULT_MAXLEN,
@@ -93,7 +93,7 @@ def stream_images(  # noqa: PLR0913
         total_sent += 1
 
         if total_sent % 100 == 0:
-            stream_len = client.xlen(stream_name)  # pyright: ignore[reportUnknownMemberType]
+            stream_len = client.xlen(stream_name)
             logger.info("Sent {} frames | stream length: {}", total_sent, stream_len)
 
         elapsed = time.monotonic() - frame_start

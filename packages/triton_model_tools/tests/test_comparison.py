@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from triton_model_tools.comparison import (
+from triton_model_tools.benchmarks.comparison import (
     ComparisonMetrics,
     ComparisonSummary,
     compare_backends,
@@ -11,7 +11,7 @@ from triton_model_tools.comparison import (
     compute_iou,
     match_detections,
 )
-from triton_model_tools.detection import Detection, ImageDetectionResult
+from triton_model_tools.models.detection import Detection, ImageDetectionResult
 
 
 def _det(  # noqa: PLR0913
