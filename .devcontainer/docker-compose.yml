@@ -6,14 +6,23 @@ services:
     volumes:
       - ..:/workspace:cached
       - /mnt/c/Users/bucka/.claude/CLAUDE.md:/home/vscode/CLAUDE.md
-      - /mnt/c/Users/bucka/.claude:/home/vscode/.claude
+      - /home/nkt/.claude:/home/vscode/.claude
+      - /home/nkt/.local/share/claude:/home/vscode/.local/share/claude
+      - /home/nkt/.local/bin/claude:/home/vscode/.local/bin/claude
+      - /mnt/c/Users/bucka/.claude/skills:/home/vscode/.claude/skills
     command: sleep infinity
     depends_on:
       redis:
         condition: service_started
       triton:
         condition: service_started
-
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
   redis:
     image: redis:7-alpine
     volumes:

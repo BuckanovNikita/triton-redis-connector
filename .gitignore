@@ -39,3 +39,11 @@ model_repository/
 *.plan
 *.engine
 *.savedmodel/
+
+# Image data
+benchmarks/data/
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.tiff

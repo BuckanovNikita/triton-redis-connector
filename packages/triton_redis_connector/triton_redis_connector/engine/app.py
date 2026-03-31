@@ -7,6 +7,7 @@ container via EngineProvider.
 
 from __future__ import annotations
 
+import queue
 import threading
 import time
 from typing import TYPE_CHECKING
@@ -14,7 +15,7 @@ from typing import TYPE_CHECKING
 from loguru import logger  # pyright: ignore[reportMissingImports]
 
 from triton_redis_connector.engine.context import EventContext, reset_context, set_context
-from triton_redis_connector.engine.registry import INLINE_VARIANTS, SOURCE_VARIANTS
+from triton_redis_connector.engine.registry import INLINE_VARIANTS, SINK_VARIANTS, SOURCE_VARIANTS
 from triton_redis_connector.protocols import Envelope
 
 if TYPE_CHECKING:
@@ -46,9 +47,10 @@ class Application:
         """Run the main event loop.
 
         1. Validate the registry graph
-        2. Start parallel variant threads
-        3. Run inline dispatch loop
-        4. Monitor parallel variant health
+        2. Wire parallel node queues
+        3. Start parallel variant threads
+        4. Run inline dispatch loop
+        5. Monitor parallel variant health
         """
         errors = self._registry.validate()
         if errors:
@@ -58,6 +60,7 @@ class Application:
             raise ValueError(msg)
 
         dispatch_order = self._registry.get_dispatch_order()
+        self._wire_parallel_queues()
         self._start_parallel_variants()
 
         logger.info("Application main loop started with {} inline nodes", len(dispatch_order))
@@ -112,6 +115,14 @@ class Application:
         finally:
             reset_context(token)
 
+    def _wire_parallel_queues(self) -> None:
+        """Pre-create input queues for all non-source parallel nodes."""
+        for name, node in self._registry.nodes.items():
+            if node.variant not in INLINE_VARIANTS and node.variant not in SOURCE_VARIANTS:
+                queue_name = f"{name}:input"
+                self._queue_bus.get_queue(queue_name)
+                logger.debug("Wired input queue for parallel node {}", name)
+
     def _start_parallel_variants(self) -> None:
         """Start all parallel variant nodes in dedicated threads."""
         for name, node in self._registry.nodes.items():
@@ -127,16 +138,73 @@ class Application:
                 logger.info("Started parallel variant thread for {}", name)
 
     def _run_parallel_node(self, node: GraphNode) -> None:
-        """Run a parallel variant node in a loop until shutdown."""
+        """Run a parallel variant node in a loop until shutdown.
+
+        Handles three categories:
+        - Source variants: produce events, route to consumer input queues
+        - Processor variants: read from input queue, transform, route outputs
+        - Sink variants: read from input queue, consume (side effects)
+        """
         while not self._shutdown.is_set():
-            if node.variant in SOURCE_VARIANTS:
-                result = node.instance()  # type: ignore[operator]
-                if result is not None:
-                    for out_type in node.output_types:
-                        queue_name = f"{node.name}:{out_type.__name__}"
-                        self._queue_bus.put(queue_name, result)
-            else:
-                time.sleep(0.01)
+            try:
+                if node.variant in SOURCE_VARIANTS:
+                    result = node.instance()  # type: ignore[operator]
+                    if result is not None:
+                        self._route_to_consumers(node, result)
+                elif node.variant in SINK_VARIANTS:
+                    event = self._read_from_input_queue(node, timeout=0.1)
+                    if event is not None:
+                        node.instance(event)  # type: ignore[operator]
+                else:
+                    event = self._read_from_input_queue(node, timeout=0.1)
+                    if event is not None:
+                        result = node.instance(event)  # type: ignore[operator]
+                        if result is not None:
+                            self._route_to_consumers(node, result)
+            except (RuntimeError, ValueError, TypeError, OSError, queue.Full):
+                logger.exception("Error in parallel node {}", node.name)
+                if not self._shutdown.is_set():
+                    time.sleep(0.1)
+
+    def _route_to_consumers(self, node: GraphNode, result: object) -> None:
+        """Route a result from a parallel node to downstream consumer input queues."""
+        routed = False
+        for out_type in node.output_types:
+            if not self._type_matches(result, out_type):
+                continue
+            for consumer_name in self._registry.type_consumers.get(out_type, []):
+                consumer_node = self._registry.get_node(consumer_name)
+                if consumer_node is not None and consumer_node.variant not in INLINE_VARIANTS:
+                    queue_name = f"{consumer_name}:input"
+                    self._queue_bus.put(queue_name, result)
+                    routed = True
+
+        if not routed:
+            logger.debug(
+                "No consumer found for {} from node {}",
+                type(result).__name__,
+                node.name,
+            )
+
+    @staticmethod
+    def _type_matches(instance: object, target_type: type) -> bool:
+        """Check if an instance matches a target type, handling generic aliases."""
+        import typing  # noqa: PLC0415
+
+        origin = typing.get_origin(target_type)
+        if origin is not None:
+            return isinstance(instance, origin)
+        return isinstance(instance, target_type)
+
+    def _read_from_input_queue(self, node: GraphNode, timeout: float) -> object | None:
+        """Read one event from a parallel node's input queue."""
+        queue_name = f"{node.name}:input"
+        try:
+            result: object = self._queue_bus.get(queue_name, timeout=timeout)  # pyright: ignore[reportUnknownVariableType]
+        except queue.Empty:
+            return None
+        else:
+            return result
 
     def _stop_parallel_variants(self) -> None:
         """Signal stop and join all parallel variant threads."""

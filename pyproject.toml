@@ -9,6 +9,9 @@ members = ["packages/*"]
 
 [dependency-groups]
 dev = [
+    "triton-redis-connector",
+    "triton-model-tools",
+    "triton-shared-models",
     "mypy>=1.15.0",
     "pyright>=1.1.400",
     "pre-commit>=4.1.0",
@@ -21,6 +24,11 @@ dev = [
     "types-redis>=4.6.0",
     "import-linter>=2.11",
 ]
+
+[tool.uv.sources]
+triton-redis-connector = { workspace = true }
+triton-model-tools = { workspace = true }
+triton-shared-models = { workspace = true }
 
 [tool.ruff]
 target-version = "py312"

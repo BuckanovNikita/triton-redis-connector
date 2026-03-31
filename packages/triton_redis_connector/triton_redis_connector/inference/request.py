@@ -1,13 +1,9 @@
 """Inference input/output event models flowing through the pipeline graph.
 
-These are regular event types routed by the graph's type-matching system.
-InferenceInput is produced by preprocessing processors and consumed by
-TritonInferenceProcessor. InferenceOutput is produced by inference and
-consumed by downstream result-handling processors.
+InferenceInput is defined in engine.events (so both preprocessing and
+inference layers can import it). Re-exported here for backward compatibility.
 
-Numpy arrays are used directly (with arbitrary_types_allowed) because these
-events flow through queues, not Redis serialization. Numpy arrays pickle
-efficiently for cross-process transport.
+InferenceOutput carries raw numpy arrays for cross-process transport.
 """
 
 from __future__ import annotations
@@ -16,21 +12,9 @@ import numpy as np  # noqa: TC002 — pydantic needs runtime access for model_re
 import numpy.typing as npt  # noqa: TC002
 from pydantic import BaseModel, ConfigDict
 
+from triton_redis_connector.engine.events import InferenceInput
 
-class InferenceInput(BaseModel):
-    """Input event for Triton inference processor.
-
-    Carries the preprocessed tensor and metadata needed to dispatch
-    a gRPC inference request to Triton.
-    """
-
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
-
-    model_name: str
-    model_version: str = ""
-    raw_image: npt.NDArray[np.float32]
-    input_name: str = "images"
-    output_names: tuple[str, ...] = ("output0",)
+__all__ = ["InferenceInput", "InferenceOutput"]
 
 
 class InferenceOutput(BaseModel):
@@ -48,5 +32,4 @@ class InferenceOutput(BaseModel):
     inference_time_ms: float
 
 
-InferenceInput.model_rebuild()
 InferenceOutput.model_rebuild()

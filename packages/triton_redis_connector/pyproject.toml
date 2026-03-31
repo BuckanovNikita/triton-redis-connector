@@ -9,12 +9,12 @@ description = "Redis Streams to Triton Inference Server connector"
 requires-python = ">=3.12"
 dependencies = [
     "redis>=5.2.0",
-    "tritonclient[all]>=2.66.0",
+    "tritonclient[grpc]>=2.66.0",
     "pydantic>=2.10.0",
     "loguru>=0.7.3",
     "numpy>=1.26.0",
     "dishka>=1.7.0",
     "hydra-core>=1.3.0",
     "omegaconf>=2.3.0",
-    "opencv-python>=4.8.0",
+    "opencv-python-headless>=4.8.0",
 ]

@@ -165,6 +165,11 @@ class PipelineRegistry:
         """Return all registered nodes."""
         return dict(self._nodes)
 
+    @property
+    def type_consumers(self) -> dict[type, list[str]]:
+        """Return the type-to-consumer mapping for queue wiring."""
+        return dict(self._type_consumers)
+
     def _check_connectivity(self) -> list[str]:
         """Check that the graph has no disconnected subgraphs.
 
