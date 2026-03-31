@@ -27,10 +27,10 @@ class TritonInferenceClient:
     def infer_raw(
         self,
         model_name: str,
-        tensor: npt.NDArray[np.float32],
+        tensor: npt.NDArray[np.floating[Any]],
         output_names: list[str],
     ) -> dict[str, npt.NDArray[np.float32]]:
-        """Run inference with a preprocessed float32 tensor.
+        """Run inference with a preprocessed tensor (FP32 or FP16).
 
         Args:
             model_name: Triton model name.
@@ -42,7 +42,8 @@ class TritonInferenceClient:
 
         """
         grpc = self._grpc
-        input_tensor = grpc.InferInput("images", tensor.shape, "FP32")
+        triton_dtype = "FP16" if tensor.dtype == np.float16 else "FP32"
+        input_tensor = grpc.InferInput("images", tensor.shape, triton_dtype)
         input_tensor.set_data_from_numpy(tensor)
 
         outputs = [grpc.InferRequestedOutput(name) for name in output_names]

@@ -8,11 +8,13 @@ import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
+import numpy as np
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 from ultralytics import YOLO  # type: ignore[attr-defined]
 
 from triton_model_tools.benchmarks.stats import MILLISECONDS_PER_SECOND, compute_statistics
+from triton_model_tools.export.exporter import TENSORRT_NAME_SUFFIX
 from triton_model_tools.inference.client import TritonInferenceClient
 from triton_model_tools.inference.detection_io import collect_image_paths, load_image
 from triton_model_tools.inference.postprocessing import (
@@ -39,6 +41,7 @@ class BenchmarkConfig(BaseModel):
     num_images: int = 100
     warmup_runs: int = 5
     end2end: bool = False
+    half: bool = False
     conf_threshold: float = Field(default=DEFAULT_CONFIDENCE_THRESHOLD, ge=0.0, le=1.0)
     iou_threshold: float = Field(default=DEFAULT_IOU_THRESHOLD, ge=0.0, le=1.0)
 
@@ -130,10 +133,25 @@ def run_benchmark(config: BenchmarkConfig, image_dir: Path) -> BenchmarkResult:
 
     """
     image_paths = collect_image_paths(image_dir, max_count=config.num_images)
-    logger.info("Running benchmark: model={} backend={} images={}", config.model_name, config.backend, len(image_paths))
+
+    triton_model_name = config.model_name
+    if config.backend == "tensorrt" and not triton_model_name.endswith(TENSORRT_NAME_SUFFIX):
+        triton_model_name = f"{triton_model_name}{TENSORRT_NAME_SUFFIX}"
+
+    use_fp16 = config.half or config.backend == "tensorrt"
+    preprocess_dtype: type[np.floating[Any]] = np.float16 if use_fp16 else np.float32
+
+    logger.info(
+        "Running benchmark: model={} triton_name={} backend={} half={} images={}",
+        config.model_name,
+        triton_model_name,
+        config.backend,
+        use_fp16,
+        len(image_paths),
+    )
 
     client = TritonInferenceClient(url=config.triton_url)
-    preprocessor = YoloPreprocessor(target_size=config.target_size)
+    preprocessor = YoloPreprocessor(target_size=config.target_size, dtype=preprocess_dtype)
     postprocessor = YoloPostprocessor(end2end=config.end2end)
 
     output_names = ["output0"]
@@ -143,7 +161,7 @@ def run_benchmark(config: BenchmarkConfig, image_dir: Path) -> BenchmarkResult:
         warmup_image = load_image(image_paths[0])
         warmup_tensor, _, _ = preprocessor.preprocess(warmup_image)
         for _ in range(config.warmup_runs):
-            client.infer_raw(config.model_name, warmup_tensor, output_names)
+            client.infer_raw(triton_model_name, warmup_tensor, output_names)
 
     latencies_ms: list[float] = []
     for image_path in image_paths:
@@ -151,7 +169,7 @@ def run_benchmark(config: BenchmarkConfig, image_dir: Path) -> BenchmarkResult:
 
         start = time.perf_counter()
         tensor, scale, pad_offset = preprocessor.preprocess(image)
-        outputs = client.infer_raw(config.model_name, tensor, output_names)
+        outputs = client.infer_raw(triton_model_name, tensor, output_names)
         postprocessor.postprocess(
             outputs,
             scale,

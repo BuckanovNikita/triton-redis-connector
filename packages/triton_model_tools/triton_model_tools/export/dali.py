@@ -28,6 +28,8 @@ _DALI_TEMPLATE = _JINJA_ENV.get_template("dali_preprocess.py.j2")
 DALI_PREPROCESS_SUFFIX = "_dali_preprocess"
 DALI_ENSEMBLE_SUFFIX = "_dali_ensemble"
 DALI_NMS_ENSEMBLE_SUFFIX = "_dali_nms_ensemble"
+DALI_RESCALE_ENSEMBLE_SUFFIX = "_dali_rescale_ensemble"
+DALI_NMS_RESCALE_ENSEMBLE_SUFFIX = "_dali_nms_rescale_ensemble"
 
 
 class DaliPipelineConfig(BaseModel):
@@ -224,30 +226,250 @@ def build_dali_nms_ensemble_config(
     )
 
 
+def build_dali_rescale_ensemble_config(
+    model_name: str,
+    preprocess_name: str,
+    inference_name: str,
+    rescale_name: str,
+) -> TritonModelConfig:
+    """Build a 3-step ensemble: DALI preprocess -> inference -> rescale.
+
+    Args:
+        model_name: Name for the ensemble model.
+        preprocess_name: Name of the DALI preprocessing model.
+        inference_name: Name of the inference model.
+        rescale_name: Name of the rescale postprocess model.
+
+    Returns:
+        TritonModelConfig with ensemble platform and 3-step scheduling.
+
+    """
+    return TritonModelConfig(
+        name=model_name,
+        platform="ensemble",
+        max_batch_size=0,
+        inputs=[
+            TritonTensorSpec(
+                name="INPUT_IMAGE",
+                data_type=TritonDataType.TYPE_UINT8,
+                dims=[-1],
+            ),
+            TritonTensorSpec(
+                name="SCALE",
+                data_type=TritonDataType.TYPE_FP32,
+                dims=[1],
+            ),
+            TritonTensorSpec(
+                name="PAD_LEFT",
+                data_type=TritonDataType.TYPE_FP32,
+                dims=[1],
+            ),
+            TritonTensorSpec(
+                name="PAD_TOP",
+                data_type=TritonDataType.TYPE_FP32,
+                dims=[1],
+            ),
+        ],
+        outputs=[
+            TritonTensorSpec(
+                name="OUTPUT_DETECTIONS",
+                data_type=TritonDataType.TYPE_FP32,
+                dims=[-1],
+            ),
+        ],
+        ensemble_scheduling=[
+            EnsembleStep(
+                model_name=preprocess_name,
+                model_version=-1,
+                input_map=[EnsembleStepMapping(key="INPUT_0", value="INPUT_IMAGE")],
+                output_map=[EnsembleStepMapping(key="OUTPUT_0", value="preprocessed_tensor")],
+            ),
+            EnsembleStep(
+                model_name=inference_name,
+                model_version=-1,
+                input_map=[EnsembleStepMapping(key="images", value="preprocessed_tensor")],
+                output_map=[EnsembleStepMapping(key="output0", value="raw_detections")],
+            ),
+            EnsembleStep(
+                model_name=rescale_name,
+                model_version=-1,
+                input_map=[
+                    EnsembleStepMapping(key="DETECTIONS", value="raw_detections"),
+                    EnsembleStepMapping(key="SCALE", value="SCALE"),
+                    EnsembleStepMapping(key="PAD_LEFT", value="PAD_LEFT"),
+                    EnsembleStepMapping(key="PAD_TOP", value="PAD_TOP"),
+                ],
+                output_map=[EnsembleStepMapping(key="RESCALED_DETECTIONS", value="OUTPUT_DETECTIONS")],
+            ),
+        ],
+    )
+
+
+def build_dali_nms_rescale_ensemble_config(
+    model_name: str,
+    preprocess_name: str,
+    inference_name: str,
+    nms_name: str,
+    rescale_name: str,
+) -> TritonModelConfig:
+    """Build a 4-step ensemble: DALI preprocess -> inference -> NMS -> rescale.
+
+    Args:
+        model_name: Name for the ensemble model.
+        preprocess_name: Name of the DALI preprocessing model.
+        inference_name: Name of the inference model.
+        nms_name: Name of the NMS postprocess model.
+        rescale_name: Name of the rescale postprocess model.
+
+    Returns:
+        TritonModelConfig with ensemble platform and 4-step scheduling.
+
+    """
+    return TritonModelConfig(
+        name=model_name,
+        platform="ensemble",
+        max_batch_size=0,
+        inputs=[
+            TritonTensorSpec(
+                name="INPUT_IMAGE",
+                data_type=TritonDataType.TYPE_UINT8,
+                dims=[-1],
+            ),
+            TritonTensorSpec(
+                name="SCALE",
+                data_type=TritonDataType.TYPE_FP32,
+                dims=[1],
+            ),
+            TritonTensorSpec(
+                name="PAD_LEFT",
+                data_type=TritonDataType.TYPE_FP32,
+                dims=[1],
+            ),
+            TritonTensorSpec(
+                name="PAD_TOP",
+                data_type=TritonDataType.TYPE_FP32,
+                dims=[1],
+            ),
+        ],
+        outputs=[
+            TritonTensorSpec(
+                name="OUTPUT_DETECTIONS",
+                data_type=TritonDataType.TYPE_FP32,
+                dims=[-1],
+            ),
+        ],
+        ensemble_scheduling=[
+            EnsembleStep(
+                model_name=preprocess_name,
+                model_version=-1,
+                input_map=[EnsembleStepMapping(key="INPUT_0", value="INPUT_IMAGE")],
+                output_map=[EnsembleStepMapping(key="OUTPUT_0", value="preprocessed_tensor")],
+            ),
+            EnsembleStep(
+                model_name=inference_name,
+                model_version=-1,
+                input_map=[EnsembleStepMapping(key="images", value="preprocessed_tensor")],
+                output_map=[EnsembleStepMapping(key="output0", value="raw_detections")],
+            ),
+            EnsembleStep(
+                model_name=nms_name,
+                model_version=-1,
+                input_map=[EnsembleStepMapping(key="INPUT_0", value="raw_detections")],
+                output_map=[EnsembleStepMapping(key="OUTPUT_0", value="nms_detections")],
+            ),
+            EnsembleStep(
+                model_name=rescale_name,
+                model_version=-1,
+                input_map=[
+                    EnsembleStepMapping(key="DETECTIONS", value="nms_detections"),
+                    EnsembleStepMapping(key="SCALE", value="SCALE"),
+                    EnsembleStepMapping(key="PAD_LEFT", value="PAD_LEFT"),
+                    EnsembleStepMapping(key="PAD_TOP", value="PAD_TOP"),
+                ],
+                output_map=[EnsembleStepMapping(key="RESCALED_DETECTIONS", value="OUTPUT_DETECTIONS")],
+            ),
+        ],
+    )
+
+
+def _resolve_ensemble_suffix(
+    nms_model_name: str | None,
+    rescale_model_name: str | None,
+) -> str:
+    if nms_model_name and rescale_model_name:
+        return DALI_NMS_RESCALE_ENSEMBLE_SUFFIX
+    if rescale_model_name:
+        return DALI_RESCALE_ENSEMBLE_SUFFIX
+    if nms_model_name:
+        return DALI_NMS_ENSEMBLE_SUFFIX
+    return DALI_ENSEMBLE_SUFFIX
+
+
+def _build_ensemble_for_variant(
+    ensemble_name: str,
+    preprocess_name: str,
+    inference_name: str,
+    nms_model_name: str | None,
+    rescale_model_name: str | None,
+) -> TritonModelConfig:
+    if nms_model_name and rescale_model_name:
+        return build_dali_nms_rescale_ensemble_config(
+            model_name=ensemble_name,
+            preprocess_name=preprocess_name,
+            inference_name=inference_name,
+            nms_name=nms_model_name,
+            rescale_name=rescale_model_name,
+        )
+    if rescale_model_name:
+        return build_dali_rescale_ensemble_config(
+            model_name=ensemble_name,
+            preprocess_name=preprocess_name,
+            inference_name=inference_name,
+            rescale_name=rescale_model_name,
+        )
+    if nms_model_name:
+        return build_dali_nms_ensemble_config(
+            model_name=ensemble_name,
+            preprocess_name=preprocess_name,
+            inference_name=inference_name,
+            nms_name=nms_model_name,
+        )
+    return build_ensemble_config(
+        model_name=ensemble_name,
+        preprocess_name=preprocess_name,
+        inference_name=inference_name,
+    )
+
+
 def build_ensemble_directory(
     repository_root: Path,
     model_name: str,
     config: DaliPipelineConfig,
     nms_model_name: str | None = None,
+    rescale_model_name: str | None = None,
 ) -> Path:
     """Create the full Triton model repository directory for a DALI ensemble.
 
-    When ``nms_model_name`` is provided, creates a 3-step ensemble
-    (preprocess -> inference -> NMS). Otherwise creates a 2-step ensemble
-    (preprocess -> inference).
+    Supports 2/3/4-step ensembles depending on which postprocessing models
+    are provided:
+    - No NMS, no rescale: DALI -> inference (2-step)
+    - NMS only: DALI -> inference -> NMS (3-step)
+    - Rescale only: DALI -> inference -> rescale (3-step)
+    - NMS + rescale: DALI -> inference -> NMS -> rescale (4-step)
 
     Args:
         repository_root: Root of the Triton model repository.
         model_name: Base model name (e.g. "yolo11s").
         config: DALI pipeline configuration.
         nms_model_name: If provided, include NMS step in the ensemble.
+        rescale_model_name: If provided, include rescale step in the ensemble.
 
     Returns:
         Path to the ensemble model directory.
 
     """
     preprocess_name = f"{model_name}{DALI_PREPROCESS_SUFFIX}"
-    ensemble_suffix = DALI_NMS_ENSEMBLE_SUFFIX if nms_model_name else DALI_ENSEMBLE_SUFFIX
+    ensemble_suffix = _resolve_ensemble_suffix(nms_model_name, rescale_model_name)
     ensemble_name = f"{model_name}{ensemble_suffix}"
 
     preprocess_dir = repository_root / preprocess_name
@@ -268,19 +490,13 @@ def build_ensemble_directory(
     ensemble_version_dir = ensemble_dir / "1"
     ensemble_version_dir.mkdir(parents=True, exist_ok=True)
 
-    if nms_model_name:
-        ensemble_config = build_dali_nms_ensemble_config(
-            model_name=ensemble_name,
-            preprocess_name=preprocess_name,
-            inference_name=model_name,
-            nms_name=nms_model_name,
-        )
-    else:
-        ensemble_config = build_ensemble_config(
-            model_name=ensemble_name,
-            preprocess_name=preprocess_name,
-            inference_name=model_name,
-        )
+    ensemble_config = _build_ensemble_for_variant(
+        ensemble_name=ensemble_name,
+        preprocess_name=preprocess_name,
+        inference_name=model_name,
+        nms_model_name=nms_model_name,
+        rescale_model_name=rescale_model_name,
+    )
     ensemble_config_path = ensemble_dir / "config.pbtxt"
     ensemble_config_path.write_text(ensemble_config.to_pbtxt())
     logger.info("Wrote ensemble config to {}", ensemble_config_path)

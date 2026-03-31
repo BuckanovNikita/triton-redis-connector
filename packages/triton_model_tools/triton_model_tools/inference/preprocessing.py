@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
@@ -23,23 +23,28 @@ class YoloPreprocessor:
     3. BGR -> RGB
     4. HWC -> CHW
     5. /255.0
-    6. float32
+    6. cast to dtype (float32 or float16)
     7. batch dim
 
     """
 
-    def __init__(self, target_size: int | tuple[int, int] = 640) -> None:
-        """Initialize with the model's expected input size."""
+    def __init__(
+        self,
+        target_size: int | tuple[int, int] = 640,
+        dtype: type[np.floating[Any]] = np.float32,
+    ) -> None:
+        """Initialize with the model's expected input size and output dtype."""
         if isinstance(target_size, int):
             self._target_h = target_size
             self._target_w = target_size
         else:
             self._target_h, self._target_w = target_size
+        self._dtype = dtype
 
     def preprocess(
         self,
         image: npt.NDArray[np.uint8],
-    ) -> tuple[npt.NDArray[np.float32], float, tuple[int, int]]:
+    ) -> tuple[npt.NDArray[np.floating[Any]], float, tuple[int, int]]:
         """Preprocess a BGR image using letterbox method.
 
         Args:
@@ -80,7 +85,7 @@ class YoloPreprocessor:
 
         rgb = padded[:, :, ::-1]
         chw = np.transpose(rgb, (2, 0, 1))
-        normalized = chw.astype(np.float32) / YOLO_NORMALIZE_DIVISOR
-        batched: npt.NDArray[np.float32] = np.expand_dims(normalized, axis=0)
+        normalized: npt.NDArray[np.floating[Any]] = chw.astype(self._dtype) / YOLO_NORMALIZE_DIVISOR
+        batched: npt.NDArray[np.floating[Any]] = np.expand_dims(normalized, axis=0)
 
         return batched, scale, (pad_left, pad_top)

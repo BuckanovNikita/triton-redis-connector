@@ -125,6 +125,7 @@ class TestMainEntryPoint:
             model_names=None,
             fmt="onnx",
             models_config=None,
+            half=False,
         )
 
     def test_main_handles_value_error(self, tmp_path: Path) -> None:
@@ -161,6 +162,7 @@ class TestMainEntryPoint:
             model_names=["yolo11s"],
             fmt="onnx",
             models_config=None,
+            half=False,
         )
 
     def test_run_export_with_dali_ensemble(self, tmp_path: Path) -> None:

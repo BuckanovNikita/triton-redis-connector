@@ -79,23 +79,30 @@ def inspect_onnx_model(
     return inputs, outputs
 
 
-def _export_onnx(variant: YoloModelVariant, repository_root: Path) -> Path:
+def _export_onnx(
+    variant: YoloModelVariant,
+    repository_root: Path,
+    *,
+    half: bool = False,
+) -> Path:
     """Export a YOLO model to ONNX and build its Triton repository entry.
 
     Args:
         variant: YOLO model variant specification.
         repository_root: Root path of the Triton model repository.
+        half: If True, export ONNX model in FP16 precision.
 
     Returns:
         Path to the created Triton model directory.
 
     """
-    logger.info("Exporting {} (ONNX) from {}", variant.name, variant.ultralytics_model)
+    logger.info("Exporting {} (ONNX, half={}) from {}", variant.name, half, variant.ultralytics_model)
 
     yolo_model = YOLO(variant.ultralytics_model)
     onnx_path_str: str = yolo_model.export(
         format="onnx",
         imgsz=list(variant.resolved_imgsz),
+        half=half,
         **variant.export_kwargs,
     )
     onnx_path = Path(onnx_path_str)
@@ -129,7 +136,12 @@ def _export_onnx(variant: YoloModelVariant, repository_root: Path) -> Path:
     return model_dir
 
 
-def _export_tensorrt(variant: YoloModelVariant, repository_root: Path) -> Path:
+def _export_tensorrt(
+    variant: YoloModelVariant,
+    repository_root: Path,
+    *,
+    half: bool = True,
+) -> Path:
     """Export a YOLO model to TensorRT engine and build its Triton repository entry.
 
     Uses FP16 precision by default for optimal GPU inference performance.
@@ -137,37 +149,40 @@ def _export_tensorrt(variant: YoloModelVariant, repository_root: Path) -> Path:
     Args:
         variant: YOLO model variant specification.
         repository_root: Root path of the Triton model repository.
+        half: If True (default), export TensorRT engine in FP16 precision.
 
     Returns:
         Path to the created Triton model directory.
 
     """
     trt_model_name = f"{variant.name}{TENSORRT_NAME_SUFFIX}"
-    logger.info("Exporting {} (TensorRT) from {}", trt_model_name, variant.ultralytics_model)
+    logger.info("Exporting {} (TensorRT, half={}) from {}", trt_model_name, half, variant.ultralytics_model)
 
     yolo_model = YOLO(variant.ultralytics_model)
     engine_path_str: str = yolo_model.export(
         format="engine",
         imgsz=list(variant.resolved_imgsz),
-        half=True,
+        half=half,
         **variant.export_kwargs,
     )
     engine_path = Path(engine_path_str)
     logger.info("TensorRT engine exported to {}", engine_path)
 
+    trt_dtype = TritonDataType.TYPE_FP16 if half else TritonDataType.TYPE_FP32
     resolved_h, resolved_w = variant.resolved_imgsz
     inputs = [
         TritonTensorSpec(
             name="images",
-            data_type=TritonDataType.TYPE_FP16,
+            data_type=trt_dtype,
             dims=[1, 3, resolved_h, resolved_w],
         ),
     ]
+    output_dims = [1, -1, 6] if variant.end2end_export else [-1, -1]
     outputs = [
         TritonTensorSpec(
             name="output0",
-            data_type=TritonDataType.TYPE_FP16,
-            dims=[-1, -1],
+            data_type=trt_dtype,
+            dims=output_dims,
         ),
     ]
 
@@ -200,6 +215,8 @@ def export_model(
     variant: YoloModelVariant,
     repository_root: Path,
     fmt: Literal["onnx", "tensorrt", "all"] = "onnx",
+    *,
+    half: bool = False,
 ) -> list[Path]:
     """Export a single YOLO model in the requested format(s) and build Triton entries.
 
@@ -207,6 +224,8 @@ def export_model(
         variant: YOLO model variant specification.
         repository_root: Root path of the Triton model repository.
         fmt: Export format - "onnx", "tensorrt", or "all" for both.
+        half: If True, export in FP16 precision. For ONNX defaults to FP32,
+            for TensorRT defaults to FP16 regardless of this flag.
 
     Returns:
         List of paths to created Triton model directories.
@@ -214,9 +233,9 @@ def export_model(
     """
     results: list[Path] = []
     if fmt in ("onnx", "all"):
-        results.append(_export_onnx(variant, repository_root))
+        results.append(_export_onnx(variant, repository_root, half=half))
     if fmt in ("tensorrt", "all"):
-        results.append(_export_tensorrt(variant, repository_root))
+        results.append(_export_tensorrt(variant, repository_root, half=half))
     return results
 
 
@@ -225,6 +244,8 @@ def export_all_models(
     model_names: Sequence[str] | None = None,
     fmt: Literal["onnx", "tensorrt", "all"] = "onnx",
     models_config: Path | None = None,
+    *,
+    half: bool = False,
 ) -> list[Path]:
     """Export YOLO models and build their Triton repository entries.
 
@@ -235,6 +256,7 @@ def export_all_models(
         fmt: Export format - "onnx", "tensorrt", or "all" for both.
         models_config: Optional path to a YAML file defining model variants.
             If None, uses the built-in default models.
+        half: If True, export models in FP16 precision.
 
     Returns:
         List of paths to created Triton model directories.
@@ -261,7 +283,7 @@ def export_all_models(
 
     results: list[Path] = []
     for variant in variants:
-        model_dirs = export_model(variant, repository_root, fmt=fmt)
+        model_dirs = export_model(variant, repository_root, fmt=fmt, half=half)
         results.extend(model_dirs)
 
     logger.info(

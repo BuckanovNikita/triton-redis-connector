@@ -23,11 +23,17 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _make_variant(name: str = "yolo11s", imgsz: int | tuple[int, int] = 640) -> YoloModelVariant:
+def _make_variant(
+    name: str = "yolo11s",
+    imgsz: int | tuple[int, int] = 640,
+    *,
+    end2end_export: bool = False,
+) -> YoloModelVariant:
     return YoloModelVariant(
         name=name,
         ultralytics_model=f"{name}.pt",
         imgsz=imgsz,
+        end2end_export=end2end_export,
     )
 
 
@@ -67,6 +73,29 @@ class TestExportOnnx:
         assert model_dir == repo_root / "yolo11s"
         assert (model_dir / "config.pbtxt").exists()
         assert (model_dir / "1" / EXPORT_FORMAT_TO_FILENAME[ExportFormat.ONNX]).exists()
+
+    def test_passes_half_to_yolo_export(self, tmp_path: Path) -> None:
+        variant = _make_variant()
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        export_dir = tmp_path / "exports"
+        mock_yolo_cls = _make_mock_yolo(export_dir, ".onnx")
+
+        with (
+            patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls),
+            patch("triton_model_tools.export.exporter.inspect_onnx_model") as mock_inspect,
+        ):
+            from triton_model_tools.models import TritonDataType, TritonTensorSpec
+
+            mock_inspect.return_value = (
+                [TritonTensorSpec(name="images", data_type=TritonDataType.TYPE_FP16, dims=[1, 3, 640, 640])],
+                [TritonTensorSpec(name="output0", data_type=TritonDataType.TYPE_FP16, dims=[1, 300, 6])],
+            )
+            _export_onnx(variant, repo_root, half=True)
+
+        mock_instance = mock_yolo_cls.return_value
+        export_call_kwargs: dict[str, Any] = mock_instance.export.call_args.kwargs
+        assert export_call_kwargs["half"] is True
 
     def test_cleans_up_intermediate_onnx(self, tmp_path: Path) -> None:
         variant = _make_variant()
@@ -134,6 +163,50 @@ class TestExportTensorrt:
         assert export_call_kwargs["format"] == "engine"
         assert export_call_kwargs["half"] is True
         assert export_call_kwargs["imgsz"] == [640, 640]
+
+    def test_half_false_uses_fp32_types(self, tmp_path: Path) -> None:
+        variant = _make_variant()
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        export_dir = tmp_path / "exports"
+        mock_yolo_cls = _make_mock_yolo(export_dir, ".engine")
+
+        with patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls):
+            model_dir = _export_tensorrt(variant, repo_root, half=False)
+
+        config_text = (model_dir / "config.pbtxt").read_text()
+        assert "TYPE_FP32" in config_text
+        assert "TYPE_FP16" not in config_text
+
+        mock_instance = mock_yolo_cls.return_value
+        export_call_kwargs: dict[str, Any] = mock_instance.export.call_args.kwargs
+        assert export_call_kwargs["half"] is False
+
+    def test_end2end_variant_has_correct_output_dims(self, tmp_path: Path) -> None:
+        variant = _make_variant(end2end_export=True)
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        export_dir = tmp_path / "exports"
+        mock_yolo_cls = _make_mock_yolo(export_dir, ".engine")
+
+        with patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls):
+            model_dir = _export_tensorrt(variant, repo_root)
+
+        config_text = (model_dir / "config.pbtxt").read_text()
+        assert "1, -1, 6" in config_text
+
+    def test_non_end2end_variant_has_default_output_dims(self, tmp_path: Path) -> None:
+        variant = _make_variant(end2end_export=False)
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        export_dir = tmp_path / "exports"
+        mock_yolo_cls = _make_mock_yolo(export_dir, ".engine")
+
+        with patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls):
+            model_dir = _export_tensorrt(variant, repo_root)
+
+        config_text = (model_dir / "config.pbtxt").read_text()
+        assert "-1, -1" in config_text
 
     def test_cleans_up_intermediate_engine_file(self, tmp_path: Path) -> None:
         variant = _make_variant()
@@ -249,6 +322,20 @@ class TestExportAllModels:
 
         call_kwargs = mock_export_model.call_args.kwargs
         assert call_kwargs["fmt"] == "onnx"
+
+    def test_passes_half_to_export_model(self, tmp_path: Path) -> None:
+        repo_root = tmp_path / "repo"
+
+        with patch("triton_model_tools.export.exporter.export_model") as mock_export_model:
+            mock_export_model.return_value = [repo_root / "yolo11s"]
+            export_all_models(
+                repository_root=repo_root,
+                model_names=["yolo11s"],
+                half=True,
+            )
+
+        call_kwargs = mock_export_model.call_args.kwargs
+        assert call_kwargs["half"] is True
 
     def test_unknown_model_name_raises_value_error(self, tmp_path: Path) -> None:
         repo_root = tmp_path / "repo"
