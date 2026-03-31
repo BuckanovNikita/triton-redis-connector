@@ -171,12 +171,6 @@ def test_thread_source_respects_stop_event() -> None:
 
     assert event is None
 
-def test_process_source_has_stop_event() -> None:
-    source = MyProcessSource(config=test_config)
-    source.stop = threading.Event()
-
-    assert hasattr(source, "stop")
-    assert isinstance(source.stop, threading.Event)
 ```
 
 ---
@@ -765,39 +759,11 @@ def docker_services() -> Iterator[DockerStack]:
 
 ---
 
-## Parametrized Tests with Complex Objects
+## Parametrized Tests
 
-```python
-import pytest
-from triton_model_tools.models import TritonDataType, TritonTensorSpec
-
-@pytest.mark.parametrize(
-    ("data_type", "dims", "expected_str"),
-    [
-        (TritonDataType.TYPE_FP32, [1, 3, 640, 640], "data_type: TYPE_FP32"),
-        (TritonDataType.TYPE_FP16, [-1, 3, 640, 640], "data_type: TYPE_FP16"),
-        (TritonDataType.TYPE_UINT8, [1, 640, 640, 3], "data_type: TYPE_UINT8"),
-    ],
-    ids=["fp32-fixed", "fp16-dynamic-batch", "uint8-hwc"],
-)
-def test_tensor_spec_renders_correctly(
-    data_type: TritonDataType,
-    dims: list[int],
-    expected_str: str,
-) -> None:
-    spec = TritonTensorSpec(name="test", data_type=data_type, dims=dims)
-    config = TritonModelConfig(
-        name="test_model",
-        inputs=[spec],
-        outputs=[TritonTensorSpec(
-            name="out", data_type=TritonDataType.TYPE_FP32, dims=[1],
-        )],
-    )
-    assert expected_str in config.to_pbtxt()
-```
-
-Use the `ids` parameter for readable test names in output. Use tuples for
-multiple parameters with `@pytest.mark.parametrize`.
+Use `@pytest.mark.parametrize` with `ids` for readable test names. Use tuples
+for multiple parameters. Parametrize validation boundaries and error cases —
+not simple field values or defaults.
 
 ---
 
@@ -1081,6 +1047,15 @@ class FakeInferenceProvider(Provider):
 This follows the project's preference for protocol-based fakes over mocks.
 
 ---
+
+## What NOT to Test
+
+Never write tests for:
+- **Framework-guaranteed behavior**: frozen pydantic models, enum values matching their literals, StrEnum string coercion, dataclass field assignment
+- **Simple construction/defaults**: creating an object and asserting fields equal constructor args or default values
+- **Protocol isinstance checks**: static type checkers (mypy/pyright strict) already verify protocol conformance
+- **Constant counts/values**: `assert len(REGISTRY) == 3` breaks when items added and tests nothing
+- **Generated file content**: never assert on pbtxt strings, generated scripts, or config file content — only integration tests running Triton on the output can verify correctness
 
 ## Constraints
 

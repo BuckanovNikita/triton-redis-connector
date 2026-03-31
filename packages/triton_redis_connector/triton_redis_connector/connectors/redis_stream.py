@@ -78,10 +78,12 @@ class RedisStreamInputConnector:
 
     def _entry_to_envelope(self, msg_id: str, fields: dict[bytes, bytes]) -> Envelope[bytes]:
         payload = fields.get(b"data", b"")
+        original_fields = {k.decode(): v.decode() for k, v in fields.items() if k != b"data"}
         return Envelope(
             payload=payload,
             source_stream=self._config.stream_name,
             message_id=msg_id,
+            original_fields=original_fields,
         )
 
 
@@ -127,9 +129,11 @@ class RedisStreamSource:
         self._config = config
         self._pending_buffer: deque[Envelope[bytes]] = deque()
         self._live_count_since_pending: int = 0
-        self._recovery_done = False
+        self._recovery_done = config.skip_existing
         self._pending_ttl_s = config.pending_ttl_s
         self._interleave_ratio = config.recovery_interleave_ratio
+        if config.skip_existing:
+            logger.info("skip_existing=True for stream {}, skipping pending recovery", config.stream_name)
 
     def __call__(self) -> Envelope[bytes] | None:
         """Produce the next event, interleaving pending and live messages.
@@ -204,9 +208,8 @@ class RedisStreamSink:
 
     def __call__(self, event: Envelope[bytes]) -> None:
         """Write the envelope payload to the output Redis stream."""
-        data = {
-            "data": event.payload,
-            "source_stream": event.source_stream.encode(),
-            "message_id": event.message_id.encode(),
-        }
+        data: dict[str, bytes] = {k: v.encode() for k, v in event.original_fields.items()}
+        data["data"] = event.payload
+        data["source_stream"] = event.source_stream.encode()
+        data["message_id"] = event.message_id.encode()
         self._connector.write(data)

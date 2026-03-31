@@ -1,0 +1,132 @@
+"""Run YOLO inference on a folder of images via Triton."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from loguru import logger
+
+if TYPE_CHECKING:
+    import argparse
+
+    from triton_model_tools.cli._types import SubParsers
+
+
+def build_parser(subparsers: SubParsers) -> None:
+    """Register the ``infer`` subcommand."""
+    infer_parser = subparsers.add_parser(
+        "infer",
+        help="Run YOLO inference on a folder of images via Triton",
+    )
+    infer_parser.add_argument(
+        "--image-dir",
+        type=Path,
+        required=True,
+        help="Directory containing images to run inference on",
+    )
+    infer_parser.add_argument(
+        "-m",
+        "--model",
+        type=str,
+        required=True,
+        help="Triton model name (e.g. yolo11s, yolo26s)",
+    )
+    infer_parser.add_argument(
+        "--triton-url",
+        type=str,
+        default="localhost:8001",
+        help="Triton gRPC URL (default: localhost:8001)",
+    )
+    infer_parser.add_argument(
+        "--target-size",
+        type=int,
+        default=640,
+        help="Model input size (default: 640)",
+    )
+    infer_parser.add_argument(
+        "--repository-root",
+        type=Path,
+        default=None,
+        help="Triton model repository root for auto-detecting model properties",
+    )
+    infer_parser.add_argument(
+        "--end2end",
+        action="store_true",
+        default=False,
+        help="Model uses end2end NMS output format",
+    )
+    infer_parser.add_argument(
+        "--conf-threshold",
+        type=float,
+        default=0.25,
+        help="Confidence threshold (default: 0.25)",
+    )
+    infer_parser.add_argument(
+        "--iou-threshold",
+        type=float,
+        default=0.45,
+        help="IoU threshold for NMS (default: 0.45)",
+    )
+    infer_parser.set_defaults(func=run)
+
+
+def run(args: argparse.Namespace) -> None:
+    """Execute the ``infer`` subcommand."""
+    from triton_model_tools.inference.folder_inference import run_folder_inference  # noqa: PLC0415
+    from triton_model_tools.models import discover_models  # noqa: PLC0415
+
+    image_dir: Path = args.image_dir.resolve()
+    model_name: str = args.model
+    triton_url: str = args.triton_url
+    target_size: int = args.target_size
+    end2end: bool = args.end2end
+    conf_threshold: float = args.conf_threshold
+    iou_threshold: float = args.iou_threshold
+    repository_root: Path | None = args.repository_root
+
+    if repository_root is not None:
+        discovered = discover_models(repository_root)
+        match = next((m for m in discovered if m.name == model_name), None)
+        if match is not None:
+            end2end = match.is_end2end
+            if match.input_dims and len(match.input_dims) >= 4:
+                target_size = match.input_dims[-1]
+            logger.info("Auto-detected from repository: end2end={}, target_size={}", end2end, target_size)
+
+    logger.info("Triton Folder Inference")
+    logger.info("Image dir: {}", image_dir)
+    logger.info("Model: {}", model_name)
+    logger.info("Triton URL: {}", triton_url)
+
+    result = run_folder_inference(
+        image_dir=image_dir,
+        model_name=model_name,
+        triton_url=triton_url,
+        target_size=target_size,
+        end2end=end2end,
+        conf_threshold=conf_threshold,
+        iou_threshold=iou_threshold,
+    )
+
+    logger.info("Results: {} images processed", len(result.results))
+    logger.info("Total time: {:.2f}s", result.total_time_s)
+    logger.info("Average time: {:.1f}ms per image", result.avg_time_ms)
+
+    for img_result in result.results:
+        logger.info(
+            "  {}: {} detections ({:.1f}ms)",
+            img_result.image_path,
+            len(img_result.detections),
+            img_result.inference_time_ms,
+        )
+        for det in img_result.detections:
+            logger.info(
+                "    class={} conf={:.3f} bbox=({:.0f},{:.0f},{:.0f},{:.0f})",
+                det.class_id,
+                det.confidence,
+                det.x1,
+                det.y1,
+                det.x2,
+                det.y2,
+            )

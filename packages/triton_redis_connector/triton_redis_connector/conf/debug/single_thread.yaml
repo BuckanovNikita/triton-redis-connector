@@ -1,0 +1,14 @@
+preprocessing:
+  decoder_pool_type: thread
+  decoder_pool_workers: 1
+
+inference:
+  num_inference_workers: 1
+  max_concurrent_per_worker: 1
+
+queues:
+  maxsize: 10
+
+debug:
+  single_thread: true
+  stop_on_error: true

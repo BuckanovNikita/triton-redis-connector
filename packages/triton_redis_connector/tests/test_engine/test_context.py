@@ -13,19 +13,6 @@ from triton_redis_connector.engine.context import (
 )
 
 
-class TestEventContext:
-    def test_is_frozen(self) -> None:
-        ctx = EventContext(message_id="1-0", source_stream="stream:cam", created_at=100.0)
-        with pytest.raises(AttributeError):
-            ctx.message_id = "2-0"  # type: ignore[misc]
-
-    def test_stores_all_fields(self) -> None:
-        ctx = EventContext(message_id="msg-1", source_stream="stream:input", created_at=42.5)
-        assert ctx.message_id == "msg-1"
-        assert ctx.source_stream == "stream:input"
-        assert ctx.created_at == 42.5
-
-
 class TestCurrentContext:
     def test_raises_lookup_error_when_unset(self) -> None:
         token = _context_var.set(EventContext(message_id="", source_stream="", created_at=0.0))

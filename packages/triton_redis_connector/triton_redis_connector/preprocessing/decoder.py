@@ -1,14 +1,20 @@
-"""OpenCV-based image decoder implementing ImageDecoderProtocol.
+"""Image decoders implementing ImageDecoderProtocol.
 
-Uses cv2.imdecode which releases the GIL during decode, enabling
-concurrent execution in thread pool processors.
+OpenCVDecoder supports all image formats via cv2.imdecode.
+TurboJPEGDecoder uses PyTurboJPEG for faster JPEG-only decoding.
+
+Both release the GIL during decode, enabling concurrent execution
+in thread pool processors.
 """
 
 from __future__ import annotations
 
+import threading
+
 import cv2
 import numpy as np
 import numpy.typing as npt
+import turbojpeg  # pyright: ignore[reportMissingTypeStubs]
 
 
 class OpenCVDecoder:
@@ -34,6 +40,47 @@ class OpenCVDecoder:
 
         if image is None:
             msg = "Failed to decode image: cv2.imdecode returned None"
+            raise ValueError(msg)
+
+        return image
+
+
+class TurboJPEGDecoder:
+    """Decodes JPEG bytes using PyTurboJPEG. Faster for JPEG-only workloads.
+
+    Uses thread-local TurboJPEG instances for thread safety in ThreadPoolProcessor.
+    """
+
+    def __init__(self) -> None:  # noqa: D107
+        self._local = threading.local()
+
+    def _get_decoder(self) -> turbojpeg.TurboJPEG:  # pyright: ignore[reportUnknownVariableType]
+        if not hasattr(self._local, "decoder"):
+            self._local.decoder = turbojpeg.TurboJPEG()
+        return self._local.decoder  # pyright: ignore[reportReturnType]
+
+    def decode(self, raw: bytes) -> npt.NDArray[np.uint8]:
+        """Decode JPEG bytes into a BGR HWC uint8 numpy array.
+
+        Raises:
+            ValueError: If the input is empty or not valid JPEG data.
+
+        """
+        if not raw:
+            msg = "Failed to decode image: empty input bytes"
+            raise ValueError(msg)
+
+        decoder = self._get_decoder()
+        try:
+            image: npt.NDArray[np.uint8] | None = decoder.decode(  # pyright: ignore[reportUnknownMemberType]
+                raw, pixel_format=turbojpeg.TJPF_BGR
+            )
+        except OSError as exc:
+            msg = f"Failed to decode image: {exc}"
+            raise ValueError(msg) from exc
+
+        if image is None:  # pyright: ignore[reportUnnecessaryComparison]
+            msg = "Failed to decode image: TurboJPEG.decode returned None"
             raise ValueError(msg)
 
         return image

@@ -86,6 +86,18 @@ All infrastructure runs via the devcontainer compose file.
 - **Imports**: top-level, never lazy — unless the dependency is truly optional (not in pyproject.toml) or it's a CLI subcommand handler in `__main__.py`. All deps listed in pyproject.toml are non-optional and must be imported at module level.
 - **Config file sync**: when moving/renaming files, update ALL config paths: mypy `exclude` in `pyproject.toml`, pyright `exclude` in `pyrightconfig.json`, vulture `paths`/`ignore_names`, and import-linter contracts
 
+## Testing Policy
+
+**Only write tests for real logic and edge cases.** Never write tests for:
+
+- **Framework-guaranteed behavior**: frozen pydantic models, enum values matching their literals, StrEnum string coercion, dataclass field assignment
+- **Simple construction/defaults**: creating an object and asserting fields equal constructor args or default values
+- **Protocol isinstance checks**: static type checkers (mypy/pyright strict) already verify protocol conformance
+- **Constant counts/values**: `assert len(REGISTRY) == 3` breaks when items are added and tests nothing
+- **Generated file content**: never assert on pbtxt strings, generated scripts, or config file content — only integration tests running Triton on the output can verify correctness
+
+**Good tests verify**: validation logic, algorithms, error paths, serialization roundtrips, edge cases, and integration behavior (deploy to Triton + run inference).
+
 ## Pre-commit Hooks
 
 Pipeline: ruff format → ruff check → mypy → pyright → import-linter → vulture → pytest → uv lock

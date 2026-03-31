@@ -47,6 +47,7 @@ class Envelope(Generic[T]):  # noqa: UP046
     )
     source_stream: str = ""
     message_id: str = ""
+    original_fields: dict[str, str] = field(default_factory=dict)
 
     def track_state(self, state: str) -> None:
         """Record a named state transition with current monotonic timestamp."""
@@ -69,6 +70,7 @@ class Envelope(Generic[T]):  # noqa: UP046
             states=list(self.states),
             source_stream=self.source_stream,
             message_id=self.message_id,
+            original_fields=dict(self.original_fields),
         )
 
     def __lt__(self, other: Envelope[Any]) -> bool:

@@ -87,7 +87,7 @@ module = ["tritonclient.*", "tritonserver.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["ultralytics.*", "onnx.*", "onnxruntime.*", "cv2", "cv2.*", "numpy", "numpy.*", "fiftyone", "fiftyone.*"]
+module = ["ultralytics.*", "onnx.*", "onnxruntime.*", "cv2", "cv2.*", "numpy", "numpy.*", "fiftyone", "fiftyone.*", "turbojpeg", "turbojpeg.*", "yaml", "yaml.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -192,6 +192,7 @@ name = "triton_model_tools layer architecture"
 type = "layers"
 layers = [
     "triton_model_tools.__main__",
+    "triton_model_tools.cli",
     "triton_model_tools.benchmarks",
     "triton_model_tools.testing",
     "triton_model_tools.inference | triton_model_tools.export",

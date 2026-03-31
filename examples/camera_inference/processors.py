@@ -1,7 +1,7 @@
-"""Example processors using framework execution variants.
+"""Synthetic processors for the camera inference demo.
 
-Demonstrates how to create Source, Processor, and Sink implementations
-that work with the triton-redis-connector pipeline framework.
+Generates fake frames and detection results — no real inference.
+Useful as a minimal template for building real pipelines.
 """
 
 from __future__ import annotations
@@ -16,13 +16,9 @@ from examples.camera_inference.events import CameraFrame, DetectionResult
 
 
 class CameraSource:
-    """Example ThreadSource that simulates camera frame capture.
+    """Simulates camera capture by generating synthetic frames."""
 
-    In production, this would read from a Redis Stream or camera API.
-    For demonstration, it generates synthetic frames at a fixed interval.
-    """
-
-    def __init__(self, camera_id: str, interval_s: float = 1.0) -> None:  # noqa: D107
+    def __init__(self, camera_id: str = "cam-1", interval_s: float = 1.0) -> None:  # noqa: D107
         self.stop = threading.Event()
         self._camera_id = camera_id
         self._interval_s = interval_s
@@ -32,31 +28,22 @@ class CameraSource:
         if self.stop.wait(timeout=self._interval_s):
             return None
         self._frame_counter += 1
-        frame = CameraFrame(
+        return CameraFrame(
             camera_id=self._camera_id,
             frame_id=self._frame_counter,
             image_key=f"images:{self._camera_id}:{self._frame_counter}",
             timestamp_ms=int(time.time() * 1000),
         )
-        logger.debug("Captured frame {} from camera {}", self._frame_counter, self._camera_id)
-        return frame
 
 
 class FramePreprocessor:
-    """Example inline Processor that transforms CameraFrame to DetectionResult.
-
-    In production, this would decode the image, run letterbox preprocessing,
-    call Triton for inference, and parse the results. For demonstration,
-    it creates a synthetic detection result.
-    """
+    """Produces synthetic detection results (no real inference)."""
 
     def __init__(self, model_name: str = "yolo11s") -> None:  # noqa: D107
         self._model_name = model_name
 
     def __call__(self, event: CameraFrame) -> DetectionResult | None:  # noqa: D102
-        detections = [
-            {"class_id": 0, "confidence": 0.95, "bbox": [100, 100, 200, 200]},
-        ]
+        detections = [{"class_id": 0, "confidence": 0.95, "bbox": [100, 100, 200, 200]}]
         return DetectionResult(
             camera_id=event.camera_id,
             frame_id=event.frame_id,
@@ -67,15 +54,11 @@ class FramePreprocessor:
 
 
 class ResultSink:
-    """Example inline Sink that logs detection results.
-
-    In production, this would write results to a Redis Stream
-    or external service.
-    """
+    """Logs detection results."""
 
     def __call__(self, event: DetectionResult) -> None:  # noqa: D102
         logger.info(
-            "Detection result: camera={} frame={} model={} time={:.1f}ms",
+            "Detection: camera={} frame={} model={} time={:.1f}ms",
             event.camera_id,
             event.frame_id,
             event.model_name,

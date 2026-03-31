@@ -14,6 +14,24 @@ if TYPE_CHECKING:
 
 
 @runtime_checkable
+class ImageBytesProtocol(Protocol):
+    """Provides raw image bytes for decoding."""
+
+    def to_bytes(self) -> bytes:
+        """Return raw image bytes (e.g. JPEG, PNG encoded)."""
+        ...
+
+
+@runtime_checkable
+class RawImageProtocol(Protocol):
+    """Provides a preprocessed float32 tensor ready for inference."""
+
+    def to_raw_image(self) -> npt.NDArray[np.float32]:
+        """Return a preprocessed float32 tensor."""
+        ...
+
+
+@runtime_checkable
 class ImageDecoderProtocol(Protocol):
     """Decodes raw image bytes into a numpy BGR HWC array.
 

@@ -9,6 +9,7 @@ from triton_model_tools.models.registry import (
     EXPORT_FORMAT_TO_FILENAME,
     EXPORT_FORMAT_TO_PLATFORM,
     YOLO_MODELS,
+    DiscoveredModel,
     DynamicBatchingConfig,
     EnsembleStep,
     EnsembleStepMapping,
@@ -21,6 +22,8 @@ from triton_model_tools.models.registry import (
     TritonTensorSpec,
     WarmupInputSpec,
     YoloModelVariant,
+    discover_models,
+    load_export_config,
 )
 
 __all__ = [
@@ -28,6 +31,7 @@ __all__ = [
     "EXPORT_FORMAT_TO_PLATFORM",
     "YOLO_MODELS",
     "Detection",
+    "DiscoveredModel",
     "DynamicBatchingConfig",
     "EnsembleStep",
     "EnsembleStepMapping",
@@ -42,4 +46,6 @@ __all__ = [
     "TritonTensorSpec",
     "WarmupInputSpec",
     "YoloModelVariant",
+    "discover_models",
+    "load_export_config",
 ]

@@ -23,44 +23,6 @@ if TYPE_CHECKING:
 
 
 class TestE2ETestConfig:
-    def test_defaults(self) -> None:
-        config = E2ETestConfig()
-
-        assert config.redis_url == "redis://redis:6379"
-        assert config.input_stream == "camera_images"
-        assert config.output_stream == "detection_results"
-        assert config.model_name == "yolo11s"
-        assert config.consumer_group == "e2e-test"
-        assert config.target_size == 640
-        assert config.end2end is False
-        assert config.timeout_s == 30.0
-
-    def test_frozen(self) -> None:
-        config = E2ETestConfig()
-        with pytest.raises(Exception):  # noqa: B017, PT011
-            config.model_name = "other"  # type: ignore[misc]
-
-    def test_custom_values(self) -> None:
-        config = E2ETestConfig(
-            redis_url="redis://localhost:6380",
-            input_stream="my_input",
-            output_stream="my_output",
-            model_name="yolo26s",
-            consumer_group="test-group",
-            target_size=320,
-            end2end=True,
-            timeout_s=60.0,
-        )
-
-        assert config.redis_url == "redis://localhost:6380"
-        assert config.input_stream == "my_input"
-        assert config.output_stream == "my_output"
-        assert config.model_name == "yolo26s"
-        assert config.consumer_group == "test-group"
-        assert config.target_size == 320
-        assert config.end2end is True
-        assert config.timeout_s == 60.0
-
     def test_invalid_target_size(self) -> None:
         with pytest.raises(Exception):  # noqa: B017, PT011
             E2ETestConfig(target_size=0)
@@ -336,7 +298,7 @@ class TestConnectorE2ETestHarness:
 
 class TestE2ETestCLIParsing:
     def _parse(self, args: list[str]) -> argparse.Namespace:
-        from triton_model_tools.__main__ import _build_e2e_test_parser
+        from triton_model_tools.cli.e2e_test import build_parser as _build_e2e_test_parser
 
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="command")
@@ -397,7 +359,3 @@ class TestE2ETestCLIParsing:
         assert ns.target_size == 320
         assert ns.end2end is True
         assert ns.timeout == 60.0
-
-    def test_func_is_set(self, tmp_path: Path) -> None:
-        ns = self._parse(["e2e-test", "--image-dir", str(tmp_path), "-m", "yolo11s"])
-        assert callable(ns.func)

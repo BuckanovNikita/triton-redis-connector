@@ -1,13 +1,18 @@
-"""Continuously stream images from a folder to Redis at a fixed frame rate.
+"""Push images from a folder into a Redis Stream.
 
-Reads JPEG/PNG files from a directory and circularly pushes them to a
-Redis Stream at the specified FPS. Runs indefinitely until interrupted
-with Ctrl+C.
+Two modes:
+  - Batch (default): push all images once and exit.
+  - Streaming (--fps): circularly push images at a fixed frame rate until Ctrl+C.
 
 Usage:
-    uv run python examples/yolo_detection_pipeline/stream_images.py --image-dir ./images --fps 30
-    uv run python examples/yolo_detection_pipeline/stream_images.py --fps 10 --stream test:video
-    uv run python examples/yolo_detection_pipeline/stream_images.py --fps 1 --max-images 5
+    # Batch: push all images once
+    uv run python examples/yolo_detection_pipeline/stream_images.py
+
+    # Batch: push 5 images, repeat 3 times
+    uv run python examples/yolo_detection_pipeline/stream_images.py --max-images 5 --repeat 3
+
+    # Stream: continuously push at 10 FPS
+    uv run python examples/yolo_detection_pipeline/stream_images.py --fps 10
 """
 
 from __future__ import annotations
@@ -21,10 +26,10 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from loguru import logger
-
 if TYPE_CHECKING:
     from types import FrameType
+
+from loguru import logger
 from redis import Redis
 
 DEFAULT_STREAM = "test:input_images"
@@ -53,83 +58,103 @@ def load_images(image_dir: Path, max_images: int | None = None) -> list[tuple[st
         paths = paths[:max_images]
 
     images = [(p.name, p.read_bytes()) for p in paths]
-
-    logger.info("Loaded {} images into memory from {}", len(images), image_dir)
+    logger.info("Loaded {} images from {}", len(images), image_dir)
     return images
 
 
-def stream_images(  # noqa: PLR0913
-    image_dir: Path,
+def push_images(
+    client: Redis[bytes],
+    images: list[tuple[str, bytes]],
     stream_name: str,
-    redis_host: str,
-    redis_port: int,
+    repeat: int = 1,
+) -> int:
+    """Push images to Redis stream in batch mode. Returns total messages sent."""
+    total = 0
+    for round_num in range(1, repeat + 1):
+        if repeat > 1:
+            logger.info("--- Round {}/{} ---", round_num, repeat)
+        for filename, raw_bytes in images:
+            if _shutdown_requested:
+                return total
+            client.xadd(
+                name=stream_name,
+                fields={"data": raw_bytes, "filename": filename.encode()},
+                maxlen=DEFAULT_MAXLEN,
+                approximate=True,
+            )
+            total += 1
+            logger.info("Pushed {} ({:,} bytes) -> {}", filename, len(raw_bytes), stream_name)
+    return total
+
+
+def stream_continuous(
+    client: Redis[bytes],
+    images: list[tuple[str, bytes]],
+    stream_name: str,
     fps: float,
-    max_images: int | None = None,
-) -> None:
-    """Circularly stream images to Redis at the given frame rate."""
-    client: Redis[bytes] = Redis(host=redis_host, port=redis_port, db=0, decode_responses=False)
-    client.ping()
-    logger.info("Connected to Redis at {}:{}", redis_host, redis_port)
-
-    images = load_images(image_dir, max_images)
+) -> int:
+    """Circularly stream images at fixed FPS until shutdown. Returns total sent."""
     frame_interval = 1.0 / fps
-    total_sent = 0
+    total = 0
 
-    logger.info("Streaming at {:.1f} FPS (interval {:.3f}s) to stream '{}'", fps, frame_interval, stream_name)
-    logger.info("Press Ctrl+C to stop")
+    logger.info("Streaming at {:.1f} FPS to '{}'. Ctrl+C to stop.", fps, stream_name)
 
     for filename, raw_bytes in itertools.cycle(images):
         if _shutdown_requested:
             break
 
         frame_start = time.monotonic()
-
         client.xadd(
             name=stream_name,
             fields={"data": raw_bytes, "filename": filename.encode()},
             maxlen=DEFAULT_MAXLEN,
             approximate=True,
         )
-        total_sent += 1
+        total += 1
 
-        if total_sent % 100 == 0:
-            stream_len = client.xlen(stream_name)
-            logger.info("Sent {} frames | stream length: {}", total_sent, stream_len)
+        if total % 100 == 0:
+            logger.info("Sent {} frames | stream length: {}", total, client.xlen(stream_name))
 
         elapsed = time.monotonic() - frame_start
         sleep_time = frame_interval - elapsed
         if sleep_time > 0:
             time.sleep(sleep_time)
 
-    logger.info("Stopped after {} frames", total_sent)
+    return total
 
 
 def main() -> None:
     """CLI entry point."""
-    parser = argparse.ArgumentParser(description="Circularly stream images to Redis at a fixed frame rate")
+    parser = argparse.ArgumentParser(description="Push images to Redis Stream (batch or continuous)")
     parser.add_argument("--image-dir", type=Path, default=DEFAULT_IMAGE_DIR, help="Image directory")
     parser.add_argument("--stream", default=DEFAULT_STREAM, help=f"Target stream (default: {DEFAULT_STREAM})")
-    parser.add_argument("--fps", type=float, required=True, help="Target frame rate (frames per second)")
     parser.add_argument("--redis-host", default=DEFAULT_REDIS_HOST, help="Redis host")
     parser.add_argument("--redis-port", type=int, default=DEFAULT_REDIS_PORT, help="Redis port")
     parser.add_argument("--max-images", type=int, default=None, help="Limit number of images from folder")
+    parser.add_argument("--fps", type=float, default=None, help="Continuous streaming at this FPS (omit for batch)")
+    parser.add_argument("--repeat", type=int, default=1, help="Repeat N times in batch mode (default: 1)")
     args = parser.parse_args()
 
-    if args.fps <= 0:
+    if args.fps is not None and args.fps <= 0:
         logger.error("FPS must be positive, got {}", args.fps)
         sys.exit(1)
 
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 
-    stream_images(
-        image_dir=args.image_dir,
-        stream_name=args.stream,
-        redis_host=args.redis_host,
-        redis_port=args.redis_port,
-        fps=args.fps,
-        max_images=args.max_images,
-    )
+    client: Redis[bytes] = Redis(host=args.redis_host, port=args.redis_port, db=0, decode_responses=False)
+    client.ping()
+    logger.info("Connected to Redis at {}:{}", args.redis_host, args.redis_port)
+
+    images = load_images(args.image_dir, args.max_images)
+
+    if args.fps is not None:
+        total = stream_continuous(client, images, args.stream, args.fps)
+    else:
+        total = push_images(client, images, args.stream, args.repeat)
+
+    stream_len = client.xlen(args.stream)
+    logger.info("Done: {} messages sent. Stream '{}' length: {}", total, args.stream, stream_len)
 
 
 if __name__ == "__main__":

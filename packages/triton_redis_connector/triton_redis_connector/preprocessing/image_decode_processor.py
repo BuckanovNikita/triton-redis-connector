@@ -1,6 +1,6 @@
 """ThreadPoolProcessor that decodes raw image bytes into BGR numpy arrays.
 
-Wraps OpenCVDecoder for use as a pipeline graph node. Consumes raw bytes
+Wraps an image decoder for use as a pipeline graph node. Consumes raw bytes
 and produces DecodedImage events for downstream preprocessing.
 """
 
@@ -11,21 +11,32 @@ import time
 
 from loguru import logger
 
+from triton_redis_connector.config.schema import DecoderType
 from triton_redis_connector.engine.events import DecodedImage
 from triton_redis_connector.errors.models import PreprocessingError
-from triton_redis_connector.preprocessing.decoder import OpenCVDecoder
+from triton_redis_connector.preprocessing.decoder import OpenCVDecoder, TurboJPEGDecoder
 
 
 class ImageDecodeProcessor:
-    """ThreadPoolProcessor wrapping OpenCVDecoder.
+    """ThreadPoolProcessor wrapping an image decoder.
 
     Decodes raw image bytes into BGR HWC uint8 numpy arrays.
     Returns PreprocessingError on decode failure instead of raising.
     """
 
-    def __init__(self, decoder: OpenCVDecoder | None = None) -> None:  # noqa: D107
+    def __init__(  # noqa: D107
+        self,
+        decoder: OpenCVDecoder | TurboJPEGDecoder | None = None,
+        decoder_type: DecoderType = DecoderType.OPENCV,
+    ) -> None:
         self.stop = threading.Event()
-        self._decoder = decoder or OpenCVDecoder()
+        if decoder is not None:
+            self._decoder = decoder
+        elif decoder_type == DecoderType.TURBOJPEG:
+            self._decoder = TurboJPEGDecoder()
+        else:
+            self._decoder = OpenCVDecoder()
+        self._decoder_type = decoder_type
 
     def __call__(self, event: bytes) -> DecodedImage | PreprocessingError | None:
         """Decode raw image bytes into a DecodedImage event."""
@@ -41,7 +52,7 @@ class ImageDecodeProcessor:
             logger.warning("Image decode failed: {}", exc)
             return PreprocessingError(
                 message_id="",
-                decoder_type="opencv",
+                decoder_type=self._decoder_type.value,
                 error_type="DecodeError",
                 error_message=str(exc),
                 timestamp_ms=int(time.time() * 1000),

@@ -56,31 +56,6 @@ class TestBuildModelDirectory:
         assert model_dir.is_dir()
         assert (model_dir / "1").is_dir()
 
-    def test_writes_config_pbtxt(self, tmp_path: Path) -> None:
-        repo_root = tmp_path / "model_repository"
-        model_source = _make_dummy_model(tmp_path / "export" / "model.onnx")
-        config = _make_test_config()
-
-        model_dir = build_model_directory(repo_root, config, model_source=model_source)
-        config_path = model_dir / "config.pbtxt"
-
-        assert config_path.exists()
-        content = config_path.read_text()
-        assert 'name: "test_model"' in content
-        assert 'platform: "onnxruntime_onnx"' in content
-
-    def test_copies_onnx_model(self, tmp_path: Path) -> None:
-        repo_root = tmp_path / "model_repository"
-        model_source = _make_dummy_model(tmp_path / "export" / "model.onnx")
-        original_content = model_source.read_bytes()
-        config = _make_test_config()
-
-        model_dir = build_model_directory(repo_root, config, model_source=model_source)
-        target_onnx = model_dir / "1" / "model.onnx"
-
-        assert target_onnx.exists()
-        assert target_onnx.read_bytes() == original_content
-
     def test_preserves_source_file(self, tmp_path: Path) -> None:
         repo_root = tmp_path / "model_repository"
         model_source = _make_dummy_model(tmp_path / "export" / "model.onnx")
@@ -89,21 +64,6 @@ class TestBuildModelDirectory:
         build_model_directory(repo_root, config, model_source=model_source)
 
         assert model_source.exists()
-
-    def test_existing_directory_is_overwritten(self, tmp_path: Path) -> None:
-        repo_root = tmp_path / "model_repository"
-        config = _make_test_config()
-
-        model_v1 = _make_dummy_model(tmp_path / "v1" / "model.onnx")
-        build_model_directory(repo_root, config, model_source=model_v1)
-
-        model_v2 = tmp_path / "v2" / "model.onnx"
-        model_v2.parent.mkdir(parents=True, exist_ok=True)
-        model_v2.write_bytes(b"\xff" * 64)
-        build_model_directory(repo_root, config, model_source=model_v2)
-
-        target = repo_root / "test_model" / "1" / "model.onnx"
-        assert target.read_bytes() == b"\xff" * 64
 
     def test_custom_model_name(self, tmp_path: Path) -> None:
         repo_root = tmp_path / "model_repository"

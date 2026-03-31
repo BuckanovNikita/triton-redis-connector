@@ -32,6 +32,7 @@ class SourceConfig(BaseModel):
     newest_first_on_recovery: bool = True
     recovery_interleave_ratio: int = Field(default=4, ge=1)
     pending_ttl_s: float = Field(default=60.0, gt=0.0)
+    skip_existing: bool = False
 
 
 class SinkConfig(BaseModel):
@@ -102,6 +103,34 @@ class MetricsConfig(BaseModel):
     transit_time_enabled: bool = True
 
 
+class DebugConfig(BaseModel):
+    """Debug and development settings."""
+
+    model_config = ConfigDict(frozen=True)
+
+    stop_on_error: bool = False
+    single_thread: bool = False
+
+
+class RouterConfig(BaseModel):
+    """Configuration for event routing to inference models."""
+
+    model_config = ConfigDict(frozen=True)
+
+    router_class: str = "triton_redis_connector.routers.default.FieldBasedRouter"
+    default_model: str = ""
+    model_field: str = "model_name"
+
+
+class OutputRoutingConfig(BaseModel):
+    """Maps model names to output Redis streams."""
+
+    model_config = ConfigDict(frozen=True)
+
+    default_stream: str = "detection_results"
+    model_streams: dict[str, str] = Field(default_factory=dict)
+
+
 class AppConfig(BaseModel):
     """Top-level application configuration, composed from Hydra YAML files."""
 
@@ -116,3 +145,6 @@ class AppConfig(BaseModel):
     preprocessing: PreprocessingConfig = PreprocessingConfig()
     queues: QueueConfig = QueueConfig()
     metrics: MetricsConfig = MetricsConfig()
+    debug: DebugConfig = DebugConfig()
+    router: RouterConfig = RouterConfig()
+    output_routing: OutputRoutingConfig = OutputRoutingConfig()

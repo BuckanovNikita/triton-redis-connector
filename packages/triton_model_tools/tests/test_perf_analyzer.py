@@ -16,53 +16,9 @@ from triton_model_tools.benchmarks.perf_analyzer import (
 
 
 class TestPerfAnalyzerConfig:
-    def test_defaults(self) -> None:
-        config = PerfAnalyzerConfig(model_name="yolo11s")
-
-        assert config.model_name == "yolo11s"
-        assert config.protocol == "grpc"
-        assert config.url == "localhost:8001"
-        assert config.concurrency == 1
-        assert config.measurement_interval_ms == 5000
-        assert config.num_measurements == 10
-        assert config.timeout_seconds == 300
-
-    def test_frozen(self) -> None:
-        config = PerfAnalyzerConfig(model_name="yolo11s")
-        with pytest.raises(Exception):  # noqa: B017, PT011
-            config.model_name = "other"  # type: ignore[misc]
-
-    def test_custom_values(self) -> None:
-        config = PerfAnalyzerConfig(
-            model_name="yolo26s",
-            protocol="http",
-            url="triton:8000",
-            concurrency=4,
-            measurement_interval_ms=10000,
-            num_measurements=20,
-        )
-
-        assert config.protocol == "http"
-        assert config.concurrency == 4
-
     def test_invalid_concurrency(self) -> None:
         with pytest.raises(Exception):  # noqa: B017, PT011
             PerfAnalyzerConfig(model_name="yolo11s", concurrency=0)
-
-
-class TestPerfAnalyzerResult:
-    def test_creation(self) -> None:
-        result = PerfAnalyzerResult(
-            avg_latency_ms=5.0,
-            p50_latency_ms=4.5,
-            p95_latency_ms=8.0,
-            p99_latency_ms=12.0,
-            throughput_infer_per_sec=200.0,
-            concurrency=1,
-        )
-
-        assert result.avg_latency_ms == 5.0
-        assert result.throughput_infer_per_sec == 200.0
 
 
 class TestBuildCommand:

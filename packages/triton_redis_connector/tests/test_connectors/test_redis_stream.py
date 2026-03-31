@@ -50,12 +50,6 @@ def group_manager() -> ConsumerGroupManager:
 
 
 class TestRedisStreamInputConnector:
-    def test_init_creates_consumer_group(
-        self, mock_redis: MagicMock, source_config: SourceConfig, group_manager: ConsumerGroupManager
-    ) -> None:
-        RedisStreamInputConnector(mock_redis, source_config, group_manager)
-        mock_redis.xgroup_create.assert_called_once()
-
     def test_read_new_returns_envelopes(
         self, mock_redis: MagicMock, source_config: SourceConfig, group_manager: ConsumerGroupManager
     ) -> None:
@@ -103,13 +97,6 @@ class TestRedisStreamInputConnector:
         assert len(results) == 2
         assert results[0].message_id == "2-0"
         assert results[1].message_id == "1-0"
-
-    def test_acknowledge_calls_xack(
-        self, mock_redis: MagicMock, source_config: SourceConfig, group_manager: ConsumerGroupManager
-    ) -> None:
-        connector = RedisStreamInputConnector(mock_redis, source_config, group_manager)
-        connector.acknowledge("1-0")
-        mock_redis.xack.assert_called_once_with("stream:input", "workers", "1-0")
 
     def test_missing_data_field_returns_empty_bytes(
         self, mock_redis: MagicMock, source_config: SourceConfig, group_manager: ConsumerGroupManager

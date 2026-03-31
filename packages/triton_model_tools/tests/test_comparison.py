@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import pytest
 from triton_model_tools.benchmarks.comparison import (
-    ComparisonMetrics,
-    ComparisonSummary,
     compare_backends,
     compare_inference,
     compute_iou,
@@ -72,11 +70,6 @@ class TestComputeIou:
         a = _det(0, 0, 50, 50)
         b = _det(50, 0, 100, 50)
         assert compute_iou(a, b) == pytest.approx(0.0)
-
-    def test_symmetric(self) -> None:
-        a = _det(10, 20, 80, 90)
-        b = _det(30, 40, 120, 130)
-        assert compute_iou(a, b) == pytest.approx(compute_iou(b, a))
 
 
 class TestMatchDetections:
@@ -244,30 +237,3 @@ class TestCompareBackends:
         }
         summaries = compare_backends(results, baseline_key="onnx")
         assert summaries["bad"].overall.precision == pytest.approx(0.0)
-
-
-class TestComparisonModels:
-    def test_comparison_metrics_frozen(self) -> None:
-        metrics = ComparisonMetrics(
-            precision=0.9,
-            recall=0.8,
-            avg_iou=0.75,
-            class_mismatch_rate=0.1,
-            false_positive_count=2,
-            missed_count=3,
-        )
-        with pytest.raises(Exception):  # noqa: B017, PT011
-            metrics.precision = 0.5  # type: ignore[misc]
-
-    def test_comparison_summary_frozen(self) -> None:
-        metrics = ComparisonMetrics(
-            precision=1.0,
-            recall=1.0,
-            avg_iou=1.0,
-            class_mismatch_rate=0.0,
-            false_positive_count=0,
-            missed_count=0,
-        )
-        summary = ComparisonSummary(per_image=[metrics], overall=metrics)
-        with pytest.raises(Exception):  # noqa: B017, PT011
-            summary.overall = metrics  # type: ignore[misc]

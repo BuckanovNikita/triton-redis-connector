@@ -32,14 +32,6 @@ def _make_event(
 
 
 class TestCountByRule:
-    def test_metric_name(self) -> None:
-        rule = CountByRule(metric_name="request_count", window_seconds=60, tag_key="model")
-        assert rule.metric_name == "request_count"
-
-    def test_window_seconds(self) -> None:
-        rule = CountByRule(metric_name="request_count", window_seconds=30, tag_key="model")
-        assert rule.window_seconds == 30
-
     def test_extract_key_from_tags(self) -> None:
         rule = CountByRule(metric_name="request_count", window_seconds=60, tag_key="model")
         event = _make_event(tags={"model": "yolo11s"})
@@ -50,21 +42,8 @@ class TestCountByRule:
         event = _make_event(tags={})
         assert rule.extract_key(event) == "unknown"
 
-    def test_aggregate_returns_count_as_float(self) -> None:
-        rule = CountByRule(metric_name="request_count", window_seconds=60, tag_key="model")
-        assert rule.aggregate(42) == 42.0
-        assert isinstance(rule.aggregate(42), float)
-
 
 class TestSumByRule:
-    def test_metric_name(self) -> None:
-        rule = SumByRule(metric_name="bytes_total", window_seconds=120, tag_key="stream")
-        assert rule.metric_name == "bytes_total"
-
-    def test_window_seconds(self) -> None:
-        rule = SumByRule(metric_name="bytes_total", window_seconds=120, tag_key="stream")
-        assert rule.window_seconds == 120
-
     def test_extract_key_from_tags(self) -> None:
         rule = SumByRule(metric_name="bytes_total", window_seconds=120, tag_key="stream")
         event = _make_event(tags={"stream": "camera_1"})
@@ -75,20 +54,8 @@ class TestSumByRule:
         event = _make_event(tags={"other": "value"})
         assert rule.extract_key(event) == "unknown"
 
-    def test_aggregate_returns_count_as_float(self) -> None:
-        rule = SumByRule(metric_name="bytes_total", window_seconds=120, tag_key="stream")
-        assert rule.aggregate(10) == 10.0
-
 
 class TestAvgByRule:
-    def test_metric_name(self) -> None:
-        rule = AvgByRule(metric_name="avg_latency", window_seconds=60, tag_key="model")
-        assert rule.metric_name == "avg_latency"
-
-    def test_window_seconds(self) -> None:
-        rule = AvgByRule(metric_name="avg_latency", window_seconds=60, tag_key="model")
-        assert rule.window_seconds == 60
-
     def test_extract_key_from_tags(self) -> None:
         rule = AvgByRule(metric_name="avg_latency", window_seconds=60, tag_key="model")
         event = _make_event(tags={"model": "yolo26s"})

@@ -1,0 +1,10 @@
+models:
+  - name: yolo26s
+    ultralytics_model: yolo26s.pt
+    export_kwargs:
+      end2end: true
+    end2end_export: true
+  - name: yolo11s
+    ultralytics_model: yolo11s.pt
+  - name: yolo12s
+    ultralytics_model: yolo12s.pt

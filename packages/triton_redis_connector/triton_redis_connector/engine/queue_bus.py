@@ -63,13 +63,25 @@ class QueueBus:
             return QueueOverflow(queue_name=name)
         return None
 
-    def get(self, name: str, timeout: float | None = None) -> Any:  # noqa: ANN401
-        """Get an item from a named queue.
+    MAX_TIMEOUT_S: float = 5.0
 
+    def get(self, name: str, timeout: float = 0.1) -> Any:  # noqa: ANN401
+        """Get an item from a named queue with bounded timeout.
+
+        Timeout is capped at MAX_TIMEOUT_S to prevent deadlocks.
         Raises queue.Empty if the queue is empty and timeout expires.
         """
         q = self.get_queue(name)
-        return q.get(timeout=timeout)
+        bounded = min(timeout, self.MAX_TIMEOUT_S)
+        return q.get(timeout=bounded)
+
+    def get_nowait(self, name: str) -> Any:  # noqa: ANN401
+        """Get an item from a named queue without blocking.
+
+        Raises queue.Empty if the queue is empty.
+        """
+        q = self.get_queue(name)
+        return q.get_nowait()
 
     @property
     def queue_names(self) -> list[str]:

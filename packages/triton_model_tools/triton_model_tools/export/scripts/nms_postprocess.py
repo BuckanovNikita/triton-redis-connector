@@ -1,6 +1,8 @@
 import json
 
 import numpy as np
+import torch
+import torchvision
 import triton_python_backend_utils as pb_utils
 
 
@@ -13,41 +15,7 @@ def _xywh_to_xyxy(boxes):
     return np.stack([x1, y1, x2, y2], axis=1)
 
 
-def _numpy_nms(boxes, scores, iou_threshold):
-    x1 = boxes[:, 0]
-    y1 = boxes[:, 1]
-    x2 = boxes[:, 2]
-    y2 = boxes[:, 3]
-    areas = (x2 - x1) * (y2 - y1)
-    order = scores.argsort()[::-1]
-    keep = []
-    while order.size > 0:
-        i = order[0]
-        keep.append(i)
-        if order.size == 1:
-            break
-        xx1 = np.maximum(x1[i], x1[order[1:]])
-        yy1 = np.maximum(y1[i], y1[order[1:]])
-        xx2 = np.minimum(x2[i], x2[order[1:]])
-        yy2 = np.minimum(y2[i], y2[order[1:]])
-        w = np.maximum(0.0, xx2 - xx1)
-        h = np.maximum(0.0, yy2 - yy1)
-        intersection = w * h
-        iou = intersection / (areas[i] + areas[order[1:]] - intersection)
-        remaining = np.where(iou <= iou_threshold)[0]
-        order = order[remaining + 1]
-    return np.array(keep, dtype=np.int64)
-
-
 def _apply_nms(predictions, confidence_threshold, iou_threshold, max_detections):
-    try:
-        import torch
-        import torchvision
-
-        use_torch = True
-    except ImportError:
-        use_torch = False
-
     if predictions.ndim == 3:
         predictions = predictions[0]
 
@@ -71,14 +39,10 @@ def _apply_nms(predictions, confidence_threshold, iou_threshold, max_detections)
 
     boxes_xyxy = _xywh_to_xyxy(boxes_xywh)
 
-    if use_torch:
-        boxes_t = torch.from_numpy(boxes_xyxy).float()
-        scores_t = torch.from_numpy(max_scores).float()
-        keep = torchvision.ops.nms(boxes_t, scores_t, iou_threshold)
-        keep = keep[:max_detections].numpy()
-    else:
-        keep = _numpy_nms(boxes_xyxy, max_scores, iou_threshold)
-        keep = keep[:max_detections]
+    boxes_t = torch.from_numpy(boxes_xyxy).float()
+    scores_t = torch.from_numpy(max_scores).float()
+    keep = torchvision.ops.nms(boxes_t, scores_t, iou_threshold)
+    keep = keep[:max_detections].numpy()
 
     result = np.column_stack(
         [

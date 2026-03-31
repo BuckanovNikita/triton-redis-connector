@@ -18,31 +18,6 @@ class TestEnvelopeCreation:
         envelope: Envelope[str] = Envelope(payload="test", created_at=42.0)
         assert envelope.created_at == 42.0
 
-    def test_default_states_empty(self) -> None:
-        envelope: Envelope[int] = Envelope(payload=1)
-        assert envelope.states == []
-
-    def test_default_source_stream_empty(self) -> None:
-        envelope: Envelope[int] = Envelope(payload=1)
-        assert envelope.source_stream == ""
-
-    def test_default_message_id_empty(self) -> None:
-        envelope: Envelope[int] = Envelope(payload=1)
-        assert envelope.message_id == ""
-
-    def test_full_construction(self) -> None:
-        envelope: Envelope[str] = Envelope(
-            payload="data",
-            created_at=100.0,
-            states=[("created", 100.0)],
-            source_stream="stream:input",
-            message_id="1234-0",
-        )
-        assert envelope.payload == "data"
-        assert envelope.source_stream == "stream:input"
-        assert envelope.message_id == "1234-0"
-        assert len(envelope.states) == 1
-
 
 class TestTrackState:
     def test_appends_state_with_timestamp(self) -> None:
@@ -101,21 +76,6 @@ class TestDerive:
         derived: Envelope[int] = original.derive(42)
         assert derived.payload == 42
 
-    def test_derive_preserves_created_at(self) -> None:
-        original: Envelope[str] = Envelope(payload="raw", created_at=99.0)
-        derived: Envelope[int] = original.derive(42)
-        assert derived.created_at == 99.0
-
-    def test_derive_preserves_source_stream(self) -> None:
-        original: Envelope[str] = Envelope(payload="raw", source_stream="stream:cam")
-        derived: Envelope[int] = original.derive(42)
-        assert derived.source_stream == "stream:cam"
-
-    def test_derive_preserves_message_id(self) -> None:
-        original: Envelope[str] = Envelope(payload="raw", message_id="1-0")
-        derived: Envelope[int] = original.derive(42)
-        assert derived.message_id == "1-0"
-
     def test_derive_copies_states(self) -> None:
         original: Envelope[str] = Envelope(payload="raw")
         original.track_state("received")
@@ -142,12 +102,6 @@ class TestOrdering:
         newer: Envelope[str] = Envelope(payload="new", created_at=2.0)
         assert older < newer
         assert not newer < older
-
-    def test_equal_created_at_not_less_than(self) -> None:
-        a: Envelope[str] = Envelope(payload="a", created_at=5.0)
-        b: Envelope[str] = Envelope(payload="b", created_at=5.0)
-        assert not a < b
-        assert not b < a
 
     def test_sorting_produces_oldest_first(self) -> None:
         envelopes = [

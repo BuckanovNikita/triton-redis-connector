@@ -1,70 +1,41 @@
-# Пример: Camera Inference Pipeline
+# Пример: Camera Inference (демо)
 
-Пример приложения, демонстрирующего использование `triton-redis-connector` для построения
-пайплайна обработки видеопотока с камер через Triton Inference Server.
+Минимальный пример пайплайна с синтетическими данными — без реального инференса.
+Демонстрирует автоматическую маршрутизацию событий по типовым аннотациям `__call__`.
 
 ## Структура
 
-- `events.py` — доменные модели событий (`CameraFrame`, `DetectionResult`)
-- `processors.py` — реализации Source, Processor и Sink для обработки кадров
-- `config.yaml` — конфигурация Hydra для пайплайна
+```
+config.yaml      — конфигурация (Hydra + переменные окружения)
+events.py        — модели событий: CameraFrame, DetectionResult
+processors.py    — Source, Processor, Sink (синтетические данные)
+run_pipeline.py  — точка входа
+```
 
-## Компоненты пайплайна
+## Граф пайплайна
 
-### CameraSource (ThreadSource)
-
-Источник кадров камеры. В продакшн-версии читает из Redis Stream или API камеры.
-В демонстрационном режиме генерирует синтетические кадры с заданным интервалом.
-
-### FramePreprocessor (Processor)
-
-Inline-процессор, преобразующий `CameraFrame` в `DetectionResult`.
-В реальном приложении выполняет декодирование изображения, letterbox-препроцессинг,
-вызов Triton для инференса и парсинг результатов.
-
-### ResultSink (Sink)
-
-Inline-приёмник, логирующий результаты детекции.
-В продакшн-версии записывает результаты в Redis Stream или внешний сервис.
+```
+CameraSource (ThreadSource)  — генерирует фейковые кадры
+    │
+    ▼
+FramePreprocessor (Processor) — создаёт синтетические детекции
+    │
+    ▼
+ResultSink (Sink)             — логирует результаты
+```
 
 ## Запуск
 
-### Предварительные требования
+```bash
+uv run python examples/camera_inference/run_pipeline.py
+```
 
-- Запущенные Docker-сервисы Redis и Triton (через devcontainer)
-- Установленные зависимости: `uv sync`
+Ctrl+C для остановки.
 
-### Конфигурация
+## Конфигурация
 
-Настройки пайплайна задаются через `config.yaml` или переменные окружения:
-
-- `REDIS_HOST` — хост Redis (по умолчанию: `localhost`)
-- `REDIS_PORT` — порт Redis (по умолчанию: `6379`)
-- `TRITON_URL` — URL Triton gRPC (по умолчанию: `triton:8001`)
-
-### Переопределение параметров
-
-Hydra поддерживает переопределение параметров через командную строку:
+Настройки в `config.yaml`. Переопределение через переменные окружения:
 
 ```bash
-uv run python -m triton_redis_connector.main \
-    redis.host=redis \
-    inference.grpc_url=triton:8001 \
-    app_name=my-camera-pipeline
+REDIS_HOST=localhost REDIS_PORT=6379 uv run python examples/camera_inference/run_pipeline.py
 ```
-
-## Архитектура
-
-```
-CameraSource (ThreadSource)
-    │
-    ▼
-FramePreprocessor (Processor)
-    │
-    ▼
-ResultSink (Sink)
-```
-
-Каждый компонент реализует один из 9 вариантов исполнения фреймворка.
-Framework автоматически строит граф на основе типовых аннотаций `__call__`
-и маршрутизирует события между компонентами.

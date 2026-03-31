@@ -15,7 +15,6 @@ from triton_model_tools.export.exporter import (
 )
 from triton_model_tools.models import (
     EXPORT_FORMAT_TO_FILENAME,
-    EXPORT_FORMAT_TO_PLATFORM,
     ExportFormat,
     YoloModelVariant,
 )
@@ -69,29 +68,6 @@ class TestExportOnnx:
         assert (model_dir / "config.pbtxt").exists()
         assert (model_dir / "1" / EXPORT_FORMAT_TO_FILENAME[ExportFormat.ONNX]).exists()
 
-    def test_config_uses_onnx_platform(self, tmp_path: Path) -> None:
-        variant = _make_variant()
-        repo_root = tmp_path / "repo"
-        repo_root.mkdir()
-        export_dir = tmp_path / "exports"
-        mock_yolo_cls = _make_mock_yolo(export_dir, ".onnx")
-
-        with (
-            patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls),
-            patch("triton_model_tools.export.exporter.inspect_onnx_model") as mock_inspect,
-        ):
-            from triton_model_tools.models import TritonDataType, TritonTensorSpec
-
-            mock_inspect.return_value = (
-                [TritonTensorSpec(name="images", data_type=TritonDataType.TYPE_FP32, dims=[1, 3, 640, 640])],
-                [TritonTensorSpec(name="output0", data_type=TritonDataType.TYPE_FP32, dims=[1, 300, 6])],
-            )
-            model_dir = _export_onnx(variant, repo_root)
-
-        config_text = (model_dir / "config.pbtxt").read_text()
-        expected_platform = EXPORT_FORMAT_TO_PLATFORM[ExportFormat.ONNX]
-        assert f'platform: "{expected_platform}"' in config_text
-
     def test_cleans_up_intermediate_onnx(self, tmp_path: Path) -> None:
         variant = _make_variant()
         repo_root = tmp_path / "repo"
@@ -130,20 +106,6 @@ class TestExportTensorrt:
         assert model_dir == repo_root / expected_name
         assert model_dir.is_dir()
 
-    def test_config_uses_tensorrt_platform(self, tmp_path: Path) -> None:
-        variant = _make_variant()
-        repo_root = tmp_path / "repo"
-        repo_root.mkdir()
-        export_dir = tmp_path / "exports"
-        mock_yolo_cls = _make_mock_yolo(export_dir, ".engine")
-
-        with patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls):
-            model_dir = _export_tensorrt(variant, repo_root)
-
-        config_text = (model_dir / "config.pbtxt").read_text()
-        expected_platform = EXPORT_FORMAT_TO_PLATFORM[ExportFormat.TENSORRT]
-        assert f'platform: "{expected_platform}"' in config_text
-
     def test_model_file_is_plan(self, tmp_path: Path) -> None:
         variant = _make_variant()
         repo_root = tmp_path / "repo"
@@ -173,19 +135,6 @@ class TestExportTensorrt:
         assert export_call_kwargs["half"] is True
         assert export_call_kwargs["imgsz"] == 640
 
-    def test_config_has_fp16_tensors(self, tmp_path: Path) -> None:
-        variant = _make_variant()
-        repo_root = tmp_path / "repo"
-        repo_root.mkdir()
-        export_dir = tmp_path / "exports"
-        mock_yolo_cls = _make_mock_yolo(export_dir, ".engine")
-
-        with patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls):
-            model_dir = _export_tensorrt(variant, repo_root)
-
-        config_text = (model_dir / "config.pbtxt").read_text()
-        assert "TYPE_FP16" in config_text
-
     def test_cleans_up_intermediate_engine_file(self, tmp_path: Path) -> None:
         variant = _make_variant()
         repo_root = tmp_path / "repo"
@@ -198,19 +147,6 @@ class TestExportTensorrt:
             _export_tensorrt(variant, repo_root)
 
         assert not engine_file.exists()
-
-    def test_input_dims_match_variant_imgsz(self, tmp_path: Path) -> None:
-        variant = _make_variant(imgsz=320)
-        repo_root = tmp_path / "repo"
-        repo_root.mkdir()
-        export_dir = tmp_path / "exports"
-        mock_yolo_cls = _make_mock_yolo(export_dir, ".engine")
-
-        with patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls):
-            model_dir = _export_tensorrt(variant, repo_root)
-
-        config_text = (model_dir / "config.pbtxt").read_text()
-        assert "dims: [ 1, 3, 320, 320 ]" in config_text
 
 
 class TestExportModel:

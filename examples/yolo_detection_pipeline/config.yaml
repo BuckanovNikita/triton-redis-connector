@@ -1,0 +1,37 @@
+app_name: yolo-detection-pipeline
+
+redis:
+  host: ${oc.env:REDIS_HOST,redis}
+  port: ${oc.env:REDIS_PORT,6379}
+  db: 0
+  decode_responses: false
+
+sources:
+  - stream_name: ${oc.env:INPUT_STREAM,test:input_images}
+    consumer_group: yolo-pipeline
+    consumer_name: worker-1
+    event_model: bytes
+    batch_size: 1
+    block_ms: 2000
+
+sinks:
+  - stream_name: ${oc.env:OUTPUT_STREAM,test:detection_results}
+    maxlen: 10000
+
+inference:
+  grpc_url: ${oc.env:TRITON_GRPC_URL,triton:8001}
+  num_inference_workers: 2
+  max_concurrent_per_worker: 4
+
+preprocessing:
+  decoder: opencv
+  decoder_pool_type: thread
+  decoder_pool_workers: 4
+  default_target_size: [640, 640]
+
+queues:
+  maxsize: 100
+
+metrics:
+  output_stream: metrics
+  triton_poll_interval_s: 10.0

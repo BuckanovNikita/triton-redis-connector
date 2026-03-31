@@ -18,6 +18,7 @@ from triton_model_tools.models import (
     TritonDataType,
     TritonModelConfig,
     TritonTensorSpec,
+    load_export_config,
 )
 
 if TYPE_CHECKING:
@@ -222,6 +223,7 @@ def export_all_models(
     repository_root: Path,
     model_names: Sequence[str] | None = None,
     fmt: Literal["onnx", "tensorrt", "all"] = "onnx",
+    models_config: Path | None = None,
 ) -> list[Path]:
     """Export YOLO models and build their Triton repository entries.
 
@@ -230,18 +232,21 @@ def export_all_models(
         model_names: Optional list of model names to export.
             If None, exports all registered models.
         fmt: Export format - "onnx", "tensorrt", or "all" for both.
+        models_config: Optional path to a YAML file defining model variants.
+            If None, uses the built-in default models.
 
     Returns:
         List of paths to created Triton model directories.
 
     """
-    variants = YOLO_MODELS
+    all_variants = tuple(load_export_config(models_config)) if models_config is not None else YOLO_MODELS
+    variants = all_variants
     if model_names is not None:
         name_set = set(model_names)
         variants = tuple(v for v in variants if v.name in name_set)
         unknown = name_set - {v.name for v in variants}
         if unknown:
-            known = ", ".join(v.name for v in YOLO_MODELS)
+            known = ", ".join(v.name for v in all_variants)
             msg = f"Unknown model names: {', '.join(sorted(unknown))}. Available: {known}"
             raise ValueError(msg)
 

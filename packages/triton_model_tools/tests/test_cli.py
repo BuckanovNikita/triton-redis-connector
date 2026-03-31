@@ -7,7 +7,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from triton_model_tools.__main__ import _build_export_parser, _build_full_benchmark_parser, main
+from triton_model_tools.__main__ import main
+from triton_model_tools.cli.export import build_parser as build_export_parser
+from triton_model_tools.cli.full_benchmark import build_parser as build_full_benchmark_parser
 
 
 @pytest.fixture
@@ -19,7 +21,7 @@ class TestExportSubcommandParsing:
     def _parse(self, args: list[str]) -> argparse.Namespace:
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="command")
-        _build_export_parser(subparsers)
+        build_export_parser(subparsers)
         return parser.parse_args(args)
 
     def test_export_requires_repository_root(self) -> None:
@@ -103,15 +105,8 @@ class TestExportSubcommandParsing:
         assert ns.nms is True
         assert ns.models == ["yolo11s"]
 
-    def test_func_is_set_on_export(self, repo_path: str) -> None:
-        ns = self._parse(["export", "-r", repo_path])
-        assert callable(ns.func)
-
 
 class TestMainEntryPoint:
-    def test_main_is_callable(self) -> None:
-        assert callable(main)
-
     def test_main_no_args_exits_with_code_1(self) -> None:
         with patch("sys.argv", ["triton-model-tools"]), pytest.raises(SystemExit, match="1"):
             main()
@@ -129,6 +124,7 @@ class TestMainEntryPoint:
             repository_root=Path(repo_dir).resolve(),
             model_names=None,
             fmt="onnx",
+            models_config=None,
         )
 
     def test_main_handles_value_error(self, tmp_path: Path) -> None:
@@ -164,6 +160,7 @@ class TestMainEntryPoint:
             repository_root=Path(repo_dir).resolve(),
             model_names=["yolo11s"],
             fmt="onnx",
+            models_config=None,
         )
 
     def test_run_export_with_dali_ensemble(self, tmp_path: Path) -> None:
@@ -228,16 +225,16 @@ class TestFullBenchmarkSubcommandParsing:
     def _parse(self, args: list[str]) -> argparse.Namespace:
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="command")
-        _build_full_benchmark_parser(subparsers)
+        build_full_benchmark_parser(subparsers)
         return parser.parse_args(args)
 
     def test_requires_image_dir(self) -> None:
         with pytest.raises(SystemExit, match="2"):
             self._parse(["full-benchmark", "--models", "yolo11s", "-o", "out.json"])
 
-    def test_requires_models(self, tmp_path: Path) -> None:
-        with pytest.raises(SystemExit, match="2"):
-            self._parse(["full-benchmark", "--image-dir", str(tmp_path), "-o", "out.json"])
+    def test_models_default_none(self, tmp_path: Path) -> None:
+        ns = self._parse(["full-benchmark", "--image-dir", str(tmp_path), "-o", "out.json"])
+        assert ns.models is None
 
     def test_requires_output(self, tmp_path: Path) -> None:
         with pytest.raises(SystemExit, match="2"):
@@ -291,21 +288,6 @@ class TestFullBenchmarkSubcommandParsing:
         assert ns.target_size == 640
         assert ns.num_images == 100
         assert ns.warmup_runs == 5
-
-    def test_func_is_set(self, tmp_path: Path) -> None:
-        ns = self._parse(
-            [
-                "full-benchmark",
-                "--image-dir",
-                str(tmp_path),
-                "--models",
-                "yolo11s",
-                "-o",
-                "out.json",
-            ]
-        )
-
-        assert callable(ns.func)
 
     def test_main_dispatches_full_benchmark(self, tmp_path: Path) -> None:
         image_dir = tmp_path / "images"

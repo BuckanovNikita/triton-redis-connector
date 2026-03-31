@@ -16,7 +16,9 @@ from typing import TYPE_CHECKING, cast
 from loguru import logger
 
 from triton_redis_connector.engine.context import EventContext, reset_context, set_context
+from triton_redis_connector.engine.diagram import generate_mermaid
 from triton_redis_connector.engine.registry import INLINE_VARIANTS, SINK_VARIANTS, SOURCE_VARIANTS
+from triton_redis_connector.errors.models import ConnectorError, InferenceError, PreprocessingError
 from triton_redis_connector.protocols import (
     Envelope,
     ProcessPoolProcessor,
@@ -26,6 +28,8 @@ from triton_redis_connector.protocols import (
     ThreadSink,
     ThreadSource,
 )
+
+_ERROR_EVENT_TYPES = (ConnectorError, InferenceError, PreprocessingError)
 
 if TYPE_CHECKING:
     from triton_redis_connector.config.schema import AppConfig
@@ -51,6 +55,7 @@ class Application:
         self._queue_bus = queue_bus
         self._shutdown = threading.Event()
         self._parallel_threads: dict[str, threading.Thread] = {}
+        self._restart_counts: dict[str, int] = {}
 
     def run(self) -> None:
         """Run the main event loop.
@@ -67,6 +72,9 @@ class Application:
                 logger.error("Graph validation error: {}", error)
             msg = f"Pipeline graph has {len(errors)} validation error(s)"
             raise ValueError(msg)
+
+        mermaid = generate_mermaid(self._registry)
+        logger.info("Pipeline graph:\n```mermaid\n{}\n```", mermaid)
 
         dispatch_order = self._registry.get_dispatch_order()
         self._wire_parallel_queues()
@@ -102,6 +110,8 @@ class Application:
 
     def _route_event(self, event: object, dispatch_order: list[GraphNode]) -> None:
         """Route an event through inline processors and sinks by type matching."""
+        self._log_error_event(event)
+
         event_type = type(event)
         envelope: Envelope[object] = event if isinstance(event, Envelope) else Envelope(payload=event)
 
@@ -123,6 +133,27 @@ class Application:
                         self._route_event(result, dispatch_order)
         finally:
             reset_context(token)
+
+    def _log_error_event(self, event: object) -> None:
+        """Log error events in the main thread and optionally stop on error."""
+        if isinstance(event, ConnectorError):
+            logger.error("Connector error on {}: {}", event.stream_name, event.error_message)
+        elif isinstance(event, InferenceError):
+            logger.error(
+                "Inference error on {} v{}: {} (retry {})",
+                event.model_name,
+                event.model_version,
+                event.error_message,
+                event.retry_count,
+            )
+        elif isinstance(event, PreprocessingError):
+            logger.error("Preprocessing error: {} ({})", event.error_message, event.decoder_type)
+        else:
+            return
+
+        if self._config.debug.stop_on_error:
+            logger.warning("debug.stop_on_error=true — shutting down after error")
+            self.shutdown()
 
     def _wire_parallel_queues(self) -> None:
         """Pre-create input queues for all non-source parallel nodes."""
@@ -232,7 +263,9 @@ class Application:
             if not thread.is_alive() and not self._shutdown.is_set():
                 node = self._registry.get_node(name)
                 if node is not None:
-                    logger.error("Parallel variant {} crashed, restarting", name)
+                    self._restart_counts[name] = self._restart_counts.get(name, 0) + 1
+                    count = self._restart_counts[name]
+                    logger.warning("Restarting parallel variant {} (restart #{})", name, count)
                     new_thread = threading.Thread(
                         target=self._run_parallel_node,
                         args=(node,),

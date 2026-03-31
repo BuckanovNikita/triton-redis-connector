@@ -1,7 +1,7 @@
 app_name: camera-inference-example
 
 redis:
-  host: ${oc.env:REDIS_HOST,localhost}
+  host: ${oc.env:REDIS_HOST,redis}
   port: ${oc.env:REDIS_PORT,6379}
   db: 0
   decode_responses: false
@@ -17,12 +17,9 @@ sources:
 sinks:
   - stream_name: detection_results
     maxlen: 10000
-    approximate_maxlen: true
-
-processors: []
 
 inference:
-  grpc_url: ${oc.env:TRITON_URL,triton:8001}
+  grpc_url: ${oc.env:TRITON_GRPC_URL,triton:8001}
   num_inference_workers: 2
   max_concurrent_per_worker: 8
 

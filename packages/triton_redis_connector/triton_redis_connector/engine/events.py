@@ -10,9 +10,11 @@ the import-linter sibling constraint.
 
 from __future__ import annotations
 
+from typing import Self
+
 import numpy as np  # noqa: TC002 — pydantic needs runtime access for model_rebuild()
 import numpy.typing as npt  # noqa: TC002
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class Event(BaseModel):
@@ -88,15 +90,29 @@ class InferenceInput(BaseModel):
     Carries the preprocessed tensor and metadata needed to dispatch
     a gRPC inference request to Triton. Lives in engine layer so both
     preprocessing and inference can import it.
+
+    Supports two modes: either ``raw_image`` (preprocessed tensor) or
+    ``image_bytes`` (raw encoded bytes for server-side decoding) must
+    be set, but not both.
     """
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     model_name: str
     model_version: str = ""
-    raw_image: npt.NDArray[np.float32]
+    raw_image: npt.NDArray[np.float32] | None = None
+    image_bytes: bytes | None = None
     input_name: str = "images"
     output_names: tuple[str, ...] = ("output0",)
+
+    @model_validator(mode="after")
+    def _exactly_one_input(self) -> Self:
+        has_raw = self.raw_image is not None
+        has_bytes = self.image_bytes is not None
+        if has_raw == has_bytes:
+            msg = "Exactly one of raw_image or image_bytes must be set"
+            raise ValueError(msg)
+        return self
 
 
 DecodedImage.model_rebuild()

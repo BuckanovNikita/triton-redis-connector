@@ -20,3 +20,7 @@ processors: []
 
 queues:
   maxsize: 1000
+
+debug:
+  stop_on_error: false
+  single_thread: false

@@ -12,7 +12,6 @@ from triton_model_tools.benchmarks.benchmark import (
     BenchmarkConfig,
     BenchmarkResult,
     BenchmarkSuite,
-    build_full_matrix,
     run_benchmark,
     run_benchmark_matrix,
     run_ultralytics_benchmark,
@@ -24,77 +23,9 @@ if TYPE_CHECKING:
 
 
 class TestBenchmarkConfig:
-    def test_defaults(self) -> None:
-        config = BenchmarkConfig(model_name="yolo11s")
-
-        assert config.model_name == "yolo11s"
-        assert config.backend == "onnx"
-        assert config.preprocess_mode == "raw"
-        assert config.triton_url == "localhost:8001"
-        assert config.target_size == 640
-        assert config.num_images == 100
-        assert config.warmup_runs == 5
-
-    def test_frozen(self) -> None:
-        config = BenchmarkConfig(model_name="yolo11s")
-        with pytest.raises(Exception):  # noqa: B017, PT011
-            config.model_name = "other"  # type: ignore[misc]
-
-    def test_custom_values(self) -> None:
-        config = BenchmarkConfig(
-            model_name="yolo26s",
-            backend="tensorrt",
-            preprocess_mode="dali",
-            triton_url="triton:8001",
-            target_size=320,
-            num_images=50,
-            warmup_runs=10,
-            end2end=True,
-        )
-
-        assert config.backend == "tensorrt"
-        assert config.preprocess_mode == "dali"
-        assert config.target_size == 320
-        assert config.end2end is True
-
     def test_invalid_conf_threshold(self) -> None:
         with pytest.raises(Exception):  # noqa: B017, PT011
             BenchmarkConfig(model_name="yolo11s", conf_threshold=1.5)
-
-
-class TestBenchmarkResult:
-    def test_creation(self) -> None:
-        config = BenchmarkConfig(model_name="yolo11s")
-        result = BenchmarkResult(
-            config=config,
-            total_time_s=10.0,
-            avg_latency_ms=100.0,
-            throughput_fps=10.0,
-            p50_latency_ms=95.0,
-            p95_latency_ms=150.0,
-            p99_latency_ms=200.0,
-            num_images=100,
-        )
-
-        assert result.total_time_s == 10.0
-        assert result.avg_latency_ms == 100.0
-        assert result.throughput_fps == 10.0
-        assert result.num_images == 100
-
-    def test_frozen(self) -> None:
-        config = BenchmarkConfig(model_name="yolo11s")
-        result = BenchmarkResult(
-            config=config,
-            total_time_s=10.0,
-            avg_latency_ms=100.0,
-            throughput_fps=10.0,
-            p50_latency_ms=95.0,
-            p95_latency_ms=150.0,
-            p99_latency_ms=200.0,
-            num_images=100,
-        )
-        with pytest.raises(Exception):  # noqa: B017, PT011
-            result.total_time_s = 20.0  # type: ignore[misc]
 
 
 class TestBenchmarkSuite:
@@ -154,13 +85,6 @@ class TestBenchmarkSuite:
         assert len(restored.results) == 1
         assert restored.results[0].config.model_name == "yolo11s"
         assert restored.results[0].avg_latency_ms == pytest.approx(100.0)
-
-    def test_metadata_populated(self) -> None:
-        suite = BenchmarkSuite(results=[])
-
-        assert suite.timestamp != ""
-        assert suite.python_version != ""
-        assert suite.platform_info != ""
 
 
 class TestComputeStatistics:
@@ -312,59 +236,3 @@ class TestRunUltralyticsBaseline:
     def test_raises_on_empty_directory(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError, match="No image files found"):
             run_ultralytics_benchmark("yolo11s.pt", tmp_path, num_images=10)
-
-
-class TestBuildFullMatrix:
-    def test_single_model_produces_four_configs(self) -> None:
-        configs = build_full_matrix(models=["yolo11s"])
-
-        assert len(configs) == 4
-
-    def test_three_models_produce_twelve_configs(self) -> None:
-        configs = build_full_matrix(models=["yolo11s", "yolo26s", "yolo12s"])
-
-        assert len(configs) == 12
-
-    def test_all_backend_preprocess_combinations(self) -> None:
-        configs = build_full_matrix(models=["yolo11s"])
-
-        combos = {(c.backend, c.preprocess_mode) for c in configs}
-        assert combos == {
-            ("onnx", "raw"),
-            ("onnx", "dali"),
-            ("tensorrt", "raw"),
-            ("tensorrt", "dali"),
-        }
-
-    def test_custom_parameters_propagated(self) -> None:
-        configs = build_full_matrix(
-            models=["yolo11s"],
-            triton_url="triton:8001",
-            target_size=320,
-            num_images=50,
-            warmup_runs=10,
-        )
-
-        for config in configs:
-            assert config.triton_url == "triton:8001"
-            assert config.target_size == 320
-            assert config.num_images == 50
-            assert config.warmup_runs == 10
-
-    def test_model_names_preserved(self) -> None:
-        models = ["yolo11s", "yolo26s"]
-        configs = build_full_matrix(models=models)
-
-        model_names = {c.model_name for c in configs}
-        assert model_names == {"yolo11s", "yolo26s"}
-
-    def test_empty_models_returns_empty(self) -> None:
-        configs = build_full_matrix(models=[])
-
-        assert configs == []
-
-    def test_returns_benchmark_config_instances(self) -> None:
-        configs = build_full_matrix(models=["yolo11s"])
-
-        for config in configs:
-            assert isinstance(config, BenchmarkConfig)
