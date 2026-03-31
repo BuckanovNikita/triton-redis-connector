@@ -49,12 +49,16 @@ class Application:
         config: AppConfig,
         registry: PipelineRegistry,
         queue_bus: QueueBus,
+        extra_nodes: list[tuple[str, object]] | None = None,
     ) -> None:
         self._config = config
         self._registry = registry
         self._queue_bus = queue_bus
         self._shutdown = threading.Event()
         self._parallel_threads: dict[str, threading.Thread] = {}
+        if extra_nodes:
+            for name, node in extra_nodes:
+                self._registry.register(name, node)
         self._restart_counts: dict[str, int] = {}
 
     def run(self) -> None:

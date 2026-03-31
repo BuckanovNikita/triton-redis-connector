@@ -63,10 +63,14 @@ class InferenceWorker:
         done_event = threading.Event()
 
         def execute_inference() -> None:
+            if event.raw_image is None:
+                msg = "InferenceWorker requires raw_image to be set"
+                raise ValueError(msg)
             start = time.monotonic()
+            raw_image = event.raw_image
             grpc = self._grpc_module
-            input_tensor = grpc.InferInput(event.input_name, event.raw_image.shape, "FP32")
-            input_tensor.set_data_from_numpy(event.raw_image)
+            input_tensor = grpc.InferInput(event.input_name, raw_image.shape, "FP32")
+            input_tensor.set_data_from_numpy(raw_image)
 
             outputs = [grpc.InferRequestedOutput(name) for name in event.output_names]
 

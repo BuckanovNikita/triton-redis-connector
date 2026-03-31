@@ -134,7 +134,7 @@ name = "triton_redis_connector layer architecture"
 type = "layers"
 layers = [
     "(triton_redis_connector.providers)",
-    "(triton_redis_connector.connectors) | (triton_redis_connector.inference) | (triton_redis_connector.preprocessing) | (triton_redis_connector.metrics)",
+    "(triton_redis_connector.connectors) | (triton_redis_connector.inference) | (triton_redis_connector.preprocessing) | (triton_redis_connector.metrics) | (triton_redis_connector.routers)",
     "(triton_redis_connector.engine)",
     "(triton_redis_connector.config) | (triton_redis_connector.errors)",
     "(triton_redis_connector.protocols)",

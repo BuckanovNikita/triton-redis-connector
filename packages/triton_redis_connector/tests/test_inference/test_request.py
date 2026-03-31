@@ -15,8 +15,30 @@ class TestInferenceInput:
             model_name="yolo11s",
             raw_image=tensor,
         )
+        assert event.raw_image is not None
         np.testing.assert_array_equal(event.raw_image, tensor)
         assert event.raw_image.dtype == np.float32
+
+    def test_image_bytes_mode(self) -> None:
+        event = InferenceInput(
+            model_name="yolo11s",
+            image_bytes=b"\xff\xd8\xff",
+        )
+        assert event.image_bytes == b"\xff\xd8\xff"
+        assert event.raw_image is None
+
+    def test_both_modes_raises(self) -> None:
+        tensor = np.zeros((1, 3, 640, 640), dtype=np.float32)
+        with pytest.raises(ValidationError, match="Exactly one"):
+            InferenceInput(
+                model_name="yolo11s",
+                raw_image=tensor,
+                image_bytes=b"\xff\xd8\xff",
+            )
+
+    def test_neither_mode_raises(self) -> None:
+        with pytest.raises(ValidationError, match="Exactly one"):
+            InferenceInput(model_name="yolo11s")
 
     def test_missing_required_field_raises(self) -> None:
         with pytest.raises(ValidationError):

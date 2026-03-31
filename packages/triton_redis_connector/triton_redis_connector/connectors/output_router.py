@@ -17,12 +17,12 @@ if TYPE_CHECKING:
 class OutputStreamRouter:
     """Resolves model_name to output stream. Creates per-stream connectors lazily."""
 
-    def __init__(
+    def __init__(  # noqa: D107
         self,
         config: OutputRoutingConfig,
         redis_client: Redis[bytes],
         sink_config: SinkConfig,
-    ) -> None:  # noqa: D107
+    ) -> None:
         self._config = config
         self._redis_client = redis_client
         self._sink_config = sink_config
