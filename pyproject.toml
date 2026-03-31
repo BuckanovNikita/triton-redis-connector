@@ -101,11 +101,16 @@ testpaths = [
     "packages/triton_shared_models/tests",
 ]
 addopts = ["-v", "--tb=short", "-n", "auto", "-m", "not integration", "--import-mode=importlib"]
-markers = ["integration: tests requiring Docker services (Redis, Triton)"]
+markers = [
+    "integration: tests requiring Docker services (Redis, Triton)",
+    "benchmark: performance benchmark tests",
+    "slow: tests that take > 30 seconds",
+    "gpu: tests requiring GPU",
+]
 
 [tool.vulture]
 min_confidence = 80
-ignore_names = ["event", "shared", "envelope", "count", "new_payload", "block_ms", "data", "image", "raw", "message_id", "target_size", "timeout_s", "consumer_group", "input_stream", "output_stream", "end2end", "kwargs"]
+ignore_names = ["event", "shared", "envelope", "count", "new_payload", "block_ms", "data", "image", "raw", "message_id", "target_size", "timeout_s", "consumer_group", "input_stream", "output_stream", "end2end", "kwargs", "enable_dynamic_batching", "max_batch_size"]
 paths = [
     "packages/triton_redis_connector/triton_redis_connector",
     "packages/triton_model_tools/triton_model_tools",

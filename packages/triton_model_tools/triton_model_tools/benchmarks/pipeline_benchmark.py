@@ -19,6 +19,9 @@ if TYPE_CHECKING:
 
     import redis
 
+BACKENDS: list[str] = ["onnx", "tensorrt"]
+PREPROCESS_MODES: list[str] = ["dali", "cv2"]
+
 
 class PipelineBenchmarkConfig(BaseModel):
     """Configuration for pipeline E2E benchmark."""
@@ -216,3 +219,94 @@ def run_pipeline_benchmark(
         num_images=len(latencies_ms),
         num_iterations=config.num_iterations,
     )
+
+
+def build_pipeline_matrix(  # noqa: PLR0913
+    models: list[str],
+    *,
+    backends: list[str] | None = None,
+    preprocess_modes: list[str] | None = None,
+    image_sizes: list[int] | None = None,
+    redis_url: str = "redis://redis:6379",
+    input_stream: str = "camera_images",
+    output_stream: str = "detection_results",
+    num_iterations: int = 3,
+    warmup_runs: int = 1,
+    timeout_s: float = 60.0,
+) -> list[PipelineBenchmarkConfig]:
+    """Generate PipelineBenchmarkConfig for all combinations of parameters.
+
+    Args:
+        models: Model names to benchmark.
+        backends: Backend types (default: onnx, tensorrt).
+        preprocess_modes: Preprocessing modes (default: dali, cv2).
+        image_sizes: Image sizes (not used in PipelineBenchmarkConfig directly,
+            included for matrix description in model_name).
+        redis_url: Redis connection URL.
+        input_stream: Redis input stream name.
+        output_stream: Redis output stream name.
+        num_iterations: Iterations per benchmark run.
+        warmup_runs: Warmup iterations per run.
+        timeout_s: Timeout in seconds per iteration.
+
+    Returns:
+        List of PipelineBenchmarkConfig for all combinations.
+
+    """
+    effective_backends = backends if backends is not None else BACKENDS
+    effective_preprocess = preprocess_modes if preprocess_modes is not None else PREPROCESS_MODES
+    effective_sizes = image_sizes if image_sizes is not None else [640]
+
+    configs: list[PipelineBenchmarkConfig] = []
+    for model_name in models:
+        for backend in effective_backends:
+            for preprocess in effective_preprocess:
+                for size in effective_sizes:
+                    label = f"{model_name}_{backend}_{preprocess}_{size}"
+                    configs.append(
+                        PipelineBenchmarkConfig(
+                            redis_url=redis_url,
+                            input_stream=input_stream,
+                            output_stream=output_stream,
+                            model_name=label,
+                            num_iterations=num_iterations,
+                            warmup_runs=warmup_runs,
+                            timeout_s=timeout_s,
+                        )
+                    )
+
+    logger.info(
+        "Built pipeline benchmark matrix: {} models x {} backends x {} preprocess x {} sizes = {} total",
+        len(models),
+        len(effective_backends),
+        len(effective_preprocess),
+        len(effective_sizes),
+        len(configs),
+    )
+    return configs
+
+
+def run_pipeline_benchmark_matrix(
+    configs: list[PipelineBenchmarkConfig],
+    image_dir: Path,
+) -> list[PipelineBenchmarkResult]:
+    """Run pipeline benchmark for all configurations.
+
+    Args:
+        configs: List of pipeline benchmark configurations.
+        image_dir: Directory containing images.
+
+    Returns:
+        List of PipelineBenchmarkResult for each configuration.
+
+    """
+    logger.info("Running pipeline benchmark matrix with {} configurations", len(configs))
+    results: list[PipelineBenchmarkResult] = []
+
+    for i, config in enumerate(configs):
+        logger.info("Running config {}/{}: {}", i + 1, len(configs), config.model_name)
+        result = run_pipeline_benchmark(config, image_dir)
+        results.append(result)
+
+    logger.info("Pipeline benchmark matrix complete: {} configurations", len(results))
+    return results

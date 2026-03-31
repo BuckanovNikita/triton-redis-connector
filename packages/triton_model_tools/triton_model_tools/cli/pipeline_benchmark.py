@@ -75,6 +75,24 @@ def build_parser(subparsers: SubParsers) -> None:
         default=None,
         help="Output file path for results JSON",
     )
+    pb_parser.add_argument(
+        "--full-matrix",
+        action="store_true",
+        default=False,
+        help="Run full benchmark matrix across backends and preprocess modes",
+    )
+    pb_parser.add_argument(
+        "--backend",
+        nargs="+",
+        default=None,
+        help="Backend types for matrix mode (default: onnx tensorrt)",
+    )
+    pb_parser.add_argument(
+        "--preprocess-mode",
+        nargs="+",
+        default=None,
+        help="Preprocess modes for matrix mode (default: dali cv2)",
+    )
     pb_parser.set_defaults(func=run)
 
 
@@ -82,7 +100,9 @@ def run(args: argparse.Namespace) -> None:
     """Execute the ``pipeline-benchmark`` subcommand."""
     from triton_model_tools.benchmarks.pipeline_benchmark import (  # noqa: PLC0415
         PipelineBenchmarkConfig,
+        build_pipeline_matrix,
         run_pipeline_benchmark,
+        run_pipeline_benchmark_matrix,
     )
 
     image_dir: Path = args.image_dir.resolve()
@@ -94,11 +114,47 @@ def run(args: argparse.Namespace) -> None:
     warmup_runs: int = args.warmup_runs
     timeout_s: float = args.timeout
     output_path: Path | None = args.output
+    full_matrix: bool = args.full_matrix
+    backends: list[str] | None = args.backend
+    preprocess_modes: list[str] | None = args.preprocess_mode
 
     logger.info("Pipeline E2E Benchmark")
     logger.info("Image dir: {}", image_dir)
     logger.info("Model: {}", model_name)
     logger.info("Redis: {}", redis_url)
+
+    if full_matrix:
+        configs = build_pipeline_matrix(
+            models=[model_name],
+            backends=backends,
+            preprocess_modes=preprocess_modes,
+            redis_url=redis_url,
+            input_stream=input_stream,
+            output_stream=output_stream,
+            num_iterations=num_iterations,
+            warmup_runs=warmup_runs,
+            timeout_s=timeout_s,
+        )
+        results = run_pipeline_benchmark_matrix(configs, image_dir)
+
+        for result in results:
+            logger.info(
+                "{}: avg={:.2f}ms, throughput={:.1f}fps, p50={:.2f}ms",
+                result.config.model_name,
+                result.avg_latency_ms,
+                result.throughput_fps,
+                result.p50_latency_ms,
+            )
+
+        if output_path is not None:
+            import json  # noqa: PLC0415
+
+            resolved_output = output_path.resolve()
+            resolved_output.parent.mkdir(parents=True, exist_ok=True)
+            with resolved_output.open("w") as f:
+                json.dump([r.model_dump() for r in results], f, indent=2)
+            logger.info("Pipeline benchmark matrix results saved to {}", resolved_output)
+        return
 
     config = PipelineBenchmarkConfig(
         redis_url=redis_url,

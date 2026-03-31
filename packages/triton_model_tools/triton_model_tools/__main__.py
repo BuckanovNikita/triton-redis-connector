@@ -8,6 +8,7 @@ import sys
 from loguru import logger
 
 from triton_model_tools.cli import (
+    batch_benchmark,
     benchmark,
     compare_folders,
     download_coco,
@@ -17,6 +18,7 @@ from triton_model_tools.cli import (
     infer,
     pipeline_benchmark,
     pipeline_predict,
+    populate_repository,
     predict,
 )
 
@@ -33,12 +35,14 @@ def main() -> None:
     infer.build_parser(subparsers)
     download_coco.build_parser(subparsers)
     benchmark.build_parser(subparsers)
+    batch_benchmark.build_parser(subparsers)
     full_benchmark.build_parser(subparsers)
     e2e_test.build_parser(subparsers)
     predict.build_parser(subparsers)
     pipeline_predict.build_parser(subparsers)
     compare_folders.build_parser(subparsers)
     pipeline_benchmark.build_parser(subparsers)
+    populate_repository.build_parser(subparsers)
 
     args = parser.parse_args()
 

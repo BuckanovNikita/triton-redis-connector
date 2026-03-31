@@ -126,6 +126,8 @@ class TestMainEntryPoint:
             fmt="onnx",
             models_config=None,
             half=False,
+            enable_dynamic_batching=False,
+            max_batch_size=8,
         )
 
     def test_main_handles_value_error(self, tmp_path: Path) -> None:
@@ -163,6 +165,8 @@ class TestMainEntryPoint:
             fmt="onnx",
             models_config=None,
             half=False,
+            enable_dynamic_batching=False,
+            max_batch_size=8,
         )
 
     def test_run_export_with_dali_ensemble(self, tmp_path: Path) -> None:

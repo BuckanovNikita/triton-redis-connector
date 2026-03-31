@@ -77,10 +77,22 @@ def build_parser(subparsers: SubParsers) -> None:
         default=False,
         help="Also generate rescale postprocess model to map detections back to original image coordinates",
     )
+    export_parser.add_argument(
+        "--dynamic-batching",
+        action="store_true",
+        default=False,
+        help="Enable Triton dynamic batching (strips batch dim, sets max_batch_size)",
+    )
+    export_parser.add_argument(
+        "--max-batch-size",
+        type=int,
+        default=8,
+        help="Maximum batch size for dynamic batching (default: 8)",
+    )
     export_parser.set_defaults(func=run)
 
 
-def run(args: argparse.Namespace) -> None:
+def run(args: argparse.Namespace) -> None:  # noqa: C901, PLR0915
     """Execute the ``export`` subcommand."""
     from triton_model_tools.export.exporter import export_all_models  # noqa: PLC0415
     from triton_model_tools.models import YOLO_MODELS, load_export_config  # noqa: PLC0415
@@ -93,11 +105,16 @@ def run(args: argparse.Namespace) -> None:
     generate_nms: bool = args.nms
     generate_rescale: bool = args.rescale
     models_config: Path | None = args.models_config
+    enable_dynamic_batching: bool = args.dynamic_batching
+    max_batch_size: int = args.max_batch_size
 
     logger.info("Triton Model Export Tool")
     logger.info("Repository root: {}", repository_root)
     logger.info("Export format: {}", export_format)
     logger.info("FP16 (half): {}", half)
+
+    if enable_dynamic_batching:
+        logger.info("Dynamic batching: enabled (max_batch_size={})", max_batch_size)
 
     if models_config is not None:
         logger.info("Models config: {}", models_config)
@@ -124,6 +141,8 @@ def run(args: argparse.Namespace) -> None:
         fmt=export_format,  # type: ignore[arg-type]
         models_config=models_config,
         half=half,
+        enable_dynamic_batching=enable_dynamic_batching,
+        max_batch_size=max_batch_size,
     )
 
     nms_model_name: str | None = None

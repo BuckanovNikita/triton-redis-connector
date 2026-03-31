@@ -331,6 +331,103 @@ def build_full_matrix(
     return configs
 
 
+class BatchSizeBenchmarkConfig(BaseModel):
+    """Configuration for batch-size sweep benchmark using ultralytics YOLO.predict()."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_path: str = "yolo11s.pt"
+    batch_sizes: list[int] = Field(default=[1, 2, 4, 8, 16, 32])
+    num_images: int = Field(default=100, ge=1)
+    target_size: int | tuple[int, int] = 640
+    warmup_runs: int = Field(default=5, ge=0)
+
+
+class BatchSizeBenchmarkResult(BaseModel):
+    """Results from a batch-size sweep benchmark."""
+
+    model_config = ConfigDict(frozen=True)
+
+    config: BatchSizeBenchmarkConfig
+    per_batch_size: list[BenchmarkResult]
+
+
+def run_batch_size_benchmark(config: BatchSizeBenchmarkConfig, image_dir: Path) -> BatchSizeBenchmarkResult:
+    """Benchmark ultralytics YOLO.predict() across multiple batch sizes.
+
+    Loads the model once, then for each batch_size groups images into batches,
+    times model.predict() on each batch, and computes throughput statistics.
+
+    Args:
+        config: Batch-size benchmark configuration.
+        image_dir: Directory containing images.
+
+    Returns:
+        BatchSizeBenchmarkResult with one BenchmarkResult per batch_size.
+
+    """
+    image_paths = collect_image_paths(image_dir, max_count=config.num_images)
+    logger.info(
+        "Batch-size benchmark: model={} images={} batch_sizes={}",
+        config.model_path,
+        len(image_paths),
+        config.batch_sizes,
+    )
+
+    model: Any = YOLO(config.model_path)
+    image_path_strs = [str(p) for p in image_paths]
+
+    if config.warmup_runs > 0:
+        logger.info("Running {} warmup iterations", config.warmup_runs)
+        for _ in range(config.warmup_runs):
+            model.predict(image_path_strs[0], verbose=False)
+
+    per_batch_size: list[BenchmarkResult] = []
+    for batch_size in config.batch_sizes:
+        batches = [image_path_strs[i : i + batch_size] for i in range(0, len(image_path_strs), batch_size)]
+
+        latencies_ms: list[float] = []
+        for batch in batches:
+            start = time.perf_counter()
+            model.predict(batch, verbose=False)
+            elapsed_ms = (time.perf_counter() - start) * MILLISECONDS_PER_SECOND
+            per_image_ms = elapsed_ms / len(batch)
+            latencies_ms.extend([per_image_ms] * len(batch))
+
+        total_s, avg_ms, throughput, p50, p95, p99 = compute_statistics(latencies_ms)
+
+        bench_config = BenchmarkConfig(
+            model_name=config.model_path,
+            backend="onnx",
+            preprocess_mode="raw",
+            target_size=config.target_size,
+            num_images=len(latencies_ms),
+            warmup_runs=config.warmup_runs,
+        )
+
+        result = BenchmarkResult(
+            config=bench_config,
+            total_time_s=total_s,
+            avg_latency_ms=avg_ms,
+            throughput_fps=throughput,
+            p50_latency_ms=p50,
+            p95_latency_ms=p95,
+            p99_latency_ms=p99,
+            num_images=len(latencies_ms),
+        )
+        per_batch_size.append(result)
+
+        logger.info(
+            "batch_size={}: avg={:.2f}ms p50={:.2f}ms throughput={:.1f}fps",
+            batch_size,
+            avg_ms,
+            p50,
+            throughput,
+        )
+
+    return BatchSizeBenchmarkResult(config=config, per_batch_size=per_batch_size)
+
+
 def save_benchmark_output(suite: BenchmarkSuite, output_path: Path) -> None:
     """Save benchmark suite to file (CSV if .csv extension, JSON otherwise).
 
