@@ -8,21 +8,27 @@ requires-python = ">=3.12"
 members = ["packages/*"]
 
 [dependency-groups]
+lint = [
+    "ruff>=0.15.8,<1.0.0",
+    "mypy>=1.19.1,<2.0.0",
+    "pyright>=1.1.408,<2.0.0",
+    "vulture>=2.16,<3.0.0",
+    "import-linter>=2.11,<3.0.0",
+    "types-redis>=4.6.0.20241004,<5.0.0",
+]
+test = [
+    "pytest>=9.0.2,<10.0.0",
+    "pytest-xdist>=3.8.0,<4.0.0",
+    "pytest-cov>=7.1.0,<8.0.0",
+    "pytest-asyncio>=1.1.0,<2.0.0",
+]
 dev = [
     "triton-redis-connector",
     "triton-model-tools",
     "triton-shared-models",
-    "mypy>=1.15.0",
-    "pyright>=1.1.400",
-    "pre-commit>=4.1.0",
-    "pytest>=8.3.0",
-    "pytest-xdist>=3.5.0",
-    "pytest-cov>=6.0.0",
-    "pytest-asyncio>=0.25.0",
-    "ruff>=0.9.0",
-    "vulture>=2.14",
-    "types-redis>=4.6.0",
-    "import-linter>=2.11",
+    "pre-commit>=4.5.1,<5.0.0",
+    { include-group = "lint" },
+    { include-group = "test" },
 ]
 
 [tool.uv.sources]
