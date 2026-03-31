@@ -14,6 +14,7 @@ RUN apt-get update \
         net-tools \
         procps \
         sudo \
+        openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 ARG USERNAME=vscode

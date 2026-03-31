@@ -10,6 +10,8 @@ services:
       - /home/nkt/.local/share/claude:/home/vscode/.local/share/claude
       - /home/nkt/.local/bin/claude:/home/vscode/.local/bin/claude
       - /mnt/c/Users/bucka/.claude/skills:/home/vscode/.claude/skills
+      - /home/nkt/.ssh:/home/vscode/.ssh:ro
+      - /home/nkt/.gitconfig:/home/vscode/.gitconfig:ro
     command: sleep infinity
     depends_on:
       redis:

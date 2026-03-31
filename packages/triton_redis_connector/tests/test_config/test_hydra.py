@@ -16,6 +16,13 @@ CONF_DIR = Path(__file__).resolve().parent.parent.parent / "triton_redis_connect
 
 
 class TestLoadConfigDefaults:
+    @pytest.fixture(autouse=True)
+    def _clear_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("REDIS_HOST", raising=False)
+        monkeypatch.delenv("REDIS_PORT", raising=False)
+        monkeypatch.delenv("TRITON_GRPC_URL", raising=False)
+        monkeypatch.delenv("APP_NAME", raising=False)
+
     def test_loads_default_config(self) -> None:
         cfg = load_config(config_dir=CONF_DIR)
         assert isinstance(cfg, AppConfig)

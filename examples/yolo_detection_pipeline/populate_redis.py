@@ -1,6 +1,6 @@
 """Push test images into a Redis Stream for integration testing.
 
-Reads JPEG files from benchmarks/data/val2017/ (or a custom directory)
+Reads JPEG files from benchmarks/data/coco8/images/val/ (or a custom directory)
 and pushes them to a Redis Stream as raw bytes. Each message has:
   - data: raw image bytes
   - filename: original filename
@@ -22,7 +22,7 @@ from loguru import logger
 from redis import Redis
 
 DEFAULT_STREAM = "test:input_images"
-DEFAULT_IMAGE_DIR = Path(__file__).resolve().parent.parent.parent / "benchmarks" / "data" / "val2017"
+DEFAULT_IMAGE_DIR = Path(__file__).resolve().parent.parent.parent / "benchmarks" / "data" / "coco8" / "images" / "val"
 DEFAULT_REDIS_HOST = os.environ.get("REDIS_HOST", "redis")
 DEFAULT_REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
 DEFAULT_MAXLEN = 1000

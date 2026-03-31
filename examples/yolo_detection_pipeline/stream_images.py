@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 from redis import Redis
 
 DEFAULT_STREAM = "test:input_images"
-DEFAULT_IMAGE_DIR = Path(__file__).resolve().parent.parent.parent / "benchmarks" / "data" / "val2017"
+DEFAULT_IMAGE_DIR = Path(__file__).resolve().parent.parent.parent / "benchmarks" / "data" / "coco8" / "images" / "val"
 DEFAULT_REDIS_HOST = os.environ.get("REDIS_HOST", "redis")
 DEFAULT_REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
 DEFAULT_MAXLEN = 1000

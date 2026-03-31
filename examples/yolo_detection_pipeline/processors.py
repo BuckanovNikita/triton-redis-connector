@@ -138,7 +138,7 @@ class DetectionPostProcessor:
         if raw.ndim == 3:
             raw = raw[0]
 
-        if raw.shape[0] > raw.shape[1]:
+        if raw.shape[0] < raw.shape[1]:
             raw = raw.T
 
         boxes_xywh = raw[:, :4]
