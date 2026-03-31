@@ -18,16 +18,19 @@ class MetricBuffer:
 
     Multiple producers (sources, processors, sinks) call record() concurrently.
     MetricEmitter calls flush() periodically to drain all buffered events.
+
+    Accepts ``object`` in record() so the engine layer can pass MetricEvent
+    instances via the MetricRecorder protocol without importing the type.
     """
 
     def __init__(self) -> None:  # noqa: D107
         self._lock = threading.Lock()
         self._buffer: list[MetricEvent] = []
 
-    def record(self, event: MetricEvent) -> None:
+    def record(self, event: object) -> None:
         """Append a metric event to the buffer under lock."""
         with self._lock:
-            self._buffer.append(event)
+            self._buffer.append(event)  # type: ignore[arg-type]
 
     def flush(self) -> list[MetricEvent]:
         """Atomically swap the buffer and return all accumulated events."""

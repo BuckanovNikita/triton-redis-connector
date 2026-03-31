@@ -220,6 +220,28 @@ class ProcessorFactory(Protocol[TShared, TProcessor_co]):
 
 
 @runtime_checkable
+class MetricRecorder(Protocol):
+    """Records metric data points. Implemented by MetricBuffer."""
+
+    def record(self, event: object) -> None:
+        """Append a metric event to the buffer."""
+        ...
+
+
+@runtime_checkable
+class LifecycleService(Protocol):
+    """Service with start/stop lifecycle. Implemented by MetricEmitter and TritonMetricsCollector."""
+
+    def start(self) -> None:
+        """Start the background service."""
+        ...
+
+    def stop(self) -> None:
+        """Stop the background service."""
+        ...
+
+
+@runtime_checkable
 class ObserverProtocol(Protocol[TObserved]):
     """Observes events without producing output (metrics, logging).
 

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import redis as redis_lib
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from triton_model_tools.inference.detection_io import collect_image_paths
 from triton_model_tools.models.detection import (
@@ -39,9 +39,19 @@ class E2ETestConfig(BaseModel):
     output_stream: str = "detection_results"
     model_name: str = "yolo11s"
     consumer_group: str = "e2e-test"
-    target_size: int = Field(default=640, gt=0)
+    target_size: int | tuple[int, int] = Field(default=640)
     end2end: bool = False
     timeout_s: float = Field(default=30.0, gt=0.0)
+
+    @field_validator("target_size")
+    @classmethod
+    def _validate_target_size(cls, v: int | tuple[int, int]) -> int | tuple[int, int]:
+        dims = (v, v) if isinstance(v, int) else v
+        for dim in dims:
+            if dim <= 0:
+                msg = f"Image dimension {dim} must be positive"
+                raise ValueError(msg)
+        return v
 
 
 def ensure_consumer_group(

@@ -35,7 +35,7 @@ class BenchmarkConfig(BaseModel):
     backend: Literal["onnx", "tensorrt"] = "onnx"
     preprocess_mode: Literal["raw", "dali"] = "raw"
     triton_url: str = "localhost:8001"
-    target_size: int = 640
+    target_size: int | tuple[int, int] = 640
     num_images: int = 100
     warmup_runs: int = 5
     end2end: bool = False
@@ -263,7 +263,7 @@ def run_benchmark_matrix(configs: list[BenchmarkConfig], image_dir: Path) -> Ben
 def build_full_matrix(
     models: list[str],
     triton_url: str = "localhost:8001",
-    target_size: int = 640,
+    target_size: int | tuple[int, int] = 640,
     num_images: int = 100,
     warmup_runs: int = 5,
 ) -> list[BenchmarkConfig]:

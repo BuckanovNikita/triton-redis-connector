@@ -139,6 +139,9 @@ layers = [
     "(triton_redis_connector.config) | (triton_redis_connector.errors)",
     "(triton_redis_connector.protocols)",
 ]
+ignore_imports = [
+    "triton_redis_connector.engine.app -> triton_redis_connector.metrics.collector",
+]
 
 # Contract 2: Domain modules must not import each other.
 # connectors, inference, preprocessing, metrics communicate via engine/graph.

@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
     from triton_model_tools.cli._types import SubParsers
 
+from triton_model_tools.cli._types import parse_image_size
+
 
 def build_parser(subparsers: SubParsers) -> None:
     """Register the ``e2e-test`` subcommand."""
@@ -58,9 +60,9 @@ def build_parser(subparsers: SubParsers) -> None:
     )
     e2e_parser.add_argument(
         "--target-size",
-        type=int,
+        type=parse_image_size,
         default=640,
-        help="Model input size (default: 640)",
+        help="Model input size: int or HxW (e.g. 640 or 960x600)",
     )
     e2e_parser.add_argument(
         "--end2end",
@@ -90,7 +92,7 @@ def run(args: argparse.Namespace) -> None:
     input_stream: str = args.input_stream
     output_stream: str = args.output_stream
     consumer_group: str = args.consumer_group
-    target_size: int = args.target_size
+    target_size: int | tuple[int, int] = args.target_size
     end2end: bool = args.end2end
     timeout_s: float = args.timeout
 

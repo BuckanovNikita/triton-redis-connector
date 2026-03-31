@@ -28,9 +28,13 @@ class YoloPreprocessor:
 
     """
 
-    def __init__(self, target_size: int = 640) -> None:
+    def __init__(self, target_size: int | tuple[int, int] = 640) -> None:
         """Initialize with the model's expected input size."""
-        self.target_size = target_size
+        if isinstance(target_size, int):
+            self._target_h = target_size
+            self._target_w = target_size
+        else:
+            self._target_h, self._target_w = target_size
 
     def preprocess(
         self,
@@ -46,7 +50,7 @@ class YoloPreprocessor:
 
         """
         orig_h, orig_w = image.shape[:2]
-        scale = min(self.target_size / orig_h, self.target_size / orig_w)
+        scale = min(self._target_h / orig_h, self._target_w / orig_w)
 
         new_w = int(orig_w * scale)
         new_h = int(orig_h * scale)
@@ -57,8 +61,8 @@ class YoloPreprocessor:
             interpolation=cv2.INTER_LINEAR,
         )
 
-        pad_w = self.target_size - new_w
-        pad_h = self.target_size - new_h
+        pad_w = self._target_w - new_w
+        pad_h = self._target_h - new_h
         pad_left = pad_w // 2
         pad_top = pad_h // 2
         pad_right = pad_w - pad_left

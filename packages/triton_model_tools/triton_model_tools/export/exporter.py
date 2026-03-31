@@ -95,7 +95,7 @@ def _export_onnx(variant: YoloModelVariant, repository_root: Path) -> Path:
     yolo_model = YOLO(variant.ultralytics_model)
     onnx_path_str: str = yolo_model.export(
         format="onnx",
-        imgsz=variant.imgsz,
+        imgsz=list(variant.resolved_imgsz),
         **variant.export_kwargs,
     )
     onnx_path = Path(onnx_path_str)
@@ -148,18 +148,19 @@ def _export_tensorrt(variant: YoloModelVariant, repository_root: Path) -> Path:
     yolo_model = YOLO(variant.ultralytics_model)
     engine_path_str: str = yolo_model.export(
         format="engine",
-        imgsz=variant.imgsz,
+        imgsz=list(variant.resolved_imgsz),
         half=True,
         **variant.export_kwargs,
     )
     engine_path = Path(engine_path_str)
     logger.info("TensorRT engine exported to {}", engine_path)
 
+    resolved_h, resolved_w = variant.resolved_imgsz
     inputs = [
         TritonTensorSpec(
             name="images",
             data_type=TritonDataType.TYPE_FP16,
-            dims=[1, 3, variant.imgsz, variant.imgsz],
+            dims=[1, 3, resolved_h, resolved_w],
         ),
     ]
     outputs = [

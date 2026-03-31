@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
     from triton_model_tools.cli._types import SubParsers
 
+from triton_model_tools.cli._types import parse_image_size
+
 
 def build_parser(subparsers: SubParsers) -> None:
     """Register the ``full-benchmark`` subcommand."""
@@ -45,9 +47,9 @@ def build_parser(subparsers: SubParsers) -> None:
     )
     fb_parser.add_argument(
         "--target-size",
-        type=int,
+        type=parse_image_size,
         default=640,
-        help="Model input size (default: 640)",
+        help="Model input size: int or HxW (e.g. 640 or 960x600)",
     )
     fb_parser.add_argument(
         "--num-images",
@@ -97,7 +99,7 @@ def run(args: argparse.Namespace) -> None:
         raise ValueError(msg)
 
     triton_url: str = args.triton_url
-    target_size: int = args.target_size
+    target_size: int | tuple[int, int] = args.target_size
     num_images: int = args.num_images
     warmup_runs: int = args.warmup_runs
     output_path: Path = args.output.resolve()

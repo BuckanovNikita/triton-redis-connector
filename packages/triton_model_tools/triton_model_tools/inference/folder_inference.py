@@ -28,7 +28,7 @@ def run_folder_inference(  # noqa: PLR0913
     model_name: str,
     *,
     triton_url: str = "localhost:8001",
-    target_size: int = 640,
+    target_size: int | tuple[int, int] = 640,
     end2end: bool = False,
     output_names: list[str] | None = None,
     conf_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,

@@ -98,8 +98,10 @@ class MetricsConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     output_stream: str = "metrics"
+    emit_interval_s: float = Field(default=5.0, gt=0.0)
     triton_poll_interval_s: float = Field(default=10.0, gt=0.0)
     error_flush_interval_s: float = Field(default=30.0, gt=0.0)
+    stats_log_interval_s: float = Field(default=60.0, gt=0.0)
     transit_time_enabled: bool = True
 
 

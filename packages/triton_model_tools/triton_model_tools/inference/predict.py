@@ -6,7 +6,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from ultralytics import YOLO  # type: ignore[attr-defined]
 
 from triton_model_tools.inference.detection_io import collect_image_paths, save_detections_to_txt
@@ -28,7 +28,17 @@ class PredictConfig(BaseModel):
     model_path: str = "yolo11s.pt"
     conf_threshold: float = Field(default=DEFAULT_CONFIDENCE_THRESHOLD, ge=0.0, le=1.0)
     iou_threshold: float = Field(default=DEFAULT_IOU_THRESHOLD, ge=0.0, le=1.0)
-    target_size: int = Field(default=640, gt=0)
+    target_size: int | tuple[int, int] = Field(default=640)
+
+    @field_validator("target_size")
+    @classmethod
+    def _validate_target_size(cls, v: int | tuple[int, int]) -> int | tuple[int, int]:
+        dims = (v, v) if isinstance(v, int) else v
+        for dim in dims:
+            if dim <= 0:
+                msg = f"Image dimension {dim} must be positive"
+                raise ValueError(msg)
+        return v
 
 
 def run_ultralytics_predict(

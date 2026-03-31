@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from triton_shared_models.triton_config import (
     DynamicBatchingConfig,
     EnsembleStep,
@@ -54,14 +54,37 @@ _DIMS_RE = re.compile(r"dims:\s*\[\s*([\d\s,\-]+)\s*]")
 _END2END_FEATURE_COUNT = 6
 
 
+_YOLO_STRIDE = 32
+
+
 class YoloModelVariant(BaseModel):
     """Describes a single YOLO model variant to export for Triton."""
 
     name: str
     ultralytics_model: str
     export_kwargs: dict[str, Any] = {}
-    imgsz: int = 640
+    imgsz: int | tuple[int, int] = 640
     end2end_export: bool = False
+
+    @field_validator("imgsz")
+    @classmethod
+    def _validate_imgsz(cls, v: int | tuple[int, int]) -> int | tuple[int, int]:
+        dims = (v, v) if isinstance(v, int) else v
+        for dim in dims:
+            if dim <= 0:
+                msg = f"Image dimension {dim} must be positive"
+                raise ValueError(msg)
+            if dim % _YOLO_STRIDE != 0:
+                msg = f"Image dimension {dim} is not divisible by 32 (YOLO stride requirement)"
+                raise ValueError(msg)
+        return v
+
+    @property
+    def resolved_imgsz(self) -> tuple[int, int]:
+        """Return imgsz as a (height, width) tuple."""
+        if isinstance(self.imgsz, int):
+            return (self.imgsz, self.imgsz)
+        return self.imgsz
 
 
 class DiscoveredModel(BaseModel):

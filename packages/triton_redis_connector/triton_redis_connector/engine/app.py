@@ -21,6 +21,8 @@ from triton_redis_connector.engine.registry import INLINE_VARIANTS, SINK_VARIANT
 from triton_redis_connector.errors.models import ConnectorError, InferenceError, PreprocessingError
 from triton_redis_connector.protocols import (
     Envelope,
+    LifecycleService,
+    MetricRecorder,
     ProcessPoolProcessor,
     ProcessSource,
     ThreadPoolProcessor,
@@ -37,6 +39,32 @@ if TYPE_CHECKING:
     from triton_redis_connector.engine.registry import GraphNode, PipelineRegistry
 
 
+def _make_metric(
+    component_name: str,
+    measure: str,
+    value: float,
+    timestamp_ms: int,
+    tags: dict[str, str] | None = None,
+) -> object:
+    """Create a MetricEvent with lazy import to avoid engine->metrics layer violation."""
+    from triton_redis_connector.metrics.collector import MetricEvent  # noqa: PLC0415
+
+    return MetricEvent(
+        component_name=component_name,
+        measure=measure,
+        value=value,
+        timestamp_ms=timestamp_ms,
+        tags=tags or {},
+    )
+
+
+def _is_metric_event(obj: object) -> bool:
+    """Check if an object is a MetricEvent with lazy import."""
+    from triton_redis_connector.metrics.collector import MetricEvent  # noqa: PLC0415
+
+    return isinstance(obj, MetricEvent)
+
+
 class Application:
     """Main pipeline application.
 
@@ -44,12 +72,15 @@ class Application:
     variant health, and handles graceful shutdown.
     """
 
-    def __init__(  # noqa: D107
+    def __init__(  # noqa: D107, PLR0913
         self,
         config: AppConfig,
         registry: PipelineRegistry,
         queue_bus: QueueBus,
         extra_nodes: list[tuple[str, object]] | None = None,
+        metric_buffer: MetricRecorder | None = None,
+        triton_collector: LifecycleService | None = None,
+        metric_emitter: LifecycleService | None = None,
     ) -> None:
         self._config = config
         self._registry = registry
@@ -60,6 +91,14 @@ class Application:
             for name, node in extra_nodes:
                 self._registry.register(name, node)
         self._restart_counts: dict[str, int] = {}
+        self._metric_buffer = metric_buffer
+        self._triton_collector = triton_collector
+        self._metric_emitter = metric_emitter
+        self._stats_processed: int = 0
+        self._stats_in_progress: int = 0
+        self._stats_errors: int = 0
+        self._stats_per_node: dict[str, int] = {}
+        self._stats_timer: threading.Timer | None = None
 
     def run(self) -> None:
         """Run the main event loop.
@@ -67,8 +106,10 @@ class Application:
         1. Validate the registry graph
         2. Wire parallel node queues
         3. Start parallel variant threads
-        4. Run inline dispatch loop
-        5. Monitor parallel variant health
+        4. Start metrics components
+        5. Start periodic stats logging
+        6. Run inline dispatch loop
+        7. Monitor parallel variant health
         """
         errors = self._registry.validate()
         if errors:
@@ -84,6 +125,13 @@ class Application:
         self._wire_parallel_queues()
         self._start_parallel_variants()
 
+        if self._triton_collector is not None:
+            self._triton_collector.start()
+        if self._metric_emitter is not None:
+            self._metric_emitter.start()
+
+        self._start_stats_timer()
+
         logger.info("Application main loop started with {} inline nodes", len(dispatch_order))
 
         while not self._shutdown.is_set():
@@ -97,6 +145,13 @@ class Application:
         """Signal all components to stop and wait for parallel variants to finish."""
         logger.info("Application shutdown requested")
         self._shutdown.set()
+        self._cancel_stats_timer()
+
+        if self._triton_collector is not None:
+            self._triton_collector.stop()
+        if self._metric_emitter is not None:
+            self._metric_emitter.stop()
+
         self._stop_parallel_variants()
 
     def _dispatch_cycle(self, dispatch_order: list[GraphNode]) -> bool:
@@ -109,15 +164,23 @@ class Application:
                 event: object = node.instance()  # type: ignore[operator]
                 if event is not None:
                     dispatched_any = True
-                    self._route_event(event, dispatch_order)
+                    envelope: Envelope[object] = event if isinstance(event, Envelope) else Envelope(payload=event)
+                    envelope.track_state("queued")
+                    self._route_event(envelope.payload, dispatch_order, envelope=envelope)
         return dispatched_any
 
-    def _route_event(self, event: object, dispatch_order: list[GraphNode]) -> None:
+    def _route_event(
+        self,
+        event: object,
+        dispatch_order: list[GraphNode],
+        envelope: Envelope[object] | None = None,
+    ) -> None:
         """Route an event through inline processors and sinks by type matching."""
         self._log_error_event(event)
 
         event_type = type(event)
-        envelope: Envelope[object] = event if isinstance(event, Envelope) else Envelope(payload=event)
+        if envelope is None:
+            envelope = event if isinstance(event, Envelope) else Envelope(payload=event)
 
         token = set_context(
             EventContext(
@@ -132,11 +195,54 @@ class Application:
                 if node.variant in SOURCE_VARIANTS:
                     continue
                 if event_type in node.input_types:
+                    envelope.track_state("processing_start")
+                    self._stats_in_progress += 1
                     result: object = node.instance(event)  # type: ignore[operator]
-                    if result is not None:
-                        self._route_event(result, dispatch_order)
+                    self._stats_in_progress -= 1
+                    self._stats_per_node[node.name] = self._stats_per_node.get(node.name, 0) + 1
+
+                    if node.variant in SINK_VARIANTS:
+                        envelope.track_state("output_sent")
+                        self._stats_processed += 1
+                        self._emit_transit_metric(envelope)
+                        if _is_metric_event(result) and self._metric_buffer is not None:
+                            self._metric_buffer.record(result)
+
+                    if result is not None and node.variant not in SINK_VARIANTS:
+                        self._emit_inference_time_metric(result)
+                        child_envelope = envelope.derive(result)
+                        self._route_event(result, dispatch_order, envelope=child_envelope)
         finally:
             reset_context(token)
+
+    def _emit_transit_metric(self, envelope: Envelope[object]) -> None:
+        """Emit event_total_transit_ms metric if buffer and transit tracking enabled."""
+        if self._metric_buffer is None or not self._config.metrics.transit_time_enabled:
+            return
+        self._metric_buffer.record(
+            _make_metric(
+                component_name=self._config.app_name,
+                measure="event_total_transit_ms",
+                value=envelope.transit_time_ms(),
+                timestamp_ms=int(time.time() * 1000),
+            ),
+        )
+
+    def _emit_inference_time_metric(self, result: object) -> None:
+        """Emit inference_time_ms metric from DetectionResult if available."""
+        if self._metric_buffer is None:
+            return
+        from triton_redis_connector.engine.events import DetectionResult  # noqa: PLC0415
+
+        if isinstance(result, DetectionResult):
+            self._metric_buffer.record(
+                _make_metric(
+                    component_name=self._config.app_name,
+                    measure="inference_time_ms",
+                    value=result.inference_time_ms,
+                    timestamp_ms=int(time.time() * 1000),
+                ),
+            )
 
     def _log_error_event(self, event: object) -> None:
         """Log error events in the main thread and optionally stop on error."""
@@ -155,9 +261,61 @@ class Application:
         else:
             return
 
+        self._stats_errors += 1
+
         if self._config.debug.stop_on_error:
             logger.warning("debug.stop_on_error=true — shutting down after error")
             self.shutdown()
+
+    def _start_stats_timer(self) -> None:
+        """Start a repeating timer that logs stats periodically."""
+        interval = self._config.metrics.stats_log_interval_s
+
+        def _tick() -> None:
+            if self._shutdown.is_set():
+                return
+            self._log_stats()
+            self._stats_timer = threading.Timer(interval, _tick)
+            self._stats_timer.daemon = True
+            self._stats_timer.start()
+
+        self._stats_timer = threading.Timer(interval, _tick)
+        self._stats_timer.daemon = True
+        self._stats_timer.start()
+
+    def _cancel_stats_timer(self) -> None:
+        """Cancel the periodic stats timer."""
+        if self._stats_timer is not None:
+            self._stats_timer.cancel()
+            self._stats_timer = None
+
+    def _log_stats(self) -> None:
+        """Log pipeline stats and emit them as metrics."""
+        per_node_summary = ", ".join(f"{k}={v}" for k, v in sorted(self._stats_per_node.items()))
+        logger.info(
+            "[STATS] processed={} in_progress={} errors={} | {}",
+            self._stats_processed,
+            self._stats_in_progress,
+            self._stats_errors,
+            per_node_summary,
+        )
+
+        if self._metric_buffer is not None:
+            timestamp_ms = int(time.time() * 1000)
+            app_name = self._config.app_name
+            for measure, value in [
+                ("stats_processed", float(self._stats_processed)),
+                ("stats_in_progress", float(self._stats_in_progress)),
+                ("stats_errors", float(self._stats_errors)),
+            ]:
+                self._metric_buffer.record(
+                    _make_metric(
+                        component_name=app_name,
+                        measure=measure,
+                        value=value,
+                        timestamp_ms=timestamp_ms,
+                    ),
+                )
 
     def _wire_parallel_queues(self) -> None:
         """Pre-create input queues for all non-source parallel nodes."""
@@ -270,6 +428,18 @@ class Application:
                     self._restart_counts[name] = self._restart_counts.get(name, 0) + 1
                     count = self._restart_counts[name]
                     logger.warning("Restarting parallel variant {} (restart #{})", name, count)
+
+                    if self._metric_buffer is not None:
+                        self._metric_buffer.record(
+                            _make_metric(
+                                component_name=self._config.app_name,
+                                measure="parallel_restart",
+                                value=1.0,
+                                timestamp_ms=int(time.time() * 1000),
+                                tags={"node": name},
+                            ),
+                        )
+
                     new_thread = threading.Thread(
                         target=self._run_parallel_node,
                         args=(node,),

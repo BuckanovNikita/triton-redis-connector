@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _make_variant(name: str = "yolo11s", imgsz: int = 640) -> YoloModelVariant:
+def _make_variant(name: str = "yolo11s", imgsz: int | tuple[int, int] = 640) -> YoloModelVariant:
     return YoloModelVariant(
         name=name,
         ultralytics_model=f"{name}.pt",
@@ -133,7 +133,7 @@ class TestExportTensorrt:
         export_call_kwargs: dict[str, Any] = mock_instance.export.call_args.kwargs
         assert export_call_kwargs["format"] == "engine"
         assert export_call_kwargs["half"] is True
-        assert export_call_kwargs["imgsz"] == 640
+        assert export_call_kwargs["imgsz"] == [640, 640]
 
     def test_cleans_up_intermediate_engine_file(self, tmp_path: Path) -> None:
         variant = _make_variant()

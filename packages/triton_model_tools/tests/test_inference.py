@@ -129,6 +129,50 @@ class TestYoloPreprocessor:
 
         assert tensor.shape == (1, 3, 320, 320)
 
+    def test_nonsquare_target_size_tuple(self) -> None:
+        preprocessor = YoloPreprocessor(target_size=(960, 640))
+        image = np.zeros((480, 640, 3), dtype=np.uint8)
+
+        tensor, scale, _pad_offset = preprocessor.preprocess(image)
+
+        assert tensor.shape == (1, 3, 960, 640)
+        assert tensor.dtype == np.float32
+        expected_scale = min(960 / 480, 640 / 640)
+        assert scale == pytest.approx(expected_scale)
+
+    def test_nonsquare_target_size_padding(self) -> None:
+        preprocessor = YoloPreprocessor(target_size=(384, 640))
+        image = np.zeros((300, 400, 3), dtype=np.uint8)
+
+        tensor, scale, (pad_left, pad_top) = preprocessor.preprocess(image)
+
+        assert tensor.shape == (1, 3, 384, 640)
+        new_w = int(400 * scale)
+        new_h = int(300 * scale)
+        expected_pad_left = (640 - new_w) // 2
+        expected_pad_top = (384 - new_h) // 2
+        assert pad_left == expected_pad_left
+        assert pad_top == expected_pad_top
+
+    @pytest.mark.parametrize(
+        ("target_size", "expected_shape"),
+        [
+            (640, (1, 3, 640, 640)),
+            ((960, 640), (1, 3, 960, 640)),
+            ((384, 352), (1, 3, 384, 352)),
+            (320, (1, 3, 320, 320)),
+        ],
+    )
+    def test_parametrized_output_shapes(
+        self,
+        target_size: int | tuple[int, int],
+        expected_shape: tuple[int, ...],
+    ) -> None:
+        preprocessor = YoloPreprocessor(target_size=target_size)
+        image = np.zeros((480, 640, 3), dtype=np.uint8)
+        tensor, _, _ = preprocessor.preprocess(image)
+        assert tensor.shape == expected_shape
+
 
 class TestYoloPostprocessorEnd2End:
     def test_end2end_filters_by_confidence(self) -> None:

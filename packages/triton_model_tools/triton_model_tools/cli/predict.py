@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
     from triton_model_tools.cli._types import SubParsers
 
+from triton_model_tools.cli._types import parse_image_size
+
 
 def build_parser(subparsers: SubParsers) -> None:
     """Register the ``predict`` subcommand."""
@@ -40,9 +42,9 @@ def build_parser(subparsers: SubParsers) -> None:
     )
     predict_parser.add_argument(
         "--target-size",
-        type=int,
+        type=parse_image_size,
         default=640,
-        help="Model input size (default: 640)",
+        help="Model input size: int or HxW (e.g. 640 or 960x600)",
     )
     predict_parser.add_argument(
         "--conf-threshold",
@@ -66,7 +68,7 @@ def run(args: argparse.Namespace) -> None:
     image_dir: Path = args.image_dir.resolve()
     output_dir: Path = args.output_dir.resolve()
     model: str = args.model
-    target_size: int = args.target_size
+    target_size: int | tuple[int, int] = args.target_size
     conf_threshold: float = args.conf_threshold
     iou_threshold: float = args.iou_threshold
 

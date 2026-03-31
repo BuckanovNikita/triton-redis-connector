@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
     from triton_model_tools.cli._types import SubParsers
 
+from triton_model_tools.cli._types import parse_image_size
+
 
 def build_parser(subparsers: SubParsers) -> None:
     """Register the ``infer`` subcommand."""
@@ -40,9 +42,9 @@ def build_parser(subparsers: SubParsers) -> None:
     )
     infer_parser.add_argument(
         "--target-size",
-        type=int,
+        type=parse_image_size,
         default=640,
-        help="Model input size (default: 640)",
+        help="Model input size: int or HxW (e.g. 640 or 960x600)",
     )
     infer_parser.add_argument(
         "--repository-root",
@@ -79,7 +81,7 @@ def run(args: argparse.Namespace) -> None:
     image_dir: Path = args.image_dir.resolve()
     model_name: str = args.model
     triton_url: str = args.triton_url
-    target_size: int = args.target_size
+    target_size: int | tuple[int, int] = args.target_size
     end2end: bool = args.end2end
     conf_threshold: float = args.conf_threshold
     iou_threshold: float = args.iou_threshold
@@ -91,7 +93,8 @@ def run(args: argparse.Namespace) -> None:
         if match is not None:
             end2end = match.is_end2end
             if match.input_dims and len(match.input_dims) >= 4:
-                target_size = match.input_dims[-1]
+                h, w = match.input_dims[-2], match.input_dims[-1]
+                target_size = h if h == w else (h, w)
             logger.info("Auto-detected from repository: end2end={}, target_size={}", end2end, target_size)
 
     logger.info("Triton Folder Inference")
