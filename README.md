@@ -101,7 +101,6 @@ uv run pytest
 | `stats_in_progress` | app_name | — | gauge | Число событий в обработке прямо сейчас |
 | `stats_errors` | app_name | — | counter | Кумулятивное число ошибок |
 | `event_total_transit_ms` | app_name | — | histogram | Время от создания Envelope до записи в Sink (мс) |
-| `inference_time_ms` | app_name | — | histogram | Время инференса из DetectionResult (мс) |
 | `parallel_restart` | app_name | `node` | counter | Перезапуск параллельного потока |
 
 ### Per-node метрики
@@ -115,8 +114,16 @@ uv run pytest
 | `source_read_total` | app_name | `node` | counter | Общее число попыток чтения источником |
 | `source_read_empty` | app_name | `node` | counter | Попытки чтения, вернувшие None |
 | `sink_write_total` | app_name | `node` | counter | Общее число записей в Sink |
-| `decode_success` | app_name | — | counter | Успешные декодирования изображений |
-| `decode_failure` | app_name | — | counter | Ошибки декодирования изображений |
+
+### Annotated метрики (объявляются на процессорах)
+
+| Метрика | Тип | Объявление | Описание |
+|---------|-----|------------|----------|
+| `decode_success` | Counter | `Annotated[DecodedImage, Counter("decode_success")]` | Успешные декодирования |
+| `decode_failure` | Counter | `Annotated[PreprocessingError, Counter("decode_failure")]` | Ошибки декодирования |
+| `inference_time_ms` | Gauge | `Annotated[DetectionResult, Gauge("inference_time_ms", field="inference_time_ms")]` | Время инференса (мс) |
+
+Для добавления новых метрик используйте `Counter("name")` и `Gauge("name", field="field")` в `Annotated` на return-типах процессоров. Framework автоматически извлекает и применяет правила.
 
 ### Queue метрики
 

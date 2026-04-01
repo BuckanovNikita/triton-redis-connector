@@ -46,22 +46,39 @@ If ruff check reports fixable issues: `uv run ruff check --fix .` then re-run fo
 
 ## Metrics Instrumentation
 
-Every new pipeline node must be observable at runtime:
+**App must be abstracted from domain metrics.** Never import domain event types in `engine/app.py`.
 
-1. **New parallel nodes**: Use `Annotated[YourProcessor, Tracked("name")]` to get automatic
-   throughput/latency/error metrics via `MetricAggregator` in wrappers
-2. **Inline nodes**: Automatically tracked by `app.py` for `node_events_total`,
-   `node_events_interval`, `node_processing_ms`. No extra code needed if registered
-   via `PipelineRegistry.register()`
-3. **New error event types**: Add to `_ERROR_EVENT_TYPES` tuple in `engine/app.py` so
-   `_log_error_event` counts them in `node_errors`
-4. **New preprocessing stages**: If the processor produces `DecodedImage` on success or
-   `PreprocessingError` on failure, `decode_success`/`decode_failure` metrics are auto-tracked
-5. **Custom metrics**: Use `_make_metric()` + `self._metric_buffer.record()` in `engine/app.py`.
-   Never import MetricEvent directly in engine modules — use lazy import via `_make_metric`
-6. **Zero-value rule**: Metrics in `_log_stats` iterate over ALL `self._registry.nodes`,
-   not only active ones. Idle nodes always emit 0-valued metrics
-7. **README sync**: Update metrics table in `README.md` (section "Метрики") when adding new metrics
+Declare metrics via `Annotated` on processor return types:
+
+```python
+from typing import Annotated
+from triton_redis_connector.engine.metric_aggregator import Counter, Gauge
+
+class MyProcessor:
+    def __call__(self, event: InputEvent) -> (
+        Annotated[SuccessResult, Counter("my_success")]
+        | Annotated[FailureResult, Counter("my_failure")]
+        | None
+    ):
+        ...
+
+class LatencyProcessor:
+    def __call__(self, event: X) -> Annotated[Y, Gauge("latency_ms", field="elapsed_ms")] | None:
+        ...
+```
+
+Rules:
+
+1. **Counter**: `Annotated[ReturnType, Counter("name")]` — increments a named counter
+   each time this result type is produced. Zero-value emitted when idle.
+2. **Gauge**: `Annotated[ReturnType, Gauge("name", field="field")]` — extracts the named
+   field value from the result and emits it as a per-event metric.
+3. **Tracked on wrappers**: `Annotated[ProcessorType, Tracked("name")]` enables per-call
+   throughput/latency/error metrics via `MetricAggregator` for parallel nodes.
+4. **Inline nodes**: Automatically tracked by `app.py` for `node_events_total`,
+   `node_events_interval`, `node_processing_ms`. No extra code needed.
+5. **Zero-value rule**: `_log_stats` emits ALL registered counter names even when idle.
+6. **README sync**: Update metrics table in `README.md` (section "Метрики") when adding metrics.
 
 ---
 

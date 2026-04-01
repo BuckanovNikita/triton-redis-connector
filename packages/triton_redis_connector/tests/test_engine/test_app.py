@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import threading
 import time
+from typing import Annotated
 
 import pytest
 from triton_redis_connector.config.schema import AppConfig, QueueConfig
 from triton_redis_connector.engine.app import Application
-from triton_redis_connector.engine.metric_aggregator import MetricAggregator
+from triton_redis_connector.engine.metric_aggregator import Counter, Gauge, MetricAggregator
 from triton_redis_connector.engine.queue_bus import QueueBus
 from triton_redis_connector.engine.registry import PipelineRegistry
 from triton_redis_connector.metrics.buffer import MetricBuffer
@@ -20,6 +21,11 @@ class EventA:
 
 class EventB:
     pass
+
+
+class EventWithValue:
+    def __init__(self, latency: float) -> None:
+        self.latency = latency
 
 
 class SimpleSource:
@@ -182,8 +188,6 @@ class TestStatsMetrics:
         assert "stats_processed" in measures
         assert "stats_in_progress" in measures
         assert "stats_errors" in measures
-        assert "decode_success" in measures
-        assert "decode_failure" in measures
         assert "node_events_total" in measures
         assert "node_events_interval" in measures
         assert "node_errors" in measures
@@ -328,3 +332,81 @@ class TestWrapperAggregator:
 
         wrapper: DetachedThreadProcessor[int, int] = DetachedThreadProcessor(lambda x: x * 2)
         assert wrapper("5") == "55"  # type: ignore[arg-type]
+
+
+class TestAnnotatedMetricRules:
+    def test_counter_incremented_on_matching_result(
+        self, config: AppConfig, registry: PipelineRegistry, queue_bus: QueueBus
+    ) -> None:
+        class CountedProcessor:
+            def __call__(self, event: EventA) -> Annotated[EventB, Counter("my_counter")] | None:
+                return EventB()
+
+        source = SimpleSource()
+        source.add_event(EventA())
+        registry.register("src", source)
+        registry.register("proc", CountedProcessor())
+        registry.register("sink", SimpleSink())
+
+        buffer = MetricBuffer()
+        app = Application(config=config, registry=registry, queue_bus=queue_bus, metric_buffer=buffer)
+
+        run_thread = threading.Thread(target=app.run, daemon=True)
+        run_thread.start()
+        time.sleep(0.1)
+        app.shutdown()
+        run_thread.join(timeout=2.0)
+
+        assert app._stats_counters.get("my_counter") == 1
+
+    def test_gauge_emitted_on_matching_result(
+        self, config: AppConfig, registry: PipelineRegistry, queue_bus: QueueBus
+    ) -> None:
+        class GaugeProcessor:
+            def __call__(self, event: EventA) -> Annotated[EventWithValue, Gauge("my_gauge", field="latency")] | None:
+                return EventWithValue(latency=42.5)
+
+        class ValueSink:
+            def __call__(self, event: EventWithValue) -> None:
+                pass
+
+        source = SimpleSource()
+        source.add_event(EventA())
+        registry.register("src", source)
+        registry.register("proc", GaugeProcessor())
+        registry.register("sink", ValueSink())
+
+        buffer = MetricBuffer()
+        app = Application(config=config, registry=registry, queue_bus=queue_bus, metric_buffer=buffer)
+
+        run_thread = threading.Thread(target=app.run, daemon=True)
+        run_thread.start()
+        time.sleep(0.1)
+        app.shutdown()
+        run_thread.join(timeout=2.0)
+
+        events = buffer.flush()
+        gauge_events = [e for e in events if e.measure == "my_gauge"]
+        assert len(gauge_events) >= 1
+        assert gauge_events[0].value == 42.5
+
+    def test_zero_value_counters_emitted_for_annotated_processors(
+        self, config: AppConfig, registry: PipelineRegistry, queue_bus: QueueBus
+    ) -> None:
+        class CountedProcessor:
+            def __call__(self, event: EventA) -> Annotated[EventB, Counter("counted_metric")] | None:
+                return EventB()
+
+        source = SimpleSource()
+        registry.register("src", source)
+        registry.register("proc", CountedProcessor())
+        registry.register("sink", SimpleSink())
+
+        buffer = MetricBuffer()
+        app = Application(config=config, registry=registry, queue_bus=queue_bus, metric_buffer=buffer)
+        app._log_stats()
+
+        events = buffer.flush()
+        counter_events = [e for e in events if e.measure == "counted_metric"]
+        assert len(counter_events) == 1
+        assert counter_events[0].value == 0.0

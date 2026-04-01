@@ -13,7 +13,13 @@ from enum import StrEnum, auto
 
 from loguru import logger
 
-from triton_redis_connector.engine.metric_aggregator import InstrumentedNode, MetricAggregator
+from triton_redis_connector.engine.metric_aggregator import (
+    Counter,
+    Gauge,
+    InstrumentedNode,
+    MetricAggregator,
+    extract_metric_markers,
+)
 from triton_redis_connector.protocols import (
     ProcessPoolProcessor,
     ProcessSource,
@@ -80,6 +86,7 @@ class PipelineRegistry:
         self._type_producers: dict[type, list[str]] = {}
         self._type_consumers: dict[type, list[str]] = {}
         self._aggregators: dict[str, MetricAggregator] = {}
+        self._type_metrics: dict[type, list[Counter | Gauge]] = {}
 
     def register(self, name: str, node: object) -> None:
         """Register a pipeline node by inspecting its __call__ type hints."""
@@ -87,7 +94,7 @@ class PipelineRegistry:
         graph_node = GraphNode(name=name, instance=node, variant=variant)
 
         call_method = node.__call__  # type: ignore[operator]
-        hints = typing.get_type_hints(call_method)
+        hints = typing.get_type_hints(call_method, include_extras=True)
 
         if variant not in SOURCE_VARIANTS:
             input_type = self._get_input_type(hints)
@@ -95,10 +102,13 @@ class PipelineRegistry:
                 graph_node.input_types = {input_type}
                 self._type_consumers.setdefault(input_type, []).append(name)
 
-        output_types = self._extract_union_types(hints.get("return"), exclude={type(None)})
+        return_annotation = hints.get("return")
+        output_types = self._extract_union_types(return_annotation, exclude={type(None)})
         graph_node.output_types = set(output_types)
         for out_type in output_types:
             self._type_producers.setdefault(out_type, []).append(name)
+
+        self._extract_return_type_metrics(return_annotation)
 
         self._nodes[name] = graph_node
 
@@ -191,6 +201,20 @@ class PipelineRegistry:
         """Return the node-name-to-aggregator mapping for metrics collection."""
         return dict(self._aggregators)
 
+    def get_type_metrics(self, result_type: type) -> list[Counter | Gauge]:
+        """Return metric rules declared via Annotated for a result type."""
+        return list(self._type_metrics.get(result_type, []))
+
+    @property
+    def all_counter_names(self) -> set[str]:
+        """Return all registered Counter metric names for zero-value emission."""
+        names: set[str] = set()
+        for markers in self._type_metrics.values():
+            for marker in markers:
+                if isinstance(marker, Counter):
+                    names.add(marker.name)
+        return names
+
     def _check_connectivity(self) -> list[str]:
         """Check that the graph has no disconnected subgraphs.
 
@@ -243,7 +267,7 @@ class PipelineRegistry:
     def _infer_variant_from_signature(self, node: object) -> ExecutionVariant:
         """Infer execution variant from __call__ parameter count and stop attribute."""
         call_method = node.__call__  # type: ignore[operator]
-        hints = typing.get_type_hints(call_method)
+        hints = typing.get_type_hints(call_method, include_extras=True)
         param_count = len([k for k in hints if k != "return"])
         has_stop = self._has_stop_event(node)
 
@@ -252,7 +276,7 @@ class PipelineRegistry:
                 return ExecutionVariant.THREAD_SOURCE
             return ExecutionVariant.SOURCE
 
-        return_type = hints.get("return")
+        return_type = self._unwrap_annotated(hints["return"]) if "return" in hints else None
         returns_none = return_type is type(None)
 
         if has_stop and returns_none:
@@ -275,18 +299,54 @@ class PipelineRegistry:
         annotation: type | None,
         exclude: set[type],
     ) -> list[type]:
-        """Extract individual types from a union annotation.
+        """Extract individual types from a union annotation, unwrapping Annotated.
 
-        A | B | None -> [A, B]. Handles both typing.Union and | syntax.
+        ``Annotated[A, ...] | B | None`` -> ``[A, B]``.
+        Handles both ``typing.Union`` and ``|`` syntax.
         """
         if annotation is None:
             return []
         origin = typing.get_origin(annotation)
         if origin is types.UnionType or origin is typing.Union:
-            return [a for a in typing.get_args(annotation) if a not in exclude]
-        if annotation not in exclude:
-            return [annotation]
+            result: list[type] = []
+            for a in typing.get_args(annotation):
+                base = self._unwrap_annotated(a)
+                if base not in exclude:
+                    result.append(base)
+            return result
+        base = self._unwrap_annotated(annotation)
+        if base not in exclude:
+            return [base]
         return []
+
+    def _extract_return_type_metrics(self, annotation: type | None) -> None:
+        """Extract Counter/Gauge markers from Annotated return types."""
+        if annotation is None:
+            return
+        origin = typing.get_origin(annotation)
+        candidates: list[type]
+        if origin is types.UnionType or origin is typing.Union:
+            candidates = list(typing.get_args(annotation))
+        else:
+            candidates = [annotation]
+
+        for candidate in candidates:
+            if typing.get_origin(candidate) is not typing.Annotated:
+                continue
+            base_type: type = typing.get_args(candidate)[0]
+            markers = extract_metric_markers(candidate)
+            if markers:
+                existing = self._type_metrics.setdefault(base_type, [])
+                for marker in markers:
+                    if marker not in existing:
+                        existing.append(marker)
+
+    @staticmethod
+    def _unwrap_annotated(annotation: type) -> type:
+        """Unwrap ``Annotated[X, ...]`` to ``X``, or return annotation unchanged."""
+        if typing.get_origin(annotation) is typing.Annotated:
+            return typing.get_args(annotation)[0]  # type: ignore[no-any-return]
+        return annotation
 
     def _get_input_type(self, hints: dict[str, type]) -> type | None:
         """Extract the input event type from __call__ hints.

@@ -1,14 +1,18 @@
-"""Tests for MetricAggregator, Tracked marker, and InstrumentedNode protocol."""
+"""Tests for MetricAggregator, Tracked/Counter/Gauge markers, and InstrumentedNode protocol."""
 
 from __future__ import annotations
 
 import threading
+from typing import Annotated
 
 from triton_redis_connector.engine.metric_aggregator import (
+    Counter,
+    Gauge,
     InstrumentedNode,
     MetricAggregator,
     NodeMetricSnapshot,
     Tracked,
+    extract_metric_markers,
     extract_tracked,
 )
 
@@ -96,6 +100,32 @@ class TestTracked:
     def test_tracked_default_name(self) -> None:
         t = Tracked()
         assert t.name == ""
+
+
+class TestCounterGauge:
+    def test_extract_counter_from_annotated(self) -> None:
+        annotation = Annotated[int, Counter("my_count")]
+        markers = extract_metric_markers(annotation)
+        assert markers == [Counter("my_count")]
+
+    def test_extract_gauge_from_annotated(self) -> None:
+        annotation = Annotated[float, Gauge("my_gauge", field="value")]
+        markers = extract_metric_markers(annotation)
+        assert markers == [Gauge("my_gauge", field="value")]
+
+    def test_extract_mixed_markers(self) -> None:
+        annotation = Annotated[int, Counter("c"), Gauge("g", field="f")]
+        markers = extract_metric_markers(annotation)
+        assert len(markers) == 2
+        assert Counter("c") in markers
+        assert Gauge("g", field="f") in markers
+
+    def test_extract_no_markers_from_plain_type(self) -> None:
+        assert extract_metric_markers(int) == []
+
+    def test_extract_no_markers_from_annotated_without_metric(self) -> None:
+        annotation = Annotated[int, "just-a-string"]
+        assert extract_metric_markers(annotation) == []
 
 
 class TestInstrumentedNode:

@@ -33,6 +33,31 @@ class Tracked:
 
 
 @dataclass(frozen=True, slots=True)
+class Counter:
+    """Annotated marker: increment a named counter each time this result type is produced.
+
+    Usage on processor return types::
+
+        def __call__(self, event: bytes) -> Annotated[DecodedImage, Counter("decode_success")] | None:
+    """
+
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class Gauge:
+    """Annotated marker: extract a field value from the result and record it as a metric.
+
+    Usage on processor return types::
+
+        def __call__(self, event: X) -> Annotated[Y, Gauge("latency_ms", field="inference_time_ms")] | None:
+    """
+
+    name: str
+    field: str
+
+
+@dataclass(frozen=True, slots=True)
 class NodeMetricSnapshot:
     """Immutable snapshot of a node's accumulated metrics."""
 
@@ -122,3 +147,13 @@ def extract_tracked(annotation: Any) -> Tracked | None:  # noqa: ANN401
         if isinstance(arg, Tracked):
             return arg
     return None
+
+
+def extract_metric_markers(annotation: Any) -> list[Counter | Gauge]:  # noqa: ANN401
+    """Extract ``Counter`` and ``Gauge`` markers from ``Annotated`` metadata.
+
+    Returns empty list if the annotation is not ``Annotated`` or has no
+    metric markers.
+    """
+    args = typing.get_args(annotation)
+    return [arg for arg in args if isinstance(arg, (Counter, Gauge))]

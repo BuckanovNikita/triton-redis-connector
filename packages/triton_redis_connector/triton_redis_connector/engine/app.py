@@ -17,6 +17,7 @@ from loguru import logger
 
 from triton_redis_connector.engine.context import EventContext, reset_context, set_context
 from triton_redis_connector.engine.diagram import generate_mermaid
+from triton_redis_connector.engine.metric_aggregator import Counter
 from triton_redis_connector.engine.registry import INLINE_VARIANTS, SINK_VARIANTS, SOURCE_VARIANTS
 from triton_redis_connector.errors.models import ConnectorError, InferenceError, PreprocessingError
 from triton_redis_connector.protocols import (
@@ -30,8 +31,6 @@ from triton_redis_connector.protocols import (
     ThreadSink,
     ThreadSource,
 )
-
-_ERROR_EVENT_TYPES = (ConnectorError, InferenceError, PreprocessingError)
 
 if TYPE_CHECKING:
     from triton_redis_connector.config.schema import AppConfig
@@ -56,6 +55,26 @@ def _make_metric(
         timestamp_ms=timestamp_ms,
         tags=tags or {},
     )
+
+
+def _extract_gauge_value(result: object, field_name: str) -> float | None:
+    """Extract a numeric field from a result object by name.
+
+    Supports pydantic BaseModel (via model_dump) and plain objects.
+    Returns None if the field is missing or not numeric.
+    """
+    raw: object
+    try:
+        dump = result.model_dump  # type: ignore[attr-defined]
+        raw = dump().get(field_name)
+    except AttributeError:
+        try:
+            raw = vars(result)[field_name]
+        except (TypeError, KeyError):
+            return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    return None
 
 
 def _is_metric_event(obj: object) -> bool:
@@ -100,8 +119,7 @@ class Application:
         self._stats_per_node: dict[str, int] = {}
         self._stats_prev_per_node: dict[str, int] = {}
         self._stats_sink_writes: dict[str, int] = {}
-        self._stats_decode_success: int = 0
-        self._stats_decode_failure: int = 0
+        self._stats_counters: dict[str, int] = {}
         self._stats_timer: threading.Timer | None = None
         self._stats_interval: float = 0.0
 
@@ -219,8 +237,7 @@ class Application:
                             self._metric_buffer.record(result)
 
                     if result is not None and node.variant not in SINK_VARIANTS:
-                        self._track_decode_result(result)
-                        self._emit_inference_time_metric(result)
+                        self._apply_metric_rules(result)
                         child_envelope = envelope.derive(result)
                         self._route_event(result, dispatch_order, envelope=child_envelope)
         finally:
@@ -239,21 +256,28 @@ class Application:
             ),
         )
 
-    def _emit_inference_time_metric(self, result: object) -> None:
-        """Emit inference_time_ms metric from DetectionResult if available."""
-        if self._metric_buffer is None:
-            return
-        from triton_redis_connector.engine.events import DetectionResult  # noqa: PLC0415
+    def _apply_metric_rules(self, result: object) -> None:
+        """Apply metric rules declared via Annotated markers on processor return types.
 
-        if isinstance(result, DetectionResult):
-            self._metric_buffer.record(
-                _make_metric(
-                    component_name=self._config.app_name,
-                    measure="inference_time_ms",
-                    value=result.inference_time_ms,
-                    timestamp_ms=int(time.time() * 1000),
-                ),
-            )
+        Counters are accumulated in ``_stats_counters`` for periodic emission.
+        Gauges are emitted immediately per-event to the metric buffer.
+        Field access uses the declared ``field`` name from the ``Gauge`` annotation.
+        """
+        rules = self._registry.get_type_metrics(type(result))
+        for rule in rules:
+            if isinstance(rule, Counter):
+                self._stats_counters[rule.name] = self._stats_counters.get(rule.name, 0) + 1
+            elif self._metric_buffer is not None:
+                value: float | None = _extract_gauge_value(result, rule.field)
+                if value is not None:
+                    self._metric_buffer.record(
+                        _make_metric(
+                            component_name=self._config.app_name,
+                            measure=rule.name,
+                            value=value,
+                            timestamp_ms=int(time.time() * 1000),
+                        ),
+                    )
 
     def _emit_node_processing_metric(self, node_name: str, elapsed_ms: float) -> None:
         """Emit per-call node_processing_ms metric for inline nodes."""
@@ -268,15 +292,6 @@ class Application:
                 tags={"node": node_name},
             ),
         )
-
-    def _track_decode_result(self, result: object) -> None:
-        """Track decode success/failure from processor results."""
-        from triton_redis_connector.engine.events import DecodedImage  # noqa: PLC0415
-
-        if isinstance(result, DecodedImage):
-            self._stats_decode_success += 1
-        elif isinstance(result, _ERROR_EVENT_TYPES) and isinstance(result, PreprocessingError):
-            self._stats_decode_failure += 1
 
     def _log_error_event(self, event: object) -> None:
         """Log error events in the main thread and optionally stop on error."""
@@ -348,14 +363,22 @@ class Application:
             ("stats_processed", float(self._stats_processed)),
             ("stats_in_progress", float(self._stats_in_progress)),
             ("stats_errors", float(self._stats_errors)),
-            ("decode_success", float(self._stats_decode_success)),
-            ("decode_failure", float(self._stats_decode_failure)),
         ]:
             self._metric_buffer.record(
                 _make_metric(
                     component_name=app_name,
                     measure=measure,
                     value=value,
+                    timestamp_ms=timestamp_ms,
+                ),
+            )
+
+        for counter_name in sorted(self._registry.all_counter_names):
+            self._metric_buffer.record(
+                _make_metric(
+                    component_name=app_name,
+                    measure=counter_name,
+                    value=float(self._stats_counters.get(counter_name, 0)),
                     timestamp_ms=timestamp_ms,
                 ),
             )

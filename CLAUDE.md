@@ -88,11 +88,13 @@ All infrastructure runs via the devcontainer compose file.
 
 ## Metrics Policy
 
-- Every pipeline node is automatically instrumented for `node_events_total`, `node_events_interval`, `node_processing_ms`, `node_errors` via `MetricAggregator`
-- Use `Annotated[ProcessorType, Tracked("name")]` when registering parallel nodes to enable per-call metric collection in multi-threaded/multi-process wrappers
-- When adding new error event types: add to `_ERROR_EVENT_TYPES` in `engine/app.py`
-- When adding new metrics: emit in `_log_stats` for ALL registered nodes (zero-value guarantee — idle nodes must emit 0)
-- Custom metrics use `_make_metric()` + `self._metric_buffer.record()` pattern in `engine/app.py`
+**App must be abstracted from domain metrics.** No domain event types (DecodedImage, DetectionResult, etc.) in `engine/app.py`.
+
+- **Annotated on return types**: Declare metrics via `Annotated[ReturnType, Counter("name")]` or `Annotated[ReturnType, Gauge("name", field="field")]` on processor `__call__` return types. The framework extracts and applies rules automatically.
+- **Tracked on wrappers**: Use `Annotated[ProcessorType, Tracked("name")]` when registering parallel nodes to enable per-call metric collection via `MetricAggregator`
+- **Zero-value guarantee**: `_log_stats` emits all registered Counter names (from `registry.all_counter_names`) even if no events matched — idle counters emit 0
+- **No domain imports in engine/app.py**: App uses `registry.get_type_metrics(type(result))` to apply rules generically
+- When adding new metrics: annotate the processor's return type, framework does the rest
 - Update metrics table in `README.md` (section "Метрики") when adding new metrics
 
 ## Testing Policy

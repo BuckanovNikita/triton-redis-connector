@@ -7,11 +7,13 @@ concurrency is handled by framework wrappers (ThreadedProcessor).
 from __future__ import annotations
 
 import time
+from typing import Annotated
 
 from loguru import logger
 
 from triton_redis_connector.config.schema import DecoderType
 from triton_redis_connector.engine.events import DecodedImage
+from triton_redis_connector.engine.metric_aggregator import Counter
 from triton_redis_connector.errors.models import PreprocessingError
 from triton_redis_connector.preprocessing.decoder import OpenCVDecoder, TurboJPEGDecoder
 
@@ -35,7 +37,14 @@ class ImageDecodeProcessor:
             self._decoder = OpenCVDecoder()
         self._decoder_type = decoder_type
 
-    def __call__(self, event: bytes) -> DecodedImage | PreprocessingError | None:
+    def __call__(
+        self,
+        event: bytes,
+    ) -> (
+        Annotated[DecodedImage, Counter("decode_success")]
+        | Annotated[PreprocessingError, Counter("decode_failure")]
+        | None
+    ):
         """Decode raw image bytes into a DecodedImage event."""
         try:
             image = self._decoder.decode(event)
