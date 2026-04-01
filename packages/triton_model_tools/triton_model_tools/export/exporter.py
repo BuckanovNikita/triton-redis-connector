@@ -15,6 +15,7 @@ from triton_model_tools.models import (
     EXPORT_FORMAT_TO_PLATFORM,
     DynamicBatchingConfig,
     ExportFormat,
+    OptimizationConfig,
     TritonDataType,
     TritonModelConfig,
     TritonTensorSpec,
@@ -85,13 +86,14 @@ def _strip_batch_dim(specs: list[TritonTensorSpec]) -> list[TritonTensorSpec]:
     ]
 
 
-def _export_onnx(
+def _export_onnx(  # noqa: PLR0913
     variant: YoloModelVariant,
     repository_root: Path,
     *,
     half: bool = False,
     enable_dynamic_batching: bool = False,
     max_batch_size: int = 8,
+    trt_acceleration: bool = False,
 ) -> Path:
     """Export a YOLO model to ONNX and build its Triton repository entry.
 
@@ -101,6 +103,7 @@ def _export_onnx(
         half: If True, export ONNX model in FP16 precision.
         enable_dynamic_batching: If True, configure Triton dynamic batching.
         max_batch_size: Maximum batch size when dynamic batching is enabled.
+        trt_acceleration: If True, add TensorRT execution accelerator to config.
 
     Returns:
         Path to the created Triton model directory.
@@ -134,6 +137,11 @@ def _export_onnx(
         dynamic_batching = DynamicBatchingConfig()
         logger.info("Dynamic batching enabled: max_batch_size={}", max_batch_size)
 
+    optimization: OptimizationConfig | None = None
+    if trt_acceleration:
+        optimization = OptimizationConfig(trt_acceleration=True)
+        logger.info("TensorRT execution accelerator enabled for ONNX model")
+
     config = TritonModelConfig(
         name=variant.name,
         platform=EXPORT_FORMAT_TO_PLATFORM[ExportFormat.ONNX],
@@ -141,6 +149,7 @@ def _export_onnx(
         outputs=outputs,
         max_batch_size=effective_max_batch_size,
         dynamic_batching=dynamic_batching,
+        optimization=optimization,
     )
 
     model_dir = build_model_directory(
@@ -278,6 +287,7 @@ def export_model(  # noqa: PLR0913
     half: bool = False,
     enable_dynamic_batching: bool = False,
     max_batch_size: int = 8,
+    trt_acceleration: bool = False,
 ) -> list[Path]:
     """Export a single YOLO model in the requested format(s) and build Triton entries.
 
@@ -289,6 +299,7 @@ def export_model(  # noqa: PLR0913
             for TensorRT defaults to FP16 regardless of this flag.
         enable_dynamic_batching: If True, configure Triton dynamic batching.
         max_batch_size: Maximum batch size when dynamic batching is enabled.
+        trt_acceleration: If True, add TensorRT execution accelerator to ONNX config.
 
     Returns:
         List of paths to created Triton model directories.
@@ -303,6 +314,7 @@ def export_model(  # noqa: PLR0913
                 half=half,
                 enable_dynamic_batching=enable_dynamic_batching,
                 max_batch_size=max_batch_size,
+                trt_acceleration=trt_acceleration,
             )
         )
     if fmt in ("tensorrt", "all"):

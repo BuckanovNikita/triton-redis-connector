@@ -52,6 +52,7 @@ class OptimizationConfig(BaseModel):
 
     graph_level: int = -1
     cuda_graphs: bool = False
+    trt_acceleration: bool = False
 
 
 class EnsembleStepMapping(BaseModel):

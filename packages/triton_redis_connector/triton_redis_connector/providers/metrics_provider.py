@@ -51,7 +51,7 @@ class MetricsProvider(Provider):
         metrics_config: MetricsConfig,
         buffer: MetricBuffer,
     ) -> TritonMetricsCollector:
-        import tritonclient.grpc as grpcclient  # noqa: PLC0415  # pyright: ignore[reportMissingTypeStubs]
+        import tritonclient.grpc as grpcclient  # noqa: PLC0415
 
         client: Any = grpcclient.InferenceServerClient(url=inference_config.grpc_url)
         return TritonMetricsCollector(

@@ -11,6 +11,7 @@ from triton_model_tools.benchmarks.perf_analyzer import (
     PerfAnalyzerResult,
     _build_perf_analyzer_command,
     _parse_perf_analyzer_csv,
+    is_perf_analyzer_available,
     run_perf_analyzer,
 )
 
@@ -78,9 +79,30 @@ class TestParseCsv:
             _parse_perf_analyzer_csv(bad_csv)
 
 
+class TestIsPerfAnalyzerAvailable:
+    @patch("triton_model_tools.benchmarks.perf_analyzer.shutil.which")
+    def test_available(self, mock_which: MagicMock) -> None:
+        mock_which.return_value = "/usr/bin/perf_analyzer"
+        assert is_perf_analyzer_available() is True
+
+    @patch("triton_model_tools.benchmarks.perf_analyzer.shutil.which")
+    def test_not_available(self, mock_which: MagicMock) -> None:
+        mock_which.return_value = None
+        assert is_perf_analyzer_available() is False
+
+
 class TestRunPerfAnalyzer:
+    @patch("triton_model_tools.benchmarks.perf_analyzer.is_perf_analyzer_available", return_value=False)
+    def test_raises_when_binary_missing(self, mock_avail: MagicMock) -> None:
+        _ = mock_avail
+        config = PerfAnalyzerConfig(model_name="yolo11s")
+        with pytest.raises(FileNotFoundError, match="not found on PATH"):
+            run_perf_analyzer(config)
+
     @patch("triton_model_tools.benchmarks.perf_analyzer.subprocess.run")
-    def test_successful_run(self, mock_run: MagicMock) -> None:
+    @patch("triton_model_tools.benchmarks.perf_analyzer.is_perf_analyzer_available", return_value=True)
+    def test_successful_run(self, mock_avail: MagicMock, mock_run: MagicMock) -> None:
+        _ = mock_avail
         mock_run.return_value = subprocess.CompletedProcess(
             args=["perf_analyzer"],
             returncode=0,
@@ -103,7 +125,9 @@ class TestRunPerfAnalyzer:
         assert call_args[1]["check"] is True
 
     @patch("triton_model_tools.benchmarks.perf_analyzer.subprocess.run")
-    def test_timeout_propagates(self, mock_run: MagicMock) -> None:
+    @patch("triton_model_tools.benchmarks.perf_analyzer.is_perf_analyzer_available", return_value=True)
+    def test_timeout_propagates(self, mock_avail: MagicMock, mock_run: MagicMock) -> None:
+        _ = mock_avail
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="perf_analyzer", timeout=300)
 
         config = PerfAnalyzerConfig(model_name="yolo11s")
@@ -112,7 +136,9 @@ class TestRunPerfAnalyzer:
             run_perf_analyzer(config)
 
     @patch("triton_model_tools.benchmarks.perf_analyzer.subprocess.run")
-    def test_nonzero_exit_raises(self, mock_run: MagicMock) -> None:
+    @patch("triton_model_tools.benchmarks.perf_analyzer.is_perf_analyzer_available", return_value=True)
+    def test_nonzero_exit_raises(self, mock_avail: MagicMock, mock_run: MagicMock) -> None:
+        _ = mock_avail
         mock_run.side_effect = subprocess.CalledProcessError(
             returncode=1,
             cmd="perf_analyzer",

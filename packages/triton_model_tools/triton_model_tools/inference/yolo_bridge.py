@@ -1,0 +1,52 @@
+"""Bridge YoloPostprocessor into the pipeline as a callable processor."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from triton_redis_connector.engine.events import DetectionResult
+
+if TYPE_CHECKING:
+    from triton_redis_connector.inference.request import InferenceOutput
+
+    from triton_model_tools.inference.postprocessing import YoloPostprocessor
+
+
+class YoloPostProcessorBridge:
+    """Bridges YoloPostprocessor output into a pipeline DetectionResult event.
+
+    Takes raw InferenceOutput from Triton, runs YOLO postprocessing
+    (NMS + confidence filtering), and produces a serializable DetectionResult.
+    """
+
+    def __init__(  # noqa: D107
+        self,
+        postprocessor: YoloPostprocessor,
+        *,
+        scale: float = 1.0,
+        pad_offset: tuple[int, int] = (0, 0),
+        conf_threshold: float = 0.25,
+        iou_threshold: float = 0.45,
+    ) -> None:
+        self._postprocessor = postprocessor
+        self._scale = scale
+        self._pad_offset = pad_offset
+        self._conf_threshold = conf_threshold
+        self._iou_threshold = iou_threshold
+
+    def __call__(self, output: InferenceOutput) -> DetectionResult:
+        """Run YOLO postprocessing and return a DetectionResult."""
+        detections = self._postprocessor.postprocess(
+            outputs=output.outputs,
+            scale=self._scale,
+            pad_offset=self._pad_offset,
+            conf_threshold=self._conf_threshold,
+            iou_threshold=self._iou_threshold,
+        )
+        detections_json = "[" + ",".join(d.model_dump_json() for d in detections) + "]"
+        return DetectionResult(
+            detections_json=detections_json,
+            model_name=output.model_name,
+            inference_time_ms=output.inference_time_ms,
+            num_detections=len(detections),
+        )

@@ -15,7 +15,10 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from triton_redis_connector.engine.metric_aggregator import (
     MetricAggregator,
@@ -61,7 +64,7 @@ def _extract_and_record_metrics(
 
 
 def _call_with_metrics(
-    inner: object,
+    inner: Callable[..., Any],
     event: object | None,
     aggregator: MetricAggregator | None,
     metric_recorder: MetricRecorder | None,
@@ -69,11 +72,11 @@ def _call_with_metrics(
 ) -> object:
     """Shared call logic: timing, aggregation, event-level metric extraction."""
     if aggregator is None and metric_recorder is None:
-        return inner(event) if event is not None else inner()  # type: ignore[operator]
+        return inner(event) if event is not None else inner()
 
     t0 = time.monotonic()
     try:
-        result: object = inner(event) if event is not None else inner()  # type: ignore[operator]
+        result: object = inner(event) if event is not None else inner()
     except Exception:
         if aggregator is not None:
             aggregator.record_call((time.monotonic() - t0) * 1000.0, is_error=True)
@@ -84,9 +87,9 @@ def _call_with_metrics(
         aggregator.record_call(elapsed_ms, is_empty=(result is None))
 
     if metric_recorder is not None and result is not None:
-        _extract_and_record_metrics(result, metric_recorder, component_name, elapsed_ms)  # pyright: ignore[reportUnknownArgumentType]
+        _extract_and_record_metrics(result, metric_recorder, component_name, elapsed_ms)
 
-    return result  # pyright: ignore[reportUnknownVariableType]
+    return result
 
 
 class DetachedThreadSource[TOut]:

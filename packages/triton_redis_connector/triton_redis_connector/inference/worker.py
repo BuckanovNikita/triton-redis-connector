@@ -10,7 +10,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import tritonclient.grpc as grpcclient  # pyright: ignore[reportMissingTypeStubs]
+import tritonclient.grpc as grpcclient
 
 from triton_redis_connector.errors.models import InferenceError  # noqa: TC001 — needed at runtime for get_type_hints
 from triton_redis_connector.inference.request import InferenceInput, InferenceOutput

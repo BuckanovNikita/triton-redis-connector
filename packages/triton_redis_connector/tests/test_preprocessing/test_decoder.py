@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import turbojpeg as _tjpeg  # pyright: ignore[reportMissingTypeStubs]
+import turbojpeg as _tjpeg
 from triton_redis_connector.preprocessing.decoder import OpenCVDecoder, TurboJPEGDecoder
 
 

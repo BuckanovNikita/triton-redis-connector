@@ -107,6 +107,12 @@ def build_parser(subparsers: SubParsers) -> None:
         help="Also generate rescale postprocess model",
     )
     convert_parser.add_argument(
+        "--trt-optimize",
+        action="store_true",
+        default=False,
+        help="Enable TensorRT execution accelerator for ONNX models in Triton config",
+    )
+    convert_parser.add_argument(
         "--image-dir",
         type=Path,
         default=None,
@@ -214,6 +220,7 @@ def run(args: argparse.Namespace) -> None:
         end2end=end2end,
         enable_dynamic_batching=args.dynamic_batching,
         max_batch_size=args.max_batch_size,
+        trt_acceleration=args.trt_optimize,
     )
 
     resolved_imgsz = (imgsz, imgsz) if isinstance(imgsz, int) else imgsz

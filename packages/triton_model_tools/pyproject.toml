@@ -25,6 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dali = ["nvidia-dali-cuda120>=1.35.0"]
+benchmarks = ["nvidia-ml-py>=12.0.0", "psutil>=6.0.0"]
 
 [tool.uv.sources]
 triton-shared-models = { workspace = true }

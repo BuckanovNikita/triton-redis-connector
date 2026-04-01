@@ -14,7 +14,7 @@ import threading
 import cv2
 import numpy as np
 import numpy.typing as npt
-import turbojpeg  # pyright: ignore[reportMissingTypeStubs]
+import turbojpeg
 
 
 class OpenCVDecoder:
@@ -54,10 +54,10 @@ class TurboJPEGDecoder:
     def __init__(self) -> None:  # noqa: D107
         self._local = threading.local()
 
-    def _get_decoder(self) -> turbojpeg.TurboJPEG:  # pyright: ignore[reportUnknownVariableType]
+    def _get_decoder(self) -> turbojpeg.TurboJPEG:
         if not hasattr(self._local, "decoder"):
             self._local.decoder = turbojpeg.TurboJPEG()  # type: ignore[no-untyped-call]
-        return self._local.decoder  # type: ignore[no-any-return]  # pyright: ignore[reportReturnType]
+        return self._local.decoder  # type: ignore[no-any-return]
 
     def decode(self, raw: bytes) -> npt.NDArray[np.uint8]:
         """Decode JPEG bytes into a BGR HWC uint8 numpy array.
@@ -72,7 +72,7 @@ class TurboJPEGDecoder:
 
         decoder = self._get_decoder()
         try:
-            image: npt.NDArray[np.uint8] | None = decoder.decode(  # type: ignore[no-untyped-call]  # pyright: ignore[reportUnknownMemberType]
+            image: npt.NDArray[np.uint8] | None = decoder.decode(  # type: ignore[no-untyped-call]
                 raw, pixel_format=turbojpeg.TJPF_BGR
             )
         except OSError as exc:

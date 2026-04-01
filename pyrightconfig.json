@@ -1,6 +1,8 @@
 {
     "pythonVersion": "3.12",
     "typeCheckingMode": "strict",
+    "venvPath": ".",
+    "venv": ".venv",
     "include": [
         "packages/triton_redis_connector/triton_redis_connector",
         "packages/triton_model_tools/triton_model_tools"
@@ -12,6 +14,7 @@
         "dist",
         "packages/triton_model_tools/triton_model_tools/export/scripts",
         "packages/triton_model_tools/triton_model_tools/benchmarks/fiftyone_export.py",
+        "packages/triton_model_tools/triton_model_tools/cli/compare_visual.py",
         "**/node_modules",
         "**/.*"
     ],

@@ -10,6 +10,7 @@ from triton_model_tools.inference import (
     YoloPostprocessor,
     YoloPreprocessor,
 )
+from triton_model_tools.inference.yolo_bridge import YoloPostProcessorBridge
 from triton_model_tools.models import (
     Detection,
     FolderInferenceResult,
@@ -23,6 +24,7 @@ __all__ = [
     "ImageDetectionResult",
     "TritonInferenceClient",
     "YoloModelVariant",
+    "YoloPostProcessorBridge",
     "YoloPostprocessor",
     "YoloPreprocessor",
 ]

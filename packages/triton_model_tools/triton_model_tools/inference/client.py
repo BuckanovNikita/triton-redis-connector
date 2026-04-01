@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import tritonclient.grpc as grpcclient  # pyright: ignore[reportMissingTypeStubs]
+import tritonclient.grpc as grpcclient
 
 if TYPE_CHECKING:
     import numpy.typing as npt

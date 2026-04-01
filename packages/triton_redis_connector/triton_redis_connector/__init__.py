@@ -14,6 +14,13 @@ from triton_redis_connector.engine.registry import (
     GraphNode,
     PipelineRegistry,
 )
+from triton_redis_connector.engine.shipped_processors import (
+    ClientPreprocessor,
+    DaliInferenceInputBuilder,
+    EnvelopeExtractor,
+    EventSerializer,
+    LogErrorSink,
+)
 from triton_redis_connector.engine.wrappers import (
     DetachedProcessSource,
     DetachedThreadProcessor,
@@ -63,17 +70,21 @@ from triton_redis_connector.providers import (
 __all__ = [
     "AppConfig",
     "Application",
+    "ClientPreprocessor",
     "ConfigProvider",
     "ConnectorProvider",
     "ConnectorScope",
     "Counter",
+    "DaliInferenceInputBuilder",
     "DetachedProcessSource",
     "DetachedThreadProcessor",
     "DetachedThreadSink",
     "DetachedThreadSource",
     "EngineProvider",
     "Envelope",
+    "EnvelopeExtractor",
     "EventContext",
+    "EventSerializer",
     "ExecutionVariant",
     "Gauge",
     "GraphNode",
@@ -83,6 +94,7 @@ __all__ = [
     "InferenceProvider",
     "LetterBoxPreprocessor",
     "LifecycleService",
+    "LogErrorSink",
     "MetricAggregator",
     "MetricRecorder",
     "MetricsProvider",

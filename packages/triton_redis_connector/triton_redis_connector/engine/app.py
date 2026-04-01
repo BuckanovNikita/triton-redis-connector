@@ -135,7 +135,7 @@ class Application:
             if self._shutdown.is_set():
                 break
             if node.variant in SOURCE_VARIANTS:
-                event: object = node.instance()  # type: ignore[operator]
+                event: object = node.instance()
                 if event is not None:
                     dispatched_any = True
                     envelope: Envelope[object] = event if isinstance(event, Envelope) else Envelope(payload=event)
@@ -172,7 +172,7 @@ class Application:
                 if event_type in node.input_types:
                     envelope.track_state("processing_start")
                     self._stats_in_progress += 1
-                    result: object = node.instance(event)  # type: ignore[operator]
+                    result: object = node.instance(event)
                     self._stats_in_progress -= 1
                     self._stats_per_node[node.name] = self._stats_per_node.get(node.name, 0) + 1
 
@@ -276,17 +276,17 @@ class Application:
         while not self._shutdown.is_set():
             try:
                 if node.variant in SOURCE_VARIANTS:
-                    result = cast("object", node.instance())  # type: ignore[operator]
+                    result = cast("object", node.instance())
                     if result is not None:
                         self._route_to_consumers(node, result)
                 elif node.variant in SINK_VARIANTS:
                     event = self._read_from_input_queue(node, timeout=0.1)
                     if event is not None:
-                        node.instance(event)  # type: ignore[operator]
+                        node.instance(event)
                 else:
                     event = self._read_from_input_queue(node, timeout=0.1)
                     if event is not None:
-                        result = cast("object", node.instance(event))  # type: ignore[operator]
+                        result = cast("object", node.instance(event))
                         if result is not None:
                             self._route_to_consumers(node, result)
             except (RuntimeError, ValueError, TypeError, OSError, queue.Full):

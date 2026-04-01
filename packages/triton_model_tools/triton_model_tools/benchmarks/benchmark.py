@@ -13,6 +13,7 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 from ultralytics import YOLO  # type: ignore[attr-defined]
 
+from triton_model_tools.benchmarks.memory import MemoryMonitor
 from triton_model_tools.benchmarks.stats import MILLISECONDS_PER_SECOND, compute_statistics
 from triton_model_tools.export.exporter import TENSORRT_NAME_SUFFIX
 from triton_model_tools.inference.client import TritonInferenceClient
@@ -59,6 +60,8 @@ class BenchmarkResult(BaseModel):
     p95_latency_ms: float = Field(ge=0.0)
     p99_latency_ms: float = Field(ge=0.0)
     num_images: int = Field(ge=0)
+    peak_vram_mb: float | None = None
+    peak_ram_mb: float | None = None
 
 
 class BenchmarkSuite(BaseModel):
@@ -97,6 +100,8 @@ class BenchmarkSuite(BaseModel):
             "p50_latency_ms",
             "p95_latency_ms",
             "p99_latency_ms",
+            "peak_vram_mb",
+            "peak_ram_mb",
         ]
 
         with path.open("w", newline="") as f:
@@ -115,6 +120,8 @@ class BenchmarkSuite(BaseModel):
                         "p50_latency_ms": f"{result.p50_latency_ms:.2f}",
                         "p95_latency_ms": f"{result.p95_latency_ms:.2f}",
                         "p99_latency_ms": f"{result.p99_latency_ms:.2f}",
+                        "peak_vram_mb": f"{result.peak_vram_mb:.1f}" if result.peak_vram_mb is not None else "",
+                        "peak_ram_mb": f"{result.peak_ram_mb:.1f}" if result.peak_ram_mb is not None else "",
                     }
                 )
 
@@ -164,21 +171,22 @@ def run_benchmark(config: BenchmarkConfig, image_dir: Path) -> BenchmarkResult:
             client.infer_raw(triton_model_name, warmup_tensor, output_names)
 
     latencies_ms: list[float] = []
-    for image_path in image_paths:
-        image = load_image(image_path)
+    with MemoryMonitor() as mem:
+        for image_path in image_paths:
+            image = load_image(image_path)
 
-        start = time.perf_counter()
-        tensor, scale, pad_offset = preprocessor.preprocess(image)
-        outputs = client.infer_raw(triton_model_name, tensor, output_names)
-        postprocessor.postprocess(
-            outputs,
-            scale,
-            pad_offset,
-            conf_threshold=config.conf_threshold,
-            iou_threshold=config.iou_threshold,
-        )
-        elapsed_ms = (time.perf_counter() - start) * MILLISECONDS_PER_SECOND
-        latencies_ms.append(elapsed_ms)
+            start = time.perf_counter()
+            tensor, scale, pad_offset = preprocessor.preprocess(image)
+            outputs = client.infer_raw(triton_model_name, tensor, output_names)
+            postprocessor.postprocess(
+                outputs,
+                scale,
+                pad_offset,
+                conf_threshold=config.conf_threshold,
+                iou_threshold=config.iou_threshold,
+            )
+            elapsed_ms = (time.perf_counter() - start) * MILLISECONDS_PER_SECOND
+            latencies_ms.append(elapsed_ms)
 
     total_s, avg_ms, throughput, p50, p95, p99 = compute_statistics(latencies_ms)
 
@@ -191,6 +199,11 @@ def run_benchmark(config: BenchmarkConfig, image_dir: Path) -> BenchmarkResult:
         throughput,
     )
 
+    if mem.peak_vram_mb is not None:
+        logger.info("Peak VRAM: {:.1f} MB", mem.peak_vram_mb)
+    if mem.peak_ram_mb is not None:
+        logger.info("Peak RAM: {:.1f} MB", mem.peak_ram_mb)
+
     return BenchmarkResult(
         config=config,
         total_time_s=total_s,
@@ -200,6 +213,8 @@ def run_benchmark(config: BenchmarkConfig, image_dir: Path) -> BenchmarkResult:
         p95_latency_ms=p95,
         p99_latency_ms=p99,
         num_images=len(latencies_ms),
+        peak_vram_mb=mem.peak_vram_mb,
+        peak_ram_mb=mem.peak_ram_mb,
     )
 
 

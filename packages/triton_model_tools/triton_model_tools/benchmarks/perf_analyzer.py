@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import shutil
 import subprocess
 from typing import Literal
 
@@ -13,6 +14,11 @@ from pydantic import BaseModel, ConfigDict, Field
 PERF_ANALYZER_COMMAND = "perf_analyzer"
 DEFAULT_TIMEOUT_SECONDS = 300
 FIRST_DATA_ROW_INDEX = 0
+
+
+def is_perf_analyzer_available() -> bool:
+    """Check whether the perf_analyzer binary is on PATH."""
+    return shutil.which(PERF_ANALYZER_COMMAND) is not None
 
 
 class PerfAnalyzerConfig(BaseModel):
@@ -121,6 +127,14 @@ def run_perf_analyzer(config: PerfAnalyzerConfig) -> PerfAnalyzerResult:
         ValueError: If CSV output cannot be parsed.
 
     """
+    if not is_perf_analyzer_available():
+        msg = (
+            f"{PERF_ANALYZER_COMMAND!r} binary not found on PATH. "
+            "Install the Triton SDK or run inside the Triton SDK container "
+            "(nvcr.io/nvidia/tritonserver:*-py3-sdk)."
+        )
+        raise FileNotFoundError(msg)
+
     cmd = _build_perf_analyzer_command(config)
     logger.info("Running perf_analyzer: {}", " ".join(cmd))
 

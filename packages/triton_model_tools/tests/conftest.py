@@ -26,7 +26,7 @@ def coco_image_dir() -> Path:
 def triton_client() -> Any:
     """Return a connected Triton gRPC client; skip test if Triton is down."""
     try:
-        import tritonclient.grpc as grpcclient  # pyright: ignore[reportMissingTypeStubs]
+        import tritonclient.grpc as grpcclient
 
         client: Any = grpcclient.InferenceServerClient(url="localhost:8001")
         if not client.is_server_live():

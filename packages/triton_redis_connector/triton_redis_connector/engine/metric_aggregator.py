@@ -189,5 +189,5 @@ def _get_class_attr(cls: type, name: str) -> list[object]:
         if name in klass.__dict__:
             val: object = klass.__dict__[name]
             if isinstance(val, list):
-                return list(val)  # pyright: ignore[reportUnknownArgumentType]
+                return list(val)
     return []

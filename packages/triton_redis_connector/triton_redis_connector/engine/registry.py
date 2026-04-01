@@ -10,7 +10,10 @@ from __future__ import annotations
 import types
 import typing
 from enum import StrEnum, auto
-from typing import Any, TypeVar, overload
+from typing import TYPE_CHECKING, Any, TypeVar, overload
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from loguru import logger
 
@@ -71,7 +74,7 @@ INLINE_VARIANTS = {
 class GraphNode:
     """A node in the processing graph with its execution variant and type info."""
 
-    def __init__(self, name: str, instance: object, variant: ExecutionVariant) -> None:  # noqa: D107
+    def __init__(self, name: str, instance: Callable[..., Any], variant: ExecutionVariant) -> None:  # noqa: D107
         self.name = name
         self.instance = instance
         self.variant = variant
@@ -104,10 +107,12 @@ class PipelineRegistry:
     def register(self, name: str, node: Source[Any] | Processor[Any, Any] | Sink[Any] | object) -> None:
         """Register a pipeline node by inspecting its __call__ type hints."""
         variant = self._detect_variant(node)
+        if not callable(node):
+            msg = f"Node {name!r} is not callable"
+            raise TypeError(msg)
         graph_node = GraphNode(name=name, instance=node, variant=variant)
 
-        call_method = node.__call__  # type: ignore[operator]
-        hints = typing.get_type_hints(call_method, include_extras=True)
+        hints = typing.get_type_hints(node.__call__, include_extras=True)
 
         if variant not in SOURCE_VARIANTS:
             input_type = self._get_input_type(hints)

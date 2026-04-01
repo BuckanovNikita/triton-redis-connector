@@ -86,6 +86,11 @@ optimization {
 {% if config.optimization.cuda_graphs %}
   cuda { graphs: true }
 {% endif %}
+{% if config.optimization.trt_acceleration %}
+  execution_accelerators {
+    gpu_execution_accelerator: [{ name: "tensorrt" }]
+  }
+{% endif %}
 }
 {% endif %}
 

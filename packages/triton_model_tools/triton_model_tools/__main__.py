@@ -11,13 +11,16 @@ from triton_model_tools.cli import (
     batch_benchmark,
     benchmark,
     compare_folders,
+    compare_visual,
     convert,
     download_coco,
     e2e_test,
     full_benchmark,
     infer,
+    local_infer,
     pipeline_benchmark,
     pipeline_predict,
+    populate_stream,
     predict,
     validate,
 )
@@ -33,6 +36,7 @@ def main() -> None:
 
     convert.build_parser(subparsers)
     infer.build_parser(subparsers)
+    local_infer.build_parser(subparsers)
     download_coco.build_parser(subparsers)
     benchmark.build_parser(subparsers)
     batch_benchmark.build_parser(subparsers)
@@ -41,7 +45,9 @@ def main() -> None:
     predict.build_parser(subparsers)
     pipeline_predict.build_parser(subparsers)
     compare_folders.build_parser(subparsers)
+    compare_visual.build_parser(subparsers)
     pipeline_benchmark.build_parser(subparsers)
+    populate_stream.build_parser(subparsers)
     validate.build_parser(subparsers)
 
     args = parser.parse_args()

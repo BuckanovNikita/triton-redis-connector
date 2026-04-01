@@ -1,6 +1,7 @@
-"""Triton client, YOLO pre/postprocessing, and batch inference."""
+"""Triton client, ONNX client, YOLO pre/postprocessing, and batch inference."""
 
 from triton_model_tools.inference.client import TritonInferenceClient
+from triton_model_tools.inference.onnx_inference import OnnxInferenceClient
 from triton_model_tools.inference.postprocessing import (
     DEFAULT_CONFIDENCE_THRESHOLD,
     DEFAULT_IOU_THRESHOLD,
@@ -17,6 +18,7 @@ __all__ = [
     "DEFAULT_IOU_THRESHOLD",
     "LETTERBOX_PAD_VALUE",
     "YOLO_NORMALIZE_DIVISOR",
+    "OnnxInferenceClient",
     "TritonInferenceClient",
     "YoloPostprocessor",
     "YoloPreprocessor",

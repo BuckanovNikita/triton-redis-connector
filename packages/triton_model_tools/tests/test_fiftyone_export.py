@@ -13,6 +13,9 @@ from triton_model_tools.benchmarks.fiftyone_export import (
 )
 from triton_model_tools.models.detection import Detection, ImageDetectionResult
 
+MOCK_DIMENSIONS = (640, 480)
+_DIMS_PATCH = "triton_model_tools.benchmarks.fiftyone_export._read_image_dimensions"
+
 
 def _sample_results() -> list[ImageDetectionResult]:
     return [
@@ -41,7 +44,10 @@ class TestExportToFiftyone:
         mock_dataset = MagicMock()
         mock_fo.Dataset.return_value = mock_dataset
 
-        with patch.dict(sys.modules, {"fiftyone": mock_fo}):
+        with (
+            patch.dict(sys.modules, {"fiftyone": mock_fo}),
+            patch(_DIMS_PATCH, return_value=MOCK_DIMENSIONS),
+        ):
             export_to_fiftyone(_sample_results(), "test-dataset")
 
         mock_fo.Dataset.assert_called_once_with(name="test-dataset", overwrite=True)
@@ -62,7 +68,10 @@ class TestExportToFiftyone:
             for i in range(3)
         ]
 
-        with patch.dict(sys.modules, {"fiftyone": mock_fo}):
+        with (
+            patch.dict(sys.modules, {"fiftyone": mock_fo}),
+            patch(_DIMS_PATCH, return_value=MOCK_DIMENSIONS),
+        ):
             export_to_fiftyone(results, "multi-image")
 
         samples_arg = mock_dataset.add_samples.call_args[0][0]
@@ -85,7 +94,10 @@ class TestLaunchFiftyoneApp:
         mock_session = MagicMock()
         mock_fo.launch_app.return_value = mock_session
 
-        with patch.dict(sys.modules, {"fiftyone": mock_fo}):
+        with (
+            patch.dict(sys.modules, {"fiftyone": mock_fo}),
+            patch(_DIMS_PATCH, return_value=MOCK_DIMENSIONS),
+        ):
             launch_fiftyone_app(_sample_results(), "launch-test")
 
         mock_fo.load_dataset.assert_called_once_with("launch-test")
