@@ -141,6 +141,7 @@ def _generate_postprocess_models(  # noqa: PLR0913
     generate_rescale: bool,
     generate_dali: bool,
     end2end: bool,
+    target_size: tuple[int, int],
 ) -> None:
     """Generate NMS, rescale, and DALI ensemble models after export."""
     nms_model_name: str | None = None
@@ -170,7 +171,7 @@ def _generate_postprocess_models(  # noqa: PLR0913
             build_ensemble_directory,
         )
 
-        dali_config = DaliPipelineConfig()
+        dali_config = DaliPipelineConfig(target_size=target_size)
         for model_dir in exported_dirs:
             effective_nms = None if end2end else nms_model_name
             build_ensemble_directory(
@@ -215,6 +216,7 @@ def run(args: argparse.Namespace) -> None:
         max_batch_size=args.max_batch_size,
     )
 
+    resolved_imgsz = (imgsz, imgsz) if isinstance(imgsz, int) else imgsz
     _generate_postprocess_models(
         repository_root,
         exported_dirs,
@@ -222,6 +224,7 @@ def run(args: argparse.Namespace) -> None:
         generate_rescale=args.rescale,
         generate_dali=args.dali_ensemble,
         end2end=end2end,
+        target_size=resolved_imgsz,
     )
 
     if args.image_dir is not None:

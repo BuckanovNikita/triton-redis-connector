@@ -5,12 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
-import pytest
 from triton_model_tools.export.exporter import (
     TENSORRT_NAME_SUFFIX,
     _export_onnx,
     _export_tensorrt,
-    export_all_models,
     export_model,
 )
 from triton_model_tools.models import (
@@ -275,73 +273,3 @@ class TestExportModel:
         names = {r.name for r in results}
         assert "yolo11s" in names
         assert f"yolo11s{TENSORRT_NAME_SUFFIX}" in names
-
-
-class TestExportAllModels:
-    def test_passes_format_to_export_model(self, tmp_path: Path) -> None:
-        repo_root = tmp_path / "repo"
-
-        with patch("triton_model_tools.export.exporter.export_model") as mock_export_model:
-            mock_export_model.return_value = [repo_root / "yolo11s_trt"]
-            results = export_all_models(
-                repository_root=repo_root,
-                model_names=["yolo11s"],
-                fmt="tensorrt",
-            )
-
-        assert mock_export_model.call_count == 1
-        call_kwargs = mock_export_model.call_args.kwargs
-        assert call_kwargs["fmt"] == "tensorrt"
-        assert len(results) == 1
-
-    def test_fmt_all_collects_all_results(self, tmp_path: Path) -> None:
-        repo_root = tmp_path / "repo"
-
-        with patch("triton_model_tools.export.exporter.export_model") as mock_export_model:
-            mock_export_model.return_value = [
-                repo_root / "yolo11s",
-                repo_root / f"yolo11s{TENSORRT_NAME_SUFFIX}",
-            ]
-            results = export_all_models(
-                repository_root=repo_root,
-                model_names=["yolo11s"],
-                fmt="all",
-            )
-
-        assert len(results) == 2
-
-    def test_default_fmt_is_onnx(self, tmp_path: Path) -> None:
-        repo_root = tmp_path / "repo"
-
-        with patch("triton_model_tools.export.exporter.export_model") as mock_export_model:
-            mock_export_model.return_value = [repo_root / "yolo11s"]
-            export_all_models(
-                repository_root=repo_root,
-                model_names=["yolo11s"],
-            )
-
-        call_kwargs = mock_export_model.call_args.kwargs
-        assert call_kwargs["fmt"] == "onnx"
-
-    def test_passes_half_to_export_model(self, tmp_path: Path) -> None:
-        repo_root = tmp_path / "repo"
-
-        with patch("triton_model_tools.export.exporter.export_model") as mock_export_model:
-            mock_export_model.return_value = [repo_root / "yolo11s"]
-            export_all_models(
-                repository_root=repo_root,
-                model_names=["yolo11s"],
-                half=True,
-            )
-
-        call_kwargs = mock_export_model.call_args.kwargs
-        assert call_kwargs["half"] is True
-
-    def test_unknown_model_name_raises_value_error(self, tmp_path: Path) -> None:
-        repo_root = tmp_path / "repo"
-
-        with pytest.raises(ValueError, match="Unknown model names"):
-            export_all_models(
-                repository_root=repo_root,
-                model_names=["nonexistent_model"],
-            )

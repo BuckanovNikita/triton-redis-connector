@@ -13,18 +13,14 @@ from triton_model_tools.export.repository import build_model_directory
 from triton_model_tools.models import (
     EXPORT_FORMAT_TO_FILENAME,
     EXPORT_FORMAT_TO_PLATFORM,
-    YOLO_MODELS,
     DynamicBatchingConfig,
     ExportFormat,
     TritonDataType,
     TritonModelConfig,
     TritonTensorSpec,
-    load_export_config,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from triton_model_tools.models.registry import YoloModelVariant
 
 ONNX_DTYPE_TO_TRITON: dict[int, TritonDataType] = {
@@ -319,70 +315,4 @@ def export_model(  # noqa: PLR0913
                 max_batch_size=max_batch_size,
             )
         )
-    return results
-
-
-def export_all_models(  # noqa: PLR0913
-    repository_root: Path,
-    model_names: Sequence[str] | None = None,
-    fmt: Literal["onnx", "tensorrt", "all"] = "onnx",
-    models_config: Path | None = None,
-    *,
-    half: bool = False,
-    enable_dynamic_batching: bool = False,
-    max_batch_size: int = 8,
-) -> list[Path]:
-    """Export YOLO models and build their Triton repository entries.
-
-    Args:
-        repository_root: Root path of the Triton model repository.
-        model_names: Optional list of model names to export.
-            If None, exports all registered models.
-        fmt: Export format - "onnx", "tensorrt", or "all" for both.
-        models_config: Optional path to a YAML file defining model variants.
-            If None, uses the built-in default models.
-        half: If True, export models in FP16 precision.
-        enable_dynamic_batching: If True, configure Triton dynamic batching.
-        max_batch_size: Maximum batch size when dynamic batching is enabled.
-
-    Returns:
-        List of paths to created Triton model directories.
-
-    """
-    all_variants = tuple(load_export_config(models_config)) if models_config is not None else YOLO_MODELS
-    variants = all_variants
-    if model_names is not None:
-        name_set = set(model_names)
-        variants = tuple(v for v in variants if v.name in name_set)
-        unknown = name_set - {v.name for v in variants}
-        if unknown:
-            known = ", ".join(v.name for v in all_variants)
-            msg = f"Unknown model names: {', '.join(sorted(unknown))}. Available: {known}"
-            raise ValueError(msg)
-
-    repository_root.mkdir(parents=True, exist_ok=True)
-    logger.info(
-        "Exporting {} model(s) to {} (format: {})",
-        len(variants),
-        repository_root,
-        fmt,
-    )
-
-    results: list[Path] = []
-    for variant in variants:
-        model_dirs = export_model(
-            variant,
-            repository_root,
-            fmt=fmt,
-            half=half,
-            enable_dynamic_batching=enable_dynamic_batching,
-            max_batch_size=max_batch_size,
-        )
-        results.extend(model_dirs)
-
-    logger.info(
-        "Export complete: {} model director(ies) ready in {}",
-        len(results),
-        repository_root,
-    )
     return results

@@ -14,13 +14,12 @@ from triton_model_tools.cli import (
     convert,
     download_coco,
     e2e_test,
-    export,
     full_benchmark,
     infer,
     pipeline_benchmark,
     pipeline_predict,
-    populate_repository,
     predict,
+    validate,
 )
 
 
@@ -32,7 +31,6 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    export.build_parser(subparsers)
     convert.build_parser(subparsers)
     infer.build_parser(subparsers)
     download_coco.build_parser(subparsers)
@@ -44,7 +42,7 @@ def main() -> None:
     pipeline_predict.build_parser(subparsers)
     compare_folders.build_parser(subparsers)
     pipeline_benchmark.build_parser(subparsers)
-    populate_repository.build_parser(subparsers)
+    validate.build_parser(subparsers)
 
     args = parser.parse_args()
 
