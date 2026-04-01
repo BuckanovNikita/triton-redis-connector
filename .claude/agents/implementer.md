@@ -17,6 +17,20 @@ and gotchas of every library in the stack. Learn WHAT to build from the user's t
 and `docs/design.md`. This file teaches you HOW to write correct code with this
 project's specific tools.
 
+## Triton Model Management
+
+**GPU memory is limited — never overload it with models.**
+
+- `model_repository/` — **live**, mounted into Triton at `/models`. Models here are loaded on GPU.
+- `model_repository_offline/` — **storage/staging**. Models moved here are unloaded from GPU.
+- To load a model: copy/move from `model_repository_offline/` → `model_repository/`
+- To unload: move from `model_repository/` → `model_repository_offline/`
+- Triton runs in **poll mode** (`--repository-poll-secs=10`) — **wait 10 seconds** after changes.
+- After completing work, **move models back to offline** to free GPU memory.
+- If a model breaks Triton (server stops responding), **stop immediately and ask the user to check Triton logs**.
+
+---
+
 ## After Writing Code — ALWAYS Run
 
 Run these in order. Fix all issues before considering the task done:
@@ -85,34 +99,32 @@ Rules:
 
 ## Import-Linter Architecture Contracts
 
-The root `pyproject.toml` enforces 5 import-linter contracts. Run `uv run lint-imports`
+The root `pyproject.toml` enforces 6 import-linter contracts. Run `uv run lint-imports`
 to check. Violating them also fails `uv run pre-commit run --all-files`. Know the rules:
 
 1. **connector-layers** (type: `layers`): Layer hierarchy in `triton_redis_connector`:
    ```
-   (connectors) | (inference) | (preprocessing) | (metrics)   ← top: domain modules
-   (engine)                                                    ← middle: orchestration
-   (config) | (errors)                                         ← low: shared config/errors
-   (protocols)                                                 ← leaf: pure contracts
+   (providers)                                                          ← top: DI
+   (connectors) | (inference) | (preprocessing) | (metrics) | (routers) ← domain
+   (engine)                                                             ← orchestration
+   (config) | (errors)                                                  ← shared
+   (protocols)                                                          ← leaf
    ```
-   Higher layers may import lower layers, never the reverse.
+   Allowed violation: `engine.app → metrics.collector` (lazy import).
 
-2. **Domain module independence**: `connectors`, `inference`, `preprocessing`, `metrics`
-   are on the same layer — they must NOT import each other. Cross-cutting communication
-   goes through the engine layer.
+2. **Domain module independence**: `connectors`, `inference`, `preprocessing`, `metrics`,
+   `routers` — siblings, must NOT import each other.
 
-3. **connector-no-model-tools** (type: `forbidden`): `triton_redis_connector` must NOT
-   import from `triton_model_tools`.
+3. **connector-no-model-tools**: `triton_redis_connector` ↛ `triton_model_tools`.
 
-4. **model-tools-no-connector** (type: `forbidden`): `triton_model_tools` must NOT
-   import from `triton_redis_connector`.
+4. **model-tools-no-connector**: `triton_model_tools` ↛ `triton_redis_connector`.
 
-5. **model-tools-layers** (type: `layers`):
+5. **shared-models-independence**: `triton_shared_models` ↛ `triton_redis_connector`
+   AND `triton_shared_models` ↛ `triton_model_tools`. Shared models is a leaf package.
+
+6. **model-tools-layers** (type: `layers`):
    ```
-   __main__    ← CLI entry point
-   exporter    ← export logic
-   repository  ← directory builder
-   models      ← leaf: data models
+   __main__ → cli → benchmarks → testing → inference | export → models (leaf)
    ```
 
 Before adding any cross-module import, verify it does not violate these contracts.
@@ -150,62 +162,25 @@ The framework has three primitives, each with execution mode variants:
 
 **Source** — produces events:
 - `Source`: inline, `__call__(self) -> Event | None`
-- `ThreadSource`: dedicated thread, `__call__(self) -> Event | None`, has `stop: threading.Event`
-- `ProcessSource`: dedicated process, `__call__(self) -> Event | None`, has `stop: threading.Event`
+- `ThreadSource`: dedicated thread, has `stop: threading.Event`
+- `ProcessSource`: dedicated OS process, has `stop: threading.Event`
 
 **Processor** — transforms events:
 - `Processor`: inline, `__call__(self, event) -> Event | None`
-- `ThreadProcessor`: dedicated thread, `__call__(self, event) -> Event | None`
-- `ThreadPoolProcessor`: thread pool (N workers), `__call__(self, event) -> Event | None`
-- `ProcessPoolProcessor`: process pool (N workers), `__call__(self, event) -> Event | None`
+- `ThreadProcessor`: dedicated thread
+- `ThreadPoolProcessor`: thread pool (N workers)
+- `ProcessPoolProcessor`: process pool (N workers)
 
 **Sink** — consumes events:
-- `Sink`: inline, `__call__(self, event) -> MetricEvent | None`
-- `ThreadSink`: dedicated thread, `__call__(self, event) -> MetricEvent | None`, has `stop: threading.Event`
+- `Sink`: inline, `__call__(self, event) -> Any | None`
+- `ThreadSink`: dedicated thread, has `stop: threading.Event`
 
-### Source Implementation
+### Pure Business Logic Pattern (current approach)
 
-Sources return events directly — no `emit` callback:
-
-```python
-from __future__ import annotations
-import threading
-from redis import Redis
-
-class RedisStreamSource:
-    def __init__(self, redis_client: Redis, stream: str, group: str, consumer: str) -> None:
-        self.redis = redis_client
-        self.stream = stream
-        self.group = group
-        self.consumer = consumer
-        self.stop = threading.Event()
-
-    def __call__(self) -> ImageEvent | None:
-        messages = self.redis.xreadgroup(
-            groupname=self.group,
-            consumername=self.consumer,
-            streams={self.stream: ">"},
-            count=1,
-            block=1000,
-        )
-        if not messages:
-            return None
-        stream_name, entries = messages[0]
-        msg_id, fields = entries[0]
-        return ImageEvent(message_id=msg_id, image_key=fields[b"image_key"].decode())
-```
-
-For `ThreadSource` and `ProcessSource`, the framework runs `__call__` in a loop
-in the dedicated thread/process, checking `stop` between iterations.
-
-### Processor Implementation
-
-Processors are pure transforms. Return `None` to filter/drop an event:
+Write pure processors with NO threading primitives. Framework wraps them:
 
 ```python
 from __future__ import annotations
-import numpy as np
-import numpy.typing as npt
 
 class ImagePreprocessor:
     def __init__(self, target_size: tuple[int, int]) -> None:
@@ -216,72 +191,84 @@ class ImagePreprocessor:
             return None
         tensor = self._resize_and_normalize(event.image_data)
         return TensorEvent(request_id=event.request_id, tensor=tensor)
-
-    def _resize_and_normalize(self, image: npt.NDArray[np.uint8]) -> npt.NDArray[np.float32]:
-        ...
 ```
 
-For pool variants (`ThreadPoolProcessor`, `ProcessPoolProcessor`), the framework
-manages N instances. Each instance has isolated state by default.
-
-### Sink Implementation
-
-Sinks consume events and optionally return a `MetricEvent`:
+Framework wraps at assembly time:
 
 ```python
-from __future__ import annotations
-import threading
-from redis import Redis
+from triton_redis_connector.engine.wrappers import DetachedThreadProcessor, MultiProcessProcessor
+from triton_redis_connector.engine.metric_aggregator import MetricAggregator
 
-class RedisResultSink:
-    def __init__(self, redis_client: Redis, stream: str) -> None:
-        self.redis = redis_client
-        self.stream = stream
-        self.stop = threading.Event()
-
-    def __call__(self, event: DetectionEvent) -> MetricEvent | None:
-        self.redis.xadd(
-            name=self.stream,
-            fields=event.to_redis_fields(),
-            maxlen=10000,
-            approximate=True,
-        )
-        return MetricEvent(name="results_written", value=1)
+wrapped = DetachedThreadProcessor(ImagePreprocessor(target_size=(640, 640)), aggregator=MetricAggregator())
 ```
+
+Wrappers in `engine/wrappers.py`:
+- `DetachedThreadSource[TOut]` → `THREAD_SOURCE`
+- `DetachedProcessSource[TOut]` → `PROCESS_SOURCE`
+- `DetachedThreadProcessor[TIn, TOut]` → `THREAD_PROCESSOR`
+- `ThreadedProcessor[TIn, TOut]` → `THREAD_POOL_PROCESSOR`
+- `MultiProcessProcessor[TIn, TOut]` → `PROCESS_POOL_PROCESSOR`
+- `DetachedThreadSink[TIn]` → `THREAD_SINK`
+
+Each wrapper adds `stop: threading.Event`, `variant` property (satisfies `WrappedNode` protocol),
+and optional `MetricAggregator` for per-call timing/error/empty tracking.
+
+**Deprecated**: `engine/bases.py` (abstract base classes) and `inference/retry.py`
+(async retry handler). Do NOT use for new code.
+
+### Composable Middleware
+
+Cross-cutting concerns compose via nesting in `engine/middleware.py`:
+
+```python
+from triton_redis_connector.engine.middleware import RetryMiddleware, ConcurrencyLimitMiddleware
+
+processor = RetryMiddleware(
+    ConcurrencyLimitMiddleware(inner_processor, max_concurrent=4),
+    max_attempts=3,
+    base_delay_s=0.1,
+    backoff_multiplier=4.0,
+    on_failure=error_handler,
+)
+```
+
+Both satisfy `Processor[TIn, TOut]` protocol. `RetryMiddleware` uses `time.sleep()` (safe in
+per-node threads). `ConcurrencyLimitMiddleware` drops events when semaphore times out.
+
+### EventContext via contextvars
+
+User code accesses per-event metadata via `current_context()`:
+
+```python
+from triton_redis_connector.engine.context import current_context
+
+def __call__(self, event: MyEvent) -> ResultEvent | None:
+    ctx = current_context()  # EventContext(message_id, source_stream, created_at)
+    ...
+```
+
+Framework sets/resets context before/after dispatch. Envelope is framework-internal only.
 
 ### Inference as ProcessPoolProcessor
 
-Triton inference is just a `ProcessPoolProcessor` — no special intercept pattern:
+`InferenceWorker` is pure `__call__` — no retry, no semaphore, no threading:
 
 ```python
 from __future__ import annotations
-import numpy as np
-import numpy.typing as npt
 
-class TritonInferenceProcessor:
+class InferenceWorker:
     def __init__(self, model_name: str, triton_url: str) -> None:
         self.model_name = model_name
         import tritonclient.grpc as grpcclient  # noqa: PLC0415
         self.client = grpcclient.InferenceServerClient(url=triton_url)
 
-    def __call__(self, event: TensorEvent) -> InferenceResultEvent:
-        import tritonclient.grpc as grpcclient  # noqa: PLC0415
-        input_tensor = grpcclient.InferInput("images", event.tensor.shape, "FP32")
-        input_tensor.set_data_from_numpy(event.tensor)
-        output = grpcclient.InferRequestedOutput("output0")
-        result = self.client.infer(
-            model_name=self.model_name,
-            inputs=[input_tensor],
-            outputs=[output],
-        )
-        return InferenceResultEvent(
-            request_id=event.request_id,
-            detections=result.as_numpy("output0"),
-        )
+    def __call__(self, event: InferenceInput) -> InferenceOutput | InferenceError | None:
+        ...
 ```
 
-Each process in the pool creates its own Triton gRPC client (connections are
-not fork-safe).
+`InferenceWorkerFactory` creates workers: `create_shared()` returns picklable
+`InferenceConfig`, `create_processor(shared)` creates worker with own gRPC client.
+Retry/concurrency handled by wrapping with middleware.
 
 ---
 
@@ -552,6 +539,27 @@ config = await triton_client.get_model_config("yolo11s")
 
 ---
 
+## triton_shared_models Package
+
+Leaf package shared by both `triton_redis_connector` and `triton_model_tools`.
+Import directly — it must NOT import from either consumer package.
+
+```python
+from triton_shared_models.preprocessing import LetterBoxPreprocessor, LETTERBOX_PAD_VALUE
+from triton_shared_models.triton_types import TritonDataType, ExportFormat, TritonTensorSpec
+from triton_shared_models.triton_config import TritonModelConfig, DynamicBatchingConfig
+```
+
+`LetterBoxPreprocessor` has constructor-only API:
+```python
+preprocessor = LetterBoxPreprocessor(target_size=(640, 640))
+tensor, scale, pad_offset = preprocessor.preprocess(image)
+```
+
+`triton_redis_connector.preprocessing.letterbox` re-exports from `triton_shared_models`.
+
+---
+
 ## Image Decoding — Single Decoder Config
 
 There is NO `DecoderDispatcher` and no magic-bytes detection. The decoder is
@@ -562,8 +570,8 @@ decoder: Literal["opencv", "turbojpeg"] = "opencv"
 decoder_pool_type: Literal["thread", "process"] = "thread"
 ```
 
-One decoder per pipeline, selected at config time. The pool type controls
-whether decoding runs in a `ThreadPoolExecutor` or `ProcessPoolExecutor`.
+One decoder per pipeline, selected at config time. `ImageDecodeProcessor` is
+pure business logic — no `stop` event, no threading. Framework wraps it.
 
 ---
 

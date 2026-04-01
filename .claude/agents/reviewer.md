@@ -44,6 +44,19 @@ Follow the checklist below, section by section.
 
 ---
 
+## Triton Model Management
+
+**GPU memory is limited — never overload it with models.**
+
+- `model_repository/` — **live**, mounted into Triton at `/models`. Models here are loaded on GPU.
+- `model_repository_offline/` — **storage/staging**. Models moved here are unloaded from GPU.
+- Triton runs in **poll mode** (`--repository-poll-secs=10`) — **wait 10 seconds** after changes.
+- After completing work, **move models back to offline** to free GPU memory.
+- If a model breaks Triton, **stop immediately and ask the user to check Triton logs**.
+- During review, verify that code under review does not load excessive models or forget to unload them.
+
+---
+
 ## Review Checklist
 
 ### 1. Type Safety
@@ -100,7 +113,7 @@ The framework defines 9 execution variants across 3 primitive roles:
 |---|---|---|
 | **Source** | `Source`, `ThreadSource`, `ProcessSource` | `__call__(self) -> Event \| None` |
 | **Processor** | `Processor`, `ThreadProcessor`, `ThreadPoolProcessor`, `ProcessPoolProcessor` | `__call__(self, event) -> Event \| None` |
-| **Sink** | `Sink`, `ThreadSink` | `__call__(self, event) -> MetricEvent \| None` |
+| **Sink** | `Sink`, `ThreadSink` | `__call__(self, event) -> Any \| None` |
 
 Verify each component:
 
@@ -108,19 +121,41 @@ Verify each component:
   pushing to queues. Flag any source that calls an external callback to emit events.
 - **Processors** accept an event and return `Event | None`. The `None` return
   filters (drops) the event. Flag processors that call sinks or sources directly.
-- **Sinks** accept an event and return `MetricEvent | None`. Flag sinks that
-  return arbitrary event types (only `MetricEvent` or `None` allowed).
+- **Sinks** accept an event and return `Any | None`. Flag sinks that
+  return arbitrary non-metric event types.
 - **No multi-method interfaces**: only `__call__` on components. Flag `.process()`,
   `.handle()`, `.run()`, `.emit()` methods on any execution variant.
 
+### Pure Business Logic + Framework Wrapping Pattern
+
+- **New code** should be pure business logic with NO `stop` event, NO threading
+  primitives, NO retry logic. Framework wraps via `engine/wrappers.py`.
+- **Flag** new processors/sources/sinks that contain `self.stop = threading.Event()` —
+  they should use wrappers instead.
+- **Wrappers** (`DetachedThreadSource`, `DetachedThreadProcessor`, `ThreadedProcessor`,
+  `MultiProcessProcessor`, `DetachedThreadSink`) add `stop`, `variant`, and optional
+  `MetricAggregator`. Verify wrappers satisfy `WrappedNode` protocol.
+- **Deprecated modules**: `engine/bases.py` and `inference/retry.py`. Flag any new
+  code that imports from these — should use wrappers + middleware instead.
+
+### Middleware Compliance
+
+- `RetryMiddleware` and `ConcurrencyLimitMiddleware` in `engine/middleware.py`.
+- Both satisfy `Processor[TIn, TOut]` protocol and compose via nesting.
+- Flag retry logic implemented inline in processors — should use `RetryMiddleware`.
+- Flag custom semaphore/lock patterns — should use `ConcurrencyLimitMiddleware`.
+
+### EventContext Usage
+
+- User code accesses metadata via `current_context()` from `engine/context.py`.
+- Flag any user code (processors/sources/sinks) that receives or returns `Envelope`.
+- Flag any user code that directly manipulates `_context_var`.
+
 ### Parallel Variant Stop Protocol
 
-- **Thread/Process variants** (`ThreadSource`, `ProcessSource`, `ThreadProcessor`,
-  `ThreadSink`) **MUST** have a `stop: threading.Event` field.
-- Flag any Thread/Process variant that uses a different stop mechanism (boolean flag,
-  custom signal, `None` sentinel on queue).
-- The `stop` event must be checked in the variant's main loop or before blocking
-  operations. Flag variants that ignore `stop`.
+- **Framework wrappers** handle `stop: threading.Event` — user code should NOT.
+- For legacy code with direct `stop`, the `stop` event must be checked in the
+  variant's main loop or before blocking operations. Flag variants that ignore `stop`.
 
 ### Process-Safe Shared State
 
@@ -158,14 +193,31 @@ Verify each component:
 
 ### Inference is ProcessPoolProcessor
 
-- Inference is a user-defined `ProcessPoolProcessor` (e.g. `TritonInferenceProcessor`)
-  — there is NO framework-level intercept pattern, no magic `InferenceInput` return
-  convention.
-- Flag any preprocessor that returns an `InferenceInput` type expecting
-  framework-level interception. Preprocessors return their output event type
-  directly; the next node in the graph handles inference.
-- Flag any direct `triton_client.infer()` or `triton_client.async_infer()`
-  call from outside a ProcessPoolProcessor's `__call__`.
+- `InferenceWorker` is pure `__call__`: takes `InferenceInput`, returns
+  `InferenceOutput | InferenceError | None`. No retry, no semaphore, no threading.
+- `InferenceWorkerFactory` provides `create_shared()` / `create_processor(shared)`.
+- Retry/concurrency handled by middleware wrapping, NOT inside the worker.
+- Flag any retry logic, semaphore, or threading code inside `InferenceWorker`.
+- Flag any direct `triton_client.infer()` call outside a ProcessPoolProcessor's `__call__`.
+- Flag any import from deprecated `inference/retry.py` — should use `RetryMiddleware`.
+
+### Metric Marker Review
+
+- **Counter**: Declared via `_metrics_ = [Counter("name")]` on event CLASSES.
+  Flag counters declared on processor return types or outside event classes.
+- **Gauge**: Declared via `Annotated[float, Gauge("name")]` on event FIELDS.
+  Flag gauges on non-float fields.
+- **GroupBy**: Declared via `Annotated[str, GroupBy("name", window_s=60)]` on event FIELDS.
+  Flag GroupBy on non-string fields.
+- **Tracked**: Declared via `Annotated[ProcessorType, Tracked("name")]` on node types
+  for automatic per-call metrics via `MetricAggregator`.
+- **Counter/Gauge/GroupBy** must live in `protocols.py` (leaf layer). **Tracked** lives
+  in `engine/metric_aggregator.py`.
+- **MetricEvent** has only 3 fields: `component_name`, `measure`, `value`. Flag any
+  MetricEvent with timestamp, tags, or extra fields.
+- **No domain imports in app.py**: `engine/app.py` must NOT import domain event types.
+  App scans metrics generically via `extract_event_counters()`, `extract_field_gauges()`.
+- Verify `README.md` "Метрики" section is updated when new metrics are added.
 
 ### Envelope Must Not Leak
 
@@ -198,15 +250,20 @@ Verify each component:
 
 ### Import-Linter Architecture Contracts
 
-Run `uv run lint-imports` to verify. The root `pyproject.toml` enforces 5 contracts:
+Run `uv run lint-imports` to verify. The root `pyproject.toml` enforces 6 contracts:
 
-1. **connector-layers**: `domain modules (connectors | inference | preprocessing | metrics)`
-   → `engine` → `config | errors` → `protocols` (leaf). Flag any reverse import.
+1. **connector-layers**: `providers` → `domain modules (connectors | inference |
+   preprocessing | metrics | routers)` → `engine` → `config | errors` → `protocols` (leaf).
+   Flag any reverse import. Allowed: `engine.app → metrics.collector` (lazy import).
 2. **Domain independence**: modules on the same layer (connectors, inference, preprocessing,
-   metrics) must NOT import each other. Flag any cross-domain import.
+   metrics, routers) must NOT import each other. Flag any cross-domain import.
 3. **connector-no-model-tools**: `triton_redis_connector` ↛ `triton_model_tools`.
 4. **model-tools-no-connector**: `triton_model_tools` ↛ `triton_redis_connector`.
-5. **model-tools-layers**: `__main__` → `exporter` → `repository` → `models`. Flag reverse.
+5. **shared-models-independence**: `triton_shared_models` ↛ `triton_redis_connector` AND
+   `triton_shared_models` ↛ `triton_model_tools`. Flag any import from shared_models to
+   either consumer package.
+6. **model-tools-layers**: `__main__` → `cli` → `benchmarks` → `testing` →
+   `inference | export` → `models`. Flag reverse.
 
 Additionally verify:
 - No circular imports (check with `mypy` or manual trace)

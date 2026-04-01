@@ -106,18 +106,66 @@ between iterations.
 
 ---
 
+## Pure Business Logic + Framework Wrapping
+
+Processors, sources, and sinks are **pure business logic** — no `stop` event,
+no threading primitives, no retry logic. The framework wraps them at assembly time:
+
+- `DetachedThreadSource(inner)` → adds `stop`, `variant`, metric aggregation
+- `DetachedThreadProcessor(inner)` → dedicated thread wrapper
+- `ThreadedProcessor(inner)` → thread pool wrapper
+- `MultiProcessProcessor(inner)` → process pool wrapper
+- `DetachedThreadSink(inner)` → thread sink wrapper
+
+Wrappers live in `engine/wrappers.py`. Each wrapper:
+1. Adds `stop: threading.Event` and `variant` property (satisfying `WrappedNode` protocol)
+2. Optionally accepts a `MetricAggregator` for per-call timing/error/empty counting
+3. Delegates `__call__` to the inner pure function
+
+**Deprecated**: `engine/bases.py` (abstract base classes with stop boilerplate) and
+`inference/retry.py` (async retry handler) — replaced by wrappers + middleware.
+
+---
+
+## Composable Middleware
+
+Cross-cutting concerns compose via middleware nesting in `engine/middleware.py`:
+
+- `RetryMiddleware(inner, max_attempts, base_delay_s, backoff_multiplier)` — exponential backoff
+- `ConcurrencyLimitMiddleware(inner, max_concurrent, acquire_timeout)` — semaphore-based
+
+Compose: `RetryMiddleware(ConcurrencyLimitMiddleware(inner_processor))`
+
+Both satisfy `Processor[TIn, TOut]` protocol. Stateless and thread-safe.
+
+---
+
+## EventContext via contextvars
+
+User code accesses per-event metadata via `current_context()` from `engine/context.py`:
+
+```python
+from triton_redis_connector.engine.context import current_context
+ctx = current_context()  # → EventContext(message_id, source_stream, created_at)
+```
+
+The framework sets context before dispatch via `set_context()` / `reset_context()`.
+This replaces Envelope access in user code — Envelope remains framework-internal only.
+
+---
+
 ## Inference as ProcessPoolProcessor
 
 There is NO framework-level intercept pattern. Triton inference is a user-defined
-`ProcessPoolProcessor` (e.g. `TritonInferenceProcessor`):
+`ProcessPoolProcessor` (e.g. `InferenceWorker`):
 
-- A preprocessing `Processor` transforms raw input into tensor-ready data.
-- The inference `ProcessPoolProcessor` receives tensor data, calls Triton, returns results.
-- A postprocessing `Processor` transforms inference output into domain objects.
+- `InferenceWorker` is pure `__call__`: takes `InferenceInput`, calls Triton gRPC,
+  returns `InferenceOutput | InferenceError | None`. No retry, no semaphore, no threading.
+- `InferenceWorkerFactory` creates workers via `create_shared()` (returns picklable config)
+  and `create_processor(shared)` (creates worker with its own gRPC client).
+- Retry/concurrency handled by wrapping: `RetryMiddleware(MultiProcessProcessor(worker))`
 
-This keeps the architecture uniform — inference follows the same execution variant
-model as every other pipeline stage. Each process in the pool creates its own
-Triton gRPC client (connections are not fork-safe).
+Each process in the pool creates its own Triton gRPC client (connections are not fork-safe).
 
 ---
 
@@ -462,6 +510,7 @@ without modifying Application).
 - GPU allocation: `deploy.resources.reservations.devices` with nvidia driver.
   `shm_size: 1g` for Triton model loading.
 - Shared volumes: `../model_repository:/models` for Triton model access.
+  `model_repository_offline/` exists for offline storage of unused models.
 - SDK container (for perf_analyzer): shares workspace and model_repository
   volumes, reaches Triton via hostname `triton`.
 
@@ -469,29 +518,58 @@ without modifying Application).
 
 ## Import-Linter Architecture Contracts
 
-The root `pyproject.toml` enforces 5 import-linter contracts via `uv run lint-imports`.
+The root `pyproject.toml` enforces 6 import-linter contracts via `uv run lint-imports`.
 These are verified in pre-commit. Architectural decisions MUST respect these boundaries:
 
 1. **connector-layers**: Layer hierarchy in `triton_redis_connector`:
-   `domain modules (connectors | inference | preprocessing | metrics)` →
-   `engine` → `config | errors` → `protocols` (leaf).
+   ```
+   providers (top)
+   ↓
+   connectors | inference | preprocessing | metrics | routers
+   ↓
+   engine
+   ↓
+   config | errors
+   ↓
+   protocols (leaf)
+   ```
    Higher layers may import lower layers, never the reverse.
+   Allowed violation: `engine.app → metrics.collector` (lazy import).
 
 2. **Domain module independence**: `connectors`, `inference`, `preprocessing`,
-   `metrics` must NOT import each other. Cross-cutting communication goes
-   through the engine layer.
+   `metrics`, `routers` are siblings — must NOT import each other.
 
-3. **connector-no-model-tools**: `triton_redis_connector` must NOT import from
-   `triton_model_tools`.
+3. **connector-no-model-tools**: `triton_redis_connector` ↛ `triton_model_tools`.
 
-4. **model-tools-no-connector**: `triton_model_tools` must NOT import from
-   `triton_redis_connector`.
+4. **model-tools-no-connector**: `triton_model_tools` ↛ `triton_redis_connector`.
 
-5. **model-tools-layers**: `__main__` → `exporter` → `repository` → `models`.
-   Never the reverse.
+5. **shared-models-independence**: `triton_shared_models` ↛ `triton_redis_connector`
+   AND `triton_shared_models` ↛ `triton_model_tools`. Shared models is a leaf package.
+
+6. **model-tools-layers**:
+   ```
+   __main__ → cli → benchmarks → testing → inference | export → models (leaf)
+   ```
 
 When designing new modules, determine which layer they belong to and verify
 import directions comply. New packages may need new contracts added.
+
+---
+
+## triton_shared_models Package
+
+A leaf package that both `triton_redis_connector` and `triton_model_tools` may depend on,
+but which must NOT import from either (enforced by `shared-models-independence` contract).
+
+Contains:
+- `LetterBoxPreprocessor` — ultralytics-compliant preprocessing (resize, pad 114, BGR→RGB,
+  HWC→CHW, /255, float32, batch). Constructor-only API: `__init__(target_size)`,
+  `preprocess(image) → (tensor, scale, pad_offset)`.
+- `TritonModelConfig` — pydantic model for config.pbtxt generation (Jinja2 rendering).
+- `TritonDataType`, `ExportFormat`, `TritonTensorSpec` — shared Triton type definitions.
+- `DynamicBatchingConfig`, `OptimizationConfig`, `EnsembleStep` — Triton config models.
+
+When designing shared types needed by both packages, place them in `triton_shared_models`.
 
 ---
 
@@ -508,6 +586,20 @@ The architect is the owner of both design and planning documents:
 After any architectural decision, determine which document(s) need updating and include
 the specific changes in your output. If a decision contradicts existing docs, call it out
 explicitly — never leave docs silently out of sync with decisions.
+
+---
+
+## Triton Model Management
+
+**GPU memory is limited — never overload it with models.**
+
+- `model_repository/` — **live**, mounted into Triton at `/models`. Models here are loaded on GPU.
+- `model_repository_offline/` — **storage/staging**. Models moved here are unloaded from GPU.
+- To load a model: copy/move from `model_repository_offline/` → `model_repository/`
+- To unload: move from `model_repository/` → `model_repository_offline/`
+- Triton runs in **poll mode** (`--repository-poll-secs=10`) — **wait 10 seconds** after changes.
+- After completing work, **move models back to offline** to free GPU memory.
+- If a model breaks Triton (server stops responding), **stop immediately and ask the user to check Triton logs**.
 
 ---
 

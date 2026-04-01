@@ -37,6 +37,20 @@ packages/
         test_<feature>.py
 ```
 
+## Triton Model Management
+
+**GPU memory is limited — never overload it with models.**
+
+- `model_repository/` — **live**, mounted into Triton at `/models`. Models here are loaded on GPU.
+- `model_repository_offline/` — **storage/staging**. Models moved here are unloaded from GPU.
+- To load a model for testing: copy/move from `model_repository_offline/` → `model_repository/`
+- To unload: move from `model_repository/` → `model_repository_offline/`
+- Triton runs in **poll mode** (`--repository-poll-secs=10`) — **wait 10 seconds** after changes.
+- After completing work, **move models back to offline** to free GPU memory.
+- If a model breaks Triton, **stop immediately and ask the user to check Triton logs**.
+
+---
+
 ## Commands
 
 ```bash
@@ -115,21 +129,26 @@ The framework has 9 execution variants across 3 primitive roles:
 |---|---|---|
 | **Source** | `Source`, `ThreadSource`, `ProcessSource` | `__call__(self) -> Event \| None` |
 | **Processor** | `Processor`, `ThreadProcessor`, `ThreadPoolProcessor`, `ProcessPoolProcessor` | `__call__(self, event) -> Event \| None` |
-| **Sink** | `Sink`, `ThreadSink` | `__call__(self, event) -> MetricEvent \| None` |
+| **Sink** | `Sink`, `ThreadSink` | `__call__(self, event) -> Any \| None` |
 
 Key properties:
 - Sources return events directly (no `emit` callback)
-- Thread/Process variants have a `stop: threading.Event` field
-- Parallel variants own their queues; the framework wires them at graph build
+- **Pure business logic pattern**: processors have NO `stop`, NO threading primitives
+- Framework wraps via `engine/wrappers.py`: `DetachedThreadSource`, `DetachedThreadProcessor`,
+  `ThreadedProcessor`, `MultiProcessProcessor`, `DetachedThreadSink`
+- Each wrapper adds `stop: threading.Event`, `variant` property, optional `MetricAggregator`
 - No primitive raises exceptions — errors go to error queues as typed events
-- Inference is just a `ProcessPoolProcessor` (no special intercept pattern)
+- Inference is `InferenceWorker` (pure `__call__`) wrapped by `MultiProcessProcessor`
 - Factory pattern for shared state: `create_shared() -> SharedContext`, `create_processor(shared) -> Processor`
+- **Deprecated**: `engine/bases.py`, `inference/retry.py` — do NOT test or import
+- **Middleware**: `RetryMiddleware`, `ConcurrencyLimitMiddleware` in `engine/middleware.py`
+- **EventContext**: `current_context()` from `engine/context.py` for per-event metadata
 
 ---
 
 ## Testing Source Variants
 
-### Source (synchronous, non-parallel)
+### Source (pure business logic — no stop event)
 
 ```python
 def test_source_produces_event() -> None:
@@ -148,36 +167,44 @@ def test_source_returns_none_when_no_data() -> None:
     assert event is None
 ```
 
-### ThreadSource / ProcessSource (with stop event)
+### Wrapped Source (framework wrapping with stop event)
+
+Test the wrapper separately from the pure logic:
 
 ```python
 import threading
+from triton_redis_connector.engine.wrappers import DetachedThreadSource
+from triton_redis_connector.engine.metric_aggregator import MetricAggregator
 
-def test_thread_source_produces_events() -> None:
-    source = MyThreadSource(config=test_config)
-    source.stop = threading.Event()
+def test_wrapped_source_records_metrics() -> None:
+    inner = MyRedisSource(config=test_config)
+    aggregator = MetricAggregator()
+    wrapped = DetachedThreadSource(inner, aggregator=aggregator)
 
-    event = source()
+    event = wrapped()
 
     assert event is not None
-    assert isinstance(event, ImageEvent)
+    snap = aggregator.snapshot()
+    assert snap.call_count == 1
+    assert snap.empty_count == 0
 
-def test_thread_source_respects_stop_event() -> None:
-    source = MyThreadSource(config=test_config)
-    source.stop = threading.Event()
-    source.stop.set()
+def test_wrapped_source_records_empty() -> None:
+    inner = MyRedisSource(config=empty_config)
+    aggregator = MetricAggregator()
+    wrapped = DetachedThreadSource(inner, aggregator=aggregator)
 
-    event = source()
+    event = wrapped()
 
     assert event is None
-
+    snap = aggregator.snapshot()
+    assert snap.empty_count == 1
 ```
 
 ---
 
 ## Testing Processor Variants
 
-### Processor (synchronous, non-parallel)
+### Processor (pure business logic — no stop, no threading)
 
 ```python
 def test_processor_transforms_event() -> None:
@@ -199,39 +226,59 @@ def test_processor_returns_none_to_filter() -> None:
     assert result is None
 ```
 
-### ThreadProcessor (with stop event)
+### Middleware Testing
 
 ```python
-def test_thread_processor_respects_stop() -> None:
-    processor = MyThreadProcessor(config=test_config)
-    processor.stop = threading.Event()
+from triton_redis_connector.engine.middleware import RetryMiddleware, ConcurrencyLimitMiddleware
 
-    result = processor(some_event)
+def test_retry_middleware_retries_on_exception() -> None:
+    call_count = 0
+    def flaky_processor(event: MyEvent) -> MyResult:
+        nonlocal call_count
+        call_count += 1
+        if call_count < 3:
+            msg = "transient"
+            raise ConnectionError(msg)
+        return MyResult(data="ok")
+
+    retry = RetryMiddleware(flaky_processor, max_attempts=3, base_delay_s=0.01)
+    result = retry(MyEvent())
+
     assert result is not None
+    assert call_count == 3
 
-    processor.stop.set()
-    result = processor(some_event)
+def test_concurrency_limit_drops_when_full() -> None:
+    import threading
+    blocker = threading.Event()
+    def slow_processor(event: MyEvent) -> MyResult:
+        blocker.wait()
+        return MyResult(data="ok")
+
+    limiter = ConcurrencyLimitMiddleware(slow_processor, max_concurrent=1, acquire_timeout=0.01)
+    # Start one call that blocks
+    thread = threading.Thread(target=limiter, args=(MyEvent(),))
+    thread.start()
+    import time; time.sleep(0.05)
+    # Second call should be dropped
+    result = limiter(MyEvent())
     assert result is None
+    blocker.set()
+    thread.join()
 ```
 
-### ProcessPoolProcessor (inference pattern)
+### InferenceWorker (pure __call__ — no retry, no semaphore)
 
-Inference is just a `ProcessPoolProcessor` — no special intercept needed.
+`InferenceWorker` is pure business logic. Test with mocked Triton client:
 
 ```python
-def test_inference_processor_produces_result() -> None:
-    processor = InferenceProcessor(
-        model_name="yolo11s",
-        triton_url="localhost:8001",
-    )
-    tensor_event = TensorEvent(
-        tensor=np.random.rand(1, 3, 640, 640).astype(np.float32),
-    )
+def test_inference_worker_produces_result() -> None:
+    worker = InferenceWorker(model_name="yolo11s", triton_client=mock_client)
+    input_event = InferenceInput(tensor=np.random.rand(1, 3, 640, 640).astype(np.float32))
 
-    result = processor(tensor_event)
+    result = worker(input_event)
 
     assert result is not None
-    assert isinstance(result, DetectionEvent)
+    assert isinstance(result, InferenceOutput | InferenceError)
 ```
 
 ### Union Return Types (multiple output edges)
@@ -253,18 +300,17 @@ def test_processor_returns_union_types() -> None:
 
 ## Testing Sink Variants
 
-### Sink (synchronous)
+### Sink (pure business logic)
 
 ```python
-def test_sink_returns_metric_event() -> None:
+def test_sink_writes_to_redis() -> None:
     fake_redis = FakeRedisStreamWriter()
     sink = MyResultSink(redis_client=fake_redis, stream="stream:results")
 
-    metric = sink(detection_result)
+    result = sink(detection_result)
 
     assert len(fake_redis.written) == 1
     assert fake_redis.written[0]["stream"] == "stream:results"
-    assert metric is None or isinstance(metric, MetricEvent)
 
 def test_sink_returns_none_on_success() -> None:
     sink = MyResultSink(redis_client=FakeRedisStreamWriter(), stream="s")
@@ -274,19 +320,89 @@ def test_sink_returns_none_on_success() -> None:
     assert result is None
 ```
 
-### ThreadSink (with stop event)
+### Wrapped Sink (framework wrapping)
 
 ```python
-def test_thread_sink_respects_stop() -> None:
-    sink = MyThreadSink(config=test_config)
-    sink.stop = threading.Event()
+from triton_redis_connector.engine.wrappers import DetachedThreadSink
+from triton_redis_connector.engine.metric_aggregator import MetricAggregator
 
-    result = sink(some_event)
-    assert result is None
+def test_wrapped_sink_records_metrics() -> None:
+    inner = MyResultSink(redis_client=fake_redis, stream="s")
+    aggregator = MetricAggregator()
+    wrapped = DetachedThreadSink(inner, aggregator=aggregator)
 
-    sink.stop.set()
-    result = sink(some_event)
-    assert result is None
+    wrapped(valid_event)
+
+    snap = aggregator.snapshot()
+    assert snap.call_count == 1
+```
+
+---
+
+## Testing EventContext
+
+```python
+from triton_redis_connector.engine.context import EventContext, set_context, reset_context, current_context
+
+def test_current_context_raises_outside_scope() -> None:
+    with pytest.raises(LookupError):
+        current_context()
+
+def test_set_and_get_context() -> None:
+    ctx = EventContext(message_id="msg-1", source_stream="stream:input", created_at=1000.0)
+    token = set_context(ctx)
+    try:
+        assert current_context() == ctx
+    finally:
+        reset_context(token)
+
+def test_processor_with_context() -> None:
+    ctx = EventContext(message_id="msg-1", source_stream="stream:input", created_at=1000.0)
+    token = set_context(ctx)
+    try:
+        processor = MyProcessor()
+        result = processor(test_event)
+        assert result is not None
+    finally:
+        reset_context(token)
+```
+
+---
+
+## Testing Metric Markers
+
+```python
+from triton_redis_connector.engine.metric_aggregator import (
+    extract_event_counters, extract_field_gauges, extract_field_group_bys,
+    MetricAggregator, NodeMetricSnapshot,
+)
+
+def test_event_counter_extraction() -> None:
+    counters = extract_event_counters(DecodedImage)
+    assert len(counters) == 1
+    assert counters[0].name == "decode_success"
+
+def test_field_gauge_extraction() -> None:
+    gauges = extract_field_gauges(DetectionResult)
+    assert any(name == "inference_time_ms" for name, _ in gauges)
+
+def test_metric_aggregator_snapshot() -> None:
+    agg = MetricAggregator()
+    agg.record_call(10.5, is_error=False, is_empty=False)
+    agg.record_call(5.0, is_error=True)
+
+    snap = agg.snapshot()
+    assert snap.call_count == 2
+    assert snap.error_count == 1
+    assert snap.total_processing_ms == 15.5
+
+def test_metric_aggregator_interval_calls() -> None:
+    agg = MetricAggregator()
+    agg.record_call(1.0)
+    agg.record_call(2.0)
+    assert agg.interval_calls() == 2
+    agg.record_call(3.0)
+    assert agg.interval_calls() == 1
 ```
 
 ---
@@ -557,10 +673,9 @@ async def test_handles_redis_connection_error() -> None:
 
 ---
 
-## Mocking Triton Client for ProcessPoolProcessor
+## Mocking Triton Client for InferenceWorker
 
-Triton inference is a `ProcessPoolProcessor`. Mock the underlying client for
-unit testing:
+`InferenceWorker` is pure `__call__` — no retry, no semaphore. Mock the Triton client:
 
 ```python
 import numpy as np
@@ -573,7 +688,7 @@ def make_fake_infer_result(
     result.as_numpy = lambda name: outputs[name]
     return result
 
-def test_inference_processor_with_mock_client() -> None:
+def test_inference_worker_with_mock_client() -> None:
     fake_output = np.array([[0.5, 0.5, 0.8, 0.8, 0.95, 0]]).astype(np.float32)
     fake_result = make_fake_infer_result({"output0": fake_output})
 
@@ -581,18 +696,18 @@ def test_inference_processor_with_mock_client() -> None:
     mock_client.infer.return_value = fake_result
     mock_client.is_server_ready.return_value = True
 
-    processor = InferenceProcessor(
+    worker = InferenceWorker(
         model_name="yolo11s",
         triton_client=mock_client,
     )
-    tensor_event = TensorEvent(
+    input_event = InferenceInput(
         tensor=np.random.rand(1, 3, 640, 640).astype(np.float32),
     )
 
-    result = processor(tensor_event)
+    result = worker(input_event)
 
     assert result is not None
-    assert isinstance(result, DetectionEvent)
+    assert isinstance(result, InferenceOutput)
     mock_client.infer.assert_called_once()
 ```
 
@@ -852,25 +967,26 @@ All other ruff rules still apply in tests. Tests must still have:
 
 ---
 
-## Mocking Ultralytics for Preprocessing Cross-Validation
+## Testing LetterBoxPreprocessor (from triton_shared_models)
 
-Phase 3B requires a cross-validation test proving `YoloPreprocessor` replicates
-ultralytics letterbox exactly. This is one of the most critical tests in the project.
+`LetterBoxPreprocessor` lives in `triton_shared_models.preprocessing` and is re-exported
+by `triton_redis_connector.preprocessing.letterbox`. Constructor-only API.
 
 ### Real Comparison Test (integration, requires ultralytics installed)
 
 ```python
 import numpy as np
 import pytest
+from triton_shared_models.preprocessing import LetterBoxPreprocessor
 
 @pytest.mark.integration
-def test_yolo_preprocessor_matches_ultralytics_letterbox() -> None:
+def test_letterbox_matches_ultralytics() -> None:
     from ultralytics.data.augment import LetterBox  # noqa: PLC0415
 
     image = np.random.randint(0, 255, (1080, 1920, 3), dtype=np.uint8)
     target_size = (640, 640)
 
-    our_tensor, scale, pad = YoloPreprocessor(target_size).preprocess(image)
+    our_tensor, scale, pad = LetterBoxPreprocessor(target_size).preprocess(image)
 
     letterbox = LetterBox(new_shape=target_size)
     ul_image = letterbox(image=image)
@@ -880,20 +996,21 @@ def test_yolo_preprocessor_matches_ultralytics_letterbox() -> None:
     np.testing.assert_allclose(our_tensor, ul_tensor, atol=1e-6)
 ```
 
-### Unit Test with Mocked Ultralytics (no dependency)
+### Unit Test (no ultralytics dependency)
 
 ```python
-def test_yolo_preprocessor_letterbox_properties() -> None:
+from triton_shared_models.preprocessing import LetterBoxPreprocessor
+
+def test_letterbox_properties() -> None:
     image = np.zeros((1080, 1920, 3), dtype=np.uint8)
     image[100:200, 300:400] = 255
 
-    tensor, scale, pad = YoloPreprocessor((640, 640)).preprocess(image)
+    tensor, scale, pad = LetterBoxPreprocessor((640, 640)).preprocess(image)
 
     assert tensor.shape == (1, 3, 640, 640)
     assert tensor.dtype == np.float32
     assert tensor.max() <= 1.0
     assert tensor.min() >= 0.0
-    # Letterbox pads with 114/255 ≈ 0.447
     assert np.isclose(tensor[0, 0, 0, 0], 114.0 / 255.0, atol=1e-6)
 ```
 

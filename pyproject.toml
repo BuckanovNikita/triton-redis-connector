@@ -82,7 +82,7 @@ exclude = [
     "packages/triton_shared_models/tests/",
     "packages/triton_model_tools/triton_model_tools/export/scripts/",
     "model_repository/",
-    "model_repository_1/",
+    "model_repository_offline/",
 ]
 
 [[tool.mypy.overrides]]
