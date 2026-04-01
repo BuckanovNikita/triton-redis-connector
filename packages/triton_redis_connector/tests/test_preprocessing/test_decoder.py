@@ -4,8 +4,23 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import turbojpeg as _tjpeg  # pyright: ignore[reportMissingTypeStubs]
 from triton_redis_connector.preprocessing.decoder import OpenCVDecoder, TurboJPEGDecoder
 from triton_redis_connector.preprocessing.protocols import ImageDecoderProtocol
+
+
+def _turbojpeg_available() -> bool:
+    try:
+        _tjpeg.TurboJPEG()
+    except RuntimeError:
+        return False
+    return True
+
+
+_skip_no_turbojpeg = pytest.mark.skipif(
+    not _turbojpeg_available(),
+    reason="libturbojpeg native library not installed",
+)
 
 
 def _make_tiny_jpeg() -> bytes:
@@ -78,6 +93,7 @@ class TestOpenCVDecoder:
         assert result[0, 0, 0] < 50
 
 
+@_skip_no_turbojpeg
 class TestTurboJPEGDecoder:
     def test_decode_jpeg(self) -> None:
         decoder = TurboJPEGDecoder()

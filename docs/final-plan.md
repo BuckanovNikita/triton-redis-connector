@@ -48,6 +48,11 @@
 ### 0.3 Обновление определений агентов
 - `.claude/agents/architect.md`, `implementer.md`, `tester.md` — трёхпакетная структура, текущий список задач, подход tool-first
 
+### 0.4a Установка libturbojpeg в devcontainer (баг 9)
+- Добавить `libturbojpeg0-dev` в `.devcontainer/Dockerfile` или `postCreateCommand`
+- После установки TurboJPEGDecoder тесты автоматически перестанут пропускаться (skipif проверяет наличие нативной библиотеки)
+- Проверить: `uv run pytest -k TurboJPEG` — все 5 тестов проходят
+
 ### 0.4 Верификация
 - `uv run pre-commit run --all-files` проходит
 - Нет висячих ссылок на удалённые примеры
@@ -535,8 +540,10 @@ Pyright может анализировать реальный код библи
 | 6 | **Средняя** | `register()`, wrappers | Принимают `object` — mypy не ловит ошибки типов | Фаза 5.2: typed overloads |
 | 7 | **Низкая** | connector/model_tools `__init__.py` | Публичные классы не re-exported из корня пакетов | Фаза 4.2: добавить экспорты |
 | 8 | **Средняя** | `engine/context.py:14-22` | `EventContext` не содержит `original_fields` — serializer не может восстановить входные поля | Фаза 5.1: добавить `original_fields` в EventContext |
+| 9 | **Низкая** | `.devcontainer/`, test_decoder.py | `libturbojpeg` не установлен в devcontainer — TurboJPEGDecoder тесты пропускаются | Фаза 0: добавить `libturbojpeg0-dev` в devcontainer Dockerfile или postCreateCommand |
 
 *Баги #2,#3 из export.py/populate_repository.py — файлы будут удалены (фаза 2.2a), баг остаётся только в convert.py*
+*Баг #9 — временно тесты пропускаются через `pytest.mark.skipif`; после установки библиотеки в devcontainer тесты автоматически заработают*
 
 ## Архитектурная заметка: Inference инструмент как экземпляр App
 
