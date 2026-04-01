@@ -39,11 +39,16 @@ graph LR
 
 | Пакет | Путь | Описание |
 |-------|------|----------|
+| `triton-shared-models` | `packages/triton_shared_models/` | Общие типы Triton (`TritonModelConfig`, `TritonDataType`, `config.pbtxt`), letterbox-препроцессинг, NMS |
 | `triton-redis-connector` | `packages/triton_redis_connector/` | Коннектор Redis Streams <-> Triton: граф-пайплайн с 9 вариантами исполнения |
-| `triton-model-tools` | `packages/triton_model_tools/` | CLI для конвертации (`convert`), экспорта, бенчмаркинга и верификации YOLO-моделей для Triton |
-| `triton-shared-models` | `packages/triton_shared_models/` | Общие типы Triton (`TritonModelConfig`, `TritonDataType`, `config.pbtxt`) и letterbox-препроцессинг |
+| `triton-model-tools` | `packages/triton_model_tools/` | CLI для конвертации, инференса, бенчмаркинга и верификации YOLO-моделей для Triton |
 
-Полная архитектура будет описана в `docs/architecture.md` после завершения плана реализации (см. [docs/final-plan.md](docs/final-plan.md)).
+Направление зависимостей:
+```
+triton_model_tools -> triton_redis_connector -> triton_shared_models (leaf)
+```
+
+Полная архитектура описана в [docs/architecture.md](docs/architecture.md).
 
 ## Быстрый старт
 
@@ -76,6 +81,60 @@ uv run pytest
 | `uv run pytest -k test_name` | Запуск конкретного теста |
 | `uv run pre-commit run --all-files` | Все проверки по порядку |
 
+## CLI-команды (triton-model-tools)
+
+Все команды запускаются через `uv run triton-model-tools <command>`.
+
+| Команда | Описание |
+|---------|----------|
+| `convert` | Конвертация YOLO .pt в формат Triton (ONNX/TensorRT) с опциональной верификацией |
+| `infer` | Запуск YOLO-инференса на папке изображений через Triton |
+| `local-infer` | Локальный инференс через ONNX Runtime (без Triton) |
+| `predict` | Запуск ultralytics YOLO-предсказания и сохранение результатов в txt |
+| `benchmark` | Бенчмарк инференса через Triton |
+| `e2e-test` | E2E тест: загрузка изображений в Redis, обработка через Triton, сбор результатов |
+| `pipeline-predict` | Отправка изображений через Redis-пайплайн, сохранение результатов детекции |
+| `pipeline-benchmark` | Измерение E2E производительности Redis-пайплайна |
+| `compare-folders` | Сравнение результатов детекции из двух папок (baseline vs candidate) |
+| `compare-visual` | Визуальное сравнение local vs Triton через FiftyOne |
+| `populate-stream` | Заполнение Redis Stream тестовыми изображениями |
+| `validate` | Валидация структуры и config.pbtxt файлов модельного репозитория Triton |
+| `download-coco` | Скачивание COCO val2017 для бенчмаркинга |
+
+## Пример: dual_model_pipeline
+
+Полный пайплайн стальной инспекции с двумя моделями и ветвлением по камерам. Демонстрирует использование shipped-процессоров (`EnvelopeExtractor`, `EventSerializer`, `LogErrorSink`).
+
+```
+examples/dual_model_pipeline/
+├── config.yaml           — конфигурация (Redis, Triton, очереди)
+├── run_pipeline.py       — точка входа (загрузка конфига + регистрация узлов)
+├── processors.py         — доменные процессоры (роутинг, препроцессинг, инференс, постпроцессинг)
+├── events.py             — модели событий с Counter/Gauge/GroupBy метриками
+└── test_deterministic.py — детерминистический тест без Triton
+```
+
+Граф обработки:
+
+```
+RedisStreamSource -> EnvelopeExtractor -> CameraBranchRouter
+  -> [even] DaliPreprocessor --------+
+  -> [odd]  TurboJpegPreprocessor ---+-> MetadataInferenceWorker
+                                         -> InspectionPostProcessor
+                                             -> EventSerializer -> RedisStreamSink
+                                         -> LogErrorSink (InferenceError)
+```
+
+Запуск:
+
+```bash
+# Заполнить Redis Stream тестовыми данными
+uv run triton-model-tools populate-stream --image-dir ./images --stream steel:inspection_input
+
+# Запустить пайплайн
+uv run python examples/dual_model_pipeline/run_pipeline.py
+```
+
 ## Инфраструктура (Docker Compose)
 
 Инфраструктура определена в `.devcontainer/docker-compose.yml`:
@@ -89,7 +148,7 @@ uv run pytest
 
 ## Метрики
 
-Все метрики отправляются в Redis Stream (по умолчанию `metrics`) в формате `MetricEvent` с полями `component_name`, `measure`, `value`, `timestamp_ms`, `tags`. При отсутствии входных событий все метрики отправляются со значением `0`.
+Все метрики отправляются в Redis Stream (по умолчанию `metrics`) в формате `MetricEvent` с полями `component_name`, `measure`, `value`. При отсутствии входных событий все метрики отправляются со значением `0`.
 
 Интервал отправки настраивается через `metrics.stats_log_interval_s` (по умолчанию 60 с).
 
@@ -97,10 +156,10 @@ uv run pytest
 
 | Метрика | Компонент | Теги | Тип | Описание |
 |---------|-----------|------|-----|----------|
-| `stats_processed` | app_name | — | counter | Кумулятивное число обработанных событий (дошедших до Sink) |
-| `stats_in_progress` | app_name | — | gauge | Число событий в обработке прямо сейчас |
-| `stats_errors` | app_name | — | counter | Кумулятивное число ошибок |
-| `event_total_transit_ms` | app_name | — | histogram | Время от создания Envelope до записи в Sink (мс) |
+| `stats_processed` | app_name | -- | counter | Кумулятивное число обработанных событий (дошедших до Sink) |
+| `stats_in_progress` | app_name | -- | gauge | Число событий в обработке прямо сейчас |
+| `stats_errors` | app_name | -- | counter | Кумулятивное число ошибок |
+| `event_total_transit_ms` | app_name | -- | histogram | Время от создания Envelope до записи в Sink (мс) |
 | `parallel_restart` | app_name | `node` | counter | Перезапуск параллельного потока |
 
 ### Per-node метрики
@@ -125,9 +184,9 @@ uv run pytest
 | `inference_time_ms` | Gauge | `Annotated[float, Gauge("inference_time_ms")]` на поле `DetectionResult` | Время инференса (мс) |
 
 Для добавления новых метрик:
-- **Counter**: `_metrics_ = [Counter("name")]` на классе события — считает количество
-- **Gauge**: `Annotated[float, Gauge("name")]` на поле события — извлекает числовое значение
-- **GroupBy**: `Annotated[str, GroupBy("name", window_s=60)]` на поле события — группировка по значению поля
+- **Counter**: `_metrics_ = [Counter("name")]` на классе события -- считает количество
+- **Gauge**: `Annotated[float, Gauge("name")]` на поле события -- извлекает числовое значение
+- **GroupBy**: `Annotated[str, GroupBy("name", window_s=60)]` на поле события -- группировка по значению поля
 
 `Counter`, `Gauge`, `GroupBy` импортируются из `triton_redis_connector.protocols`.
 `MetricEvent` содержит только 3 поля: `component_name`, `measure`, `value`.
@@ -163,8 +222,3 @@ InferenceType = Annotated[InferenceWorker, Tracked("inference")]
 ```
 
 `MetricAggregator` автоматически собирает `node_events_total`, `node_events_interval`, `node_processing_ms`, `node_errors`, `source_read_empty` для каждого помеченного узла.
-
-## Примеры
-
-- [`examples/camera_inference/`](examples/camera_inference/) -- минимальный демо-пайплайн с синтетическими данными
-- [`examples/yolo_detection_pipeline/`](examples/yolo_detection_pipeline/) -- полный пайплайн YOLO-детекции через Redis + Triton

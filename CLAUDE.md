@@ -9,9 +9,9 @@ Analyzer any user input to update your instructions to work process or for avoid
 **triton-redis-connector** — microservice component for ML model inference. Receives data from Redis Streams, sends it to NVIDIA Triton Inference Server, returns results back to Redis Streams.
 
 Monorepo contains three packages:
-- **triton-redis-connector** (`packages/triton_redis_connector/`) — core Redis ↔ Triton connector
-- **triton-model-tools** (`packages/triton_model_tools/`) — ultralytics model conversion and verification tools for Triton
 - **triton-shared-models** (`packages/triton_shared_models/`) — shared types and preprocessing (leaf package, no deps on other two)
+- **triton-redis-connector** (`packages/triton_redis_connector/`) — core Redis <-> Triton connector
+- **triton-model-tools** (`packages/triton_model_tools/`) — CLI for model conversion, inference, benchmarking, and verification
 
 **Language**: Python 3.12, strict typing (mypy strict + pyright strict)
 **Documentation**: Only README.md in Russian. All other docs (CLAUDE.md, docs/*.md, agents, skills) in English.
@@ -44,6 +44,10 @@ uv run vulture                         # dead code detection
 pyproject.toml                          — virtual workspace root (no build-system)
 pyrightconfig.json                      — pyright config (exclude paths must match package layout)
 packages/
+  triton_shared_models/                 — shared types (leaf package)
+    pyproject.toml                      — deps: pydantic, numpy, opencv-python-headless, jinja2
+    triton_shared_models/               — source code
+    tests/                              — tests
   triton_redis_connector/               — core connector
     pyproject.toml                      — deps: redis, tritonclient, pydantic, loguru, dishka
     triton_redis_connector/             — source code
@@ -52,41 +56,73 @@ packages/
     pyproject.toml                      — deps: ultralytics, onnx, onnxruntime, tritonclient, triton-redis-connector
     triton_model_tools/                 — source code (subpackages below)
       models/                           — shared types: Detection, YoloModelVariant, YOLO_MODELS
-      export/                           — YOLO → ONNX/TRT → Triton repository (+ templates/, scripts/)
-      inference/                        — Triton gRPC client, pre/postprocessing, batch inference
+      export/                           — YOLO -> ONNX/TRT -> Triton repository (+ templates/, scripts/)
+      inference/                        — Triton gRPC client, pre/postprocessing, YoloPostProcessorBridge
       testing/                          — E2E test harness (Redis pipeline integration)
       benchmarks/                       — performance measurement, comparison, dataset tools
+      cli/                              — CLI subcommands (13 commands)
     tests/                              — tests (flat, not mirroring subpackage structure)
-  triton_shared_models/                 — shared types (leaf package)
-    pyproject.toml                      — deps: pydantic, numpy, opencv-python-headless, jinja2
-    triton_shared_models/               — source code
-    tests/                              — tests
 ```
 
 ### Package Dependency Direction
 
 ```
-triton_model_tools → triton_redis_connector → triton_shared_models (leaf)
+triton_model_tools -> triton_redis_connector -> triton_shared_models (leaf)
 ```
 
 ### Import Layer Architecture (import-linter contracts)
 
 **connector-layers** (triton_redis_connector internal):
 ```
-providers → connectors | inference | preprocessing | metrics | routers → engine → config | errors → protocols (leaf)
+providers -> connectors | inference | preprocessing | metrics | routers -> engine -> config | errors -> protocols (leaf)
 ```
 
 **model-tools-layers** (triton_model_tools internal):
 ```
-__main__ (CLI) → benchmarks → testing → inference | export → models (leaf)
+__main__ (CLI) -> cli -> benchmarks -> testing -> inference | export -> models (leaf)
 ```
 
 **Cross-package contracts**:
-- `connector-no-model-tools`: connector ↛ model_tools
-- `shared-models-independence`: shared_models ↛ connector AND shared_models ↛ model_tools
+- `connector-no-model-tools`: connector must not import model_tools
+- `shared-models-independence`: shared_models must not import connector AND shared_models must not import model_tools
 - model_tools MAY import from connector (dependency direction allows it)
 
 Modules within a `|` group are siblings at the same layer and must NOT cross-import.
+
+### Shipped Processors
+
+Six reusable processors for common pipeline patterns:
+
+| Processor | Package | Purpose |
+|---|---|---|
+| `EnvelopeExtractor[T]` | connector | Deserialize envelope bytes into typed pydantic model |
+| `DaliInferenceInputBuilder` | connector | Wrap raw image bytes for DALI ensemble inference |
+| `ClientPreprocessor` | connector | Read file, decode, letterbox, wrap as InferenceInput |
+| `EventSerializer[T]` | connector | Serialize event to JSON bytes with original_fields passthrough |
+| `LogErrorSink` | connector | Log error events at error level via loguru |
+| `YoloPostProcessorBridge` | model_tools | YOLO postprocessing (NMS + confidence filter) into DetectionResult |
+
+See: `engine/shipped_processors.py`, `triton_model_tools/inference/yolo_bridge.py`
+
+### CLI Commands (triton-model-tools)
+
+Run via `uv run triton-model-tools <command>`:
+
+| Command | Description |
+|---|---|
+| `convert` | Convert YOLO .pt to Triton format (ONNX/TensorRT) |
+| `infer` | Run YOLO inference on images via Triton |
+| `local-infer` | Local ONNX inference without Triton |
+| `predict` | Run ultralytics YOLO prediction, save txt results |
+| `benchmark` | Inference benchmark via Triton |
+| `e2e-test` | E2E: push images to Redis, process via Triton, collect results |
+| `pipeline-predict` | Run images through Redis pipeline, save detection results |
+| `pipeline-benchmark` | Measure E2E Redis pipeline performance |
+| `compare-folders` | Compare detection results from two folders |
+| `compare-visual` | Visual drift comparison via FiftyOne |
+| `populate-stream` | Populate Redis Stream with test images |
+| `validate` | Validate Triton model repository structure and config.pbtxt |
+| `download-coco` | Download COCO val2017 for benchmarking |
 
 ### Infrastructure (.devcontainer/)
 
@@ -141,7 +177,7 @@ Debug compose uses `/v2/health/live` (not `/v2/health/ready`) so Triton passes h
 
 ## Pre-commit Hooks
 
-Pipeline: ruff format → ruff check → mypy → pyright → import-linter → vulture → pytest → uv lock
+Pipeline: ruff format -> ruff check -> mypy -> pyright -> import-linter -> vulture -> pytest -> uv lock
 
 ```bash
 uv run pre-commit run --all-files

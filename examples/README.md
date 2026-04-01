@@ -6,7 +6,7 @@
 в `config.yaml` и поддерживает переменные окружения через `${oc.env:VAR,default}`.
 
 Однако **процессоры требуют Python-кода**, потому что:
-- Каждый процессор — это класс с типизированным `__call__` 
+- Каждый процессор -- это класс с типизированным `__call__` 
 - Фреймворк строит DAG автоматически по аннотациям типов
 - Нет встроенного реестра процессоров по имени (поле `processors` в конфиге зарезервировано, но не реализовано)
 
@@ -59,54 +59,36 @@ REDIS_HOST=localhost TRITON_GRPC_URL=localhost:8001 uv run python my_pipeline.py
 
 ## Примеры
 
-### 1. YOLO Detection Pipeline (полный)
+### Dual Model Pipeline (полный)
 
-Реальный пайплайн: Redis Stream → декодирование JPEG → letterbox → Triton → NMS → Redis Stream.
+Пайплайн стальной инспекции с двумя моделями: DALI-ensemble (чётные камеры) и TurboJPEG + yolo26l (нечётные камеры). Использует shipped-процессоры: `EnvelopeExtractor`, `EventSerializer`, `LogErrorSink`.
 
 ```
-examples/yolo_detection_pipeline/
-├── config.yaml        — конфигурация (Redis, Triton, очереди)
-├── run_pipeline.py    — точка входа (загрузка конфига + регистрация узлов)
-├── processors.py      — процессоры (декодер, препроцессор, постпроцессор, сериализатор)
-└── stream_images.py   — утилита: загрузить изображения в Redis Stream (batch или streaming)
+examples/dual_model_pipeline/
+├── config.yaml           — конфигурация (Redis, Triton, очереди)
+├── run_pipeline.py       — точка входа (загрузка конфига + регистрация узлов)
+├── processors.py         — доменные процессоры (роутинг, препроцессинг, инференс, постпроцессинг)
+├── events.py             — модели событий с Counter/Gauge/GroupBy метриками
+└── test_deterministic.py — детерминистический тест без Triton
 ```
 
 **Запуск:**
 
 ```bash
-# 1. Загрузить тестовые изображения в Redis (batch — один раз и выход)
-uv run python examples/yolo_detection_pipeline/stream_images.py
+# 1. Заполнить Redis Stream тестовыми данными
+uv run triton-model-tools populate-stream --image-dir ./images --stream steel:inspection_input
 
 # 2. Запустить пайплайн
-uv run python examples/yolo_detection_pipeline/run_pipeline.py
-
-# Или: непрерывный стриминг с заданным FPS
-uv run python examples/yolo_detection_pipeline/stream_images.py --fps 10
+uv run python examples/dual_model_pipeline/run_pipeline.py
 ```
 
 **Граф:**
 
 ```
-RedisStreamSource → EnvelopeExtractor → ImageDeserializer
-  → PreprocessorNode → InferenceWorker → DetectionPostProcessor
-  → OutputSerializer → RedisStreamSink
-```
-
-### 2. Camera Inference (демо)
-
-Минимальный пример с синтетическими данными — без реального инференса.
-Показывает как фреймворк автоматически строит DAG по типовым аннотациям.
-
-```
-examples/camera_inference/
-├── config.yaml       — конфигурация
-├── run_pipeline.py   — точка входа
-├── processors.py     — синтетический Source, Processor, Sink
-└── events.py         — модели событий (CameraFrame, DetectionResult)
-```
-
-**Запуск:**
-
-```bash
-uv run python examples/camera_inference/run_pipeline.py
+RedisStreamSource -> EnvelopeExtractor -> CameraBranchRouter
+  -> [even] DaliPreprocessor --------+
+  -> [odd]  TurboJpegPreprocessor ---+-> MetadataInferenceWorker
+                                         -> InspectionPostProcessor
+                                             -> EventSerializer -> RedisStreamSink
+                                         -> LogErrorSink (InferenceError)
 ```

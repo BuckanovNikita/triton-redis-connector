@@ -1,0 +1,209 @@
+# Architecture
+
+## Package Structure
+
+The monorepo contains three packages with a strict dependency direction:
+
+```
+triton_model_tools  ->  triton_redis_connector  ->  triton_shared_models (leaf)
+```
+
+| Package | Path | Role |
+|---|---|---|
+| `triton-shared-models` | `packages/triton_shared_models/` | Leaf: Triton types (`TritonModelConfig`, `TritonDataType`, `ExportFormat`), letterbox preprocessing, NMS |
+| `triton-redis-connector` | `packages/triton_redis_connector/` | Core: graph-based pipeline engine, Redis Stream connectors, Triton inference, metrics |
+| `triton-model-tools` | `packages/triton_model_tools/` | CLI: model conversion (ONNX/TensorRT), batch inference, benchmarking, E2E testing |
+
+## Import-Linter Contracts
+
+Four contracts enforced via `uv run lint-imports` (defined in root `pyproject.toml`):
+
+### 1. connector-layers (type: layers)
+
+Internal layer hierarchy of `triton_redis_connector`:
+
+```
+providers                                                             <- top: DI
+connectors | inference | preprocessing | metrics | routers            <- domain siblings
+engine                                                                <- orchestration
+config | errors                                                       <- shared
+protocols                                                             <- leaf
+```
+
+Modules within a `|` group are siblings and must not cross-import. One allowed violation: `engine.wrappers -> metrics.collector` (lazy import for MetricEvent).
+
+### 2. connector-no-model-tools (type: forbidden)
+
+`triton_redis_connector` must not import `triton_model_tools`. The reverse is allowed.
+
+### 3. shared-models-independence (type: forbidden)
+
+`triton_shared_models` must not import either `triton_redis_connector` or `triton_model_tools`.
+
+### 4. model-tools-layers (type: layers)
+
+Internal layer hierarchy of `triton_model_tools`:
+
+```
+__main__  ->  cli  ->  benchmarks  ->  testing  ->  inference | export  ->  models (leaf)
+```
+
+## Execution Variant Model
+
+Three primitives, each with execution mode variants (9 total). All protocols defined in `protocols.py`.
+
+### Source (produces events)
+
+| Variant | Protocol | Execution |
+|---|---|---|
+| `Source` | `Source[TOut]` | Inline, polled by main loop |
+| `ThreadSource` | `ThreadSource[TOut]` | Dedicated thread, has `stop: Event` |
+| `ProcessSource` | `ProcessSource[TOut]` | Dedicated OS process, has `stop: Event` |
+
+### Processor (transforms events)
+
+| Variant | Protocol | Execution |
+|---|---|---|
+| `Processor` | `Processor[TIn, TOut]` | Inline, dispatched by main loop |
+| `ThreadProcessor` | `ThreadProcessor[TIn, TOut]` | Dedicated thread |
+| `ThreadPoolProcessor` | `ThreadPoolProcessor[TIn, TOut]` | N threads, shared queue |
+| `ProcessPoolProcessor` | `ProcessPoolProcessor[TIn, TOut]` | N processes, shared queue |
+
+### Sink (consumes events)
+
+| Variant | Protocol | Execution |
+|---|---|---|
+| `Sink` | `Sink[TIn]` | Inline, runs in main loop |
+| `ThreadSink` | `ThreadSink[TIn]` | Dedicated thread, has `stop: Event` |
+
+User code writes pure business logic classes with `__call__`. The framework wraps them at assembly time using wrappers from `engine/wrappers.py`:
+
+- `DetachedThreadSource`, `DetachedProcessSource`
+- `DetachedThreadProcessor`, `ThreadedProcessor`, `MultiProcessProcessor`
+- `DetachedThreadSink`
+
+See: `engine/wrappers.py`, `engine/registry.py`
+
+## Shipped Processors
+
+Six reusable processors provided out of the box. Five live in `triton_redis_connector.engine.shipped_processors`, one in `triton_model_tools.inference.yolo_bridge`.
+
+| Processor | Location | Input | Output | Purpose |
+|---|---|---|---|---|
+| `EnvelopeExtractor[T]` | connector | `Envelope[bytes]` | `T` (pydantic) | Deserialize envelope bytes into a typed pydantic model |
+| `DaliInferenceInputBuilder` | connector | `_ImageBytesEvent` | `InferenceInput` | Wrap raw image bytes for DALI ensemble inference |
+| `ClientPreprocessor` | connector | `_ImagePathEvent` | `InferenceInput` | Read file, decode, letterbox, wrap as tensor |
+| `EventSerializer[T]` | connector | `T` (pydantic) | `Envelope[bytes]` | Serialize event to JSON bytes with original_fields passthrough |
+| `LogErrorSink` | connector | `BaseModel` | `None` | Log error events at error level via loguru |
+| `YoloPostProcessorBridge` | model_tools | `InferenceOutput` | `DetectionResult` | YOLO postprocessing (NMS + confidence filter) |
+
+## EventContext and Field Passthrough
+
+`EventContext` (`engine/context.py`) provides per-event metadata via `contextvars`:
+
+```python
+ctx = current_context()  # -> EventContext(message_id, source_stream, created_at, original_fields)
+```
+
+The `original_fields` dict carries all fields from the inbound Redis Stream message. `EventSerializer` reads `current_context()` and includes `original_fields` in the outbound `Envelope`, ensuring input fields pass through the pipeline untouched.
+
+Set by the framework before dispatch, reset after. User code never sees the `Envelope` directly.
+
+## CollectorMode
+
+Defined in `config/schema.py`. Controls Redis Stream consumer group startup behavior:
+
+| Mode | `XGROUP_CREATE` id | Behavior |
+|---|---|---|
+| `RECOVERY` | `0` | Process pending (unacked) messages first, then new |
+| `FROM_LATEST` | `$` | Skip all existing messages, start from new only |
+| `FROM_OLDEST` | `0` | Process all messages from the beginning of the stream |
+
+Configured per source via `SourceConfig.collector_mode`.
+
+## Per-Model Output Routing
+
+`OutputStreamRouter` (`connectors/output_router.py`) maps model names to output Redis streams.
+
+Configuration via `OutputRoutingConfig`:
+- `model_streams: dict[str, str]` -- explicit model-to-stream mapping
+- `default_stream: str | None` -- fallback for unmapped models
+
+The router lazily creates `RedisStreamOutputConnector` instances per stream. `validate_routing()` checks at startup that all known models are routable.
+
+## TensorRT Acceleration
+
+The `convert` CLI command exports YOLO models to ONNX format. Triton's `onnxruntime` backend can optionally use TensorRT as an execution provider for GPU acceleration. The `ExportFormat` enum in `triton_shared_models` supports both `ONNX` and `TENSORRT` targets. TRT plan files use the `tensorrt_plan` platform in Triton config.
+
+See: `triton_model_tools/export/`, `triton_shared_models/triton_types.py`
+
+## Metrics System
+
+Metrics are declared on event classes, not in the application layer. Three metric types live in `protocols.py` (leaf layer):
+
+- **Counter**: `_metrics_ = [Counter("name")]` on event class -- increments per event produced
+- **Gauge**: `Annotated[float, Gauge("name")]` on event field -- extracts numeric value
+- **GroupBy**: `Annotated[str, GroupBy("name", window_s=60)]` on event field -- counts by key over time window
+
+`MetricEvent` has three fields: `component_name`, `measure`, `value`.
+
+Framework extracts metrics in wrappers (`_extract_and_record_metrics` in `engine/wrappers.py`) and records them to `MetricBuffer` (`metrics/buffer.py`). `MetricEmitter` (`metrics/emitter.py`) flushes to a Redis Stream on a timer. `TritonMetricsCollector` (`metrics/triton_collector.py`) polls Triton server stats.
+
+Per-node throughput/latency is tracked via `MetricAggregator` (`engine/metric_aggregator.py`) and the `Tracked` annotation.
+
+Zero-value guarantee: `_log_stats` emits all registered Counter names even when idle.
+
+## Dependency Injection (dishka)
+
+Three-scope hierarchy defined in `providers/scopes.py`:
+
+| Scope | Lifetime | Usage |
+|---|---|---|
+| `APP` | Application | Singletons: config, Redis pool, registry, metric services |
+| `WORKER` | Per-process | For `ProcessPoolProcessor` workers: own gRPC client, own connections |
+| `REQUEST` | Per-event | EventContext for inline dispatch |
+
+Providers (`providers/` directory):
+- `ConfigProvider` -- config models from Hydra YAML
+- `EngineProvider` -- PipelineRegistry, QueueBus, Application
+- `ConnectorProvider` -- Redis connectors, ConsumerGroupManager, OutputStreamRouter
+- `InferenceProvider` -- InferenceWorker, InferenceWorkerFactory
+- `PreprocessingProvider` -- decoders, LetterBoxPreprocessor
+- `MetricsProvider` -- MetricBuffer, MetricEmitter, TritonMetricsCollector
+
+Container is not picklable. Workers receive only picklable config and create their own container.
+
+## Composable Middleware
+
+`engine/middleware.py` provides:
+- `RetryMiddleware[TIn, TOut]` -- exponential backoff retry with configurable attempts
+- `ConcurrencyLimitMiddleware[TIn, TOut]` -- semaphore-based concurrency limiting
+
+Both satisfy `Processor[TIn, TOut]` and compose via nesting.
+
+## Pipeline Construction
+
+1. Load config via `load_config()` (Hydra YAML + env var interpolation)
+2. Create `PipelineRegistry`, register nodes with type-annotated `__call__`
+3. Registry inspects signatures to build DAG, validates connectivity
+4. Create `Application` with registry and `QueueBus`
+5. `app.run()` validates graph, wires queues, starts parallel threads, enters main loop
+
+Main loop: poll inline sources, type-match events to consumers, route recursively. Parallel nodes get dedicated threads with input/output queues. Health monitoring restarts crashed threads.
+
+See: `examples/dual_model_pipeline/run_pipeline.py`
+
+## Infrastructure
+
+Docker Compose in `.devcontainer/`:
+
+| Service | Image | Purpose |
+|---|---|---|
+| Redis | `redis:7-alpine` | Streams transport, AOF persistence |
+| Triton | `nvcr.io/nvidia/tritonserver:26.02-py3` | Inference server, `--strict-model-config=true` |
+| Triton SDK | `nvcr.io/nvidia/tritonserver:26.02-py3-sdk` | `perf_analyzer`, `model_analyzer`, `tritonclient` |
+| RedisInsight | `redis/redisinsight:latest` | Redis web UI |
+
+Two compose files: `docker-compose.yml` (devcontainer, internal network) and `docker-compose.debug.yml` (exposed ports for host access).
+
+Model management: `model_repository/` is live (mounted into Triton), `model_repository_offline/` is staging. Triton polls for changes every 10 seconds.
