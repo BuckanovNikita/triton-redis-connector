@@ -122,9 +122,6 @@ Wrappers live in `engine/wrappers.py`. Each wrapper:
 2. Optionally accepts a `MetricAggregator` for per-call timing/error/empty counting
 3. Delegates `__call__` to the inner pure function
 
-**Deprecated**: `engine/bases.py` (abstract base classes with stop boilerplate) and
-`inference/retry.py` (async retry handler) — replaced by wrappers + middleware.
-
 ---
 
 ## Composable Middleware

@@ -480,9 +480,9 @@ Workers use `async_infer` (non-blocking). A semaphore limits concurrent in-fligh
 
 Каждый worker-процесс создаёт свежий dishka-контейнер с WORKER scope через фабричную функцию. Фабрика захватывает только picklable config (pydantic-модели). Worker container предоставляет: `InferenceServerClient`, `ModelVersionTracker`, `Semaphore` — все per-process singletons в рамках WORKER scope.
 
-#### 4A.2 Async retry in callback (`inference/retry.py`)
+#### 4A.2 Retry via middleware (`engine/middleware.py`)
 
-Retry via `threading.Timer` in the `async_infer` callback. 3 attempts, exponential backoff (0.1s, 0.4s, 1.6s). On transient failure, the callback schedules a `threading.Timer` for the next attempt. On final failure, the error is routed to the error queue and the semaphore is released.
+Retry is handled by `RetryMiddleware` wrapping the inference processor. Synchronous `time.sleep()` with exponential backoff, no shared state.
 
 #### 4A.3 Model version tracker (`inference/model_registry.py`)
 
@@ -792,7 +792,7 @@ Phase 1 (Foundation: shared models, config, 9 execution variants, stop event)
 | `packages/triton_model_tools/triton_model_tools/dali.py` | 2 | DALI pipeline with correct letterbox |
 | `packages/triton_model_tools/triton_model_tools/inference.py` | 3B | `YoloPreprocessor` (letterbox), `TritonInferenceClient` |
 | `packages/triton_redis_connector/triton_redis_connector/inference/worker.py` | 4A | `ProcessPoolProcessor` inference with `async_infer` + callback retry |
-| `packages/triton_redis_connector/triton_redis_connector/inference/retry.py` | 4A | `threading.Timer`-based retry in callback |
+| `packages/triton_redis_connector/triton_redis_connector/engine/middleware.py` | 4A | `RetryMiddleware` — synchronous retry with exponential backoff |
 | `packages/triton_model_tools/triton_model_tools/e2e_test.py` | 4B | `ConnectorE2ETestHarness` |
 | `packages/triton_redis_connector/triton_redis_connector/inference/shared_memory.py` | 4C | `SharedMemoryPool` for zero-copy IPC |
 | `packages/triton_model_tools/triton_model_tools/benchmark.py` | 5 | Benchmarking engine |

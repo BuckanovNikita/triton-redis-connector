@@ -9,25 +9,26 @@ They live in examples/ because they cross import-linter sibling boundaries
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
 from loguru import logger
-from triton_redis_connector.engine.bases import BaseThreadProcessor, BaseThreadSink
 from triton_redis_connector.engine.events import DecodedImage, DetectionResult, InferenceInput
-from triton_redis_connector.errors.models import InferenceError
-from triton_redis_connector.inference.request import InferenceOutput
 from triton_redis_connector.preprocessing.decoder import OpenCVDecoder
 from triton_redis_connector.preprocessing.letterbox import LetterBoxPreprocessor
 from triton_redis_connector.protocols import Envelope
+
+if TYPE_CHECKING:
+    from triton_redis_connector.errors.models import InferenceError
+    from triton_redis_connector.inference.request import InferenceOutput
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.25
 DEFAULT_IOU_THRESHOLD = 0.45
 
 
-class EnvelopeExtractor(BaseThreadProcessor[Envelope[bytes], bytes]):
-    """ThreadProcessor: extracts raw bytes payload from Envelope[bytes].
+class EnvelopeExtractor:
+    """Extracts raw bytes payload from Envelope[bytes].
 
     Bridges RedisStreamSource (which produces Envelope[bytes]) to
     downstream processors that consume raw bytes.
@@ -40,15 +41,14 @@ class EnvelopeExtractor(BaseThreadProcessor[Envelope[bytes], bytes]):
         return None
 
 
-class ImageDeserializer(BaseThreadProcessor[bytes, DecodedImage]):
-    """ThreadProcessor: decodes raw image bytes into DecodedImage.
+class ImageDeserializer:
+    """Decodes raw image bytes into DecodedImage.
 
     Reads raw bytes from the pipeline, decodes using OpenCV, and produces
     DecodedImage events for downstream preprocessing.
     """
 
     def __init__(self) -> None:  # noqa: D107
-        super().__init__()
         self._decoder = OpenCVDecoder()
 
     def __call__(self, event: bytes) -> DecodedImage | None:
@@ -66,8 +66,8 @@ class ImageDeserializer(BaseThreadProcessor[bytes, DecodedImage]):
             return None
 
 
-class PreprocessorNode(BaseThreadProcessor[DecodedImage, InferenceInput]):
-    """ThreadProcessor: letterbox preprocessing + InferenceInput construction.
+class PreprocessorNode:
+    """Letterbox preprocessing + InferenceInput construction.
 
     Transforms a decoded BGR image into a model-ready float32 tensor
     using the letterbox algorithm, then wraps it as InferenceInput.
@@ -78,7 +78,6 @@ class PreprocessorNode(BaseThreadProcessor[DecodedImage, InferenceInput]):
         model_name: str = "yolo11s",
         target_size: tuple[int, int] = (640, 640),
     ) -> None:
-        super().__init__()
         self._preprocessor = LetterBoxPreprocessor(target_size=target_size)
         self._model_name = model_name
 
@@ -93,8 +92,8 @@ class PreprocessorNode(BaseThreadProcessor[DecodedImage, InferenceInput]):
         )
 
 
-class DetectionPostProcessor(BaseThreadProcessor[InferenceOutput, DetectionResult]):
-    """ThreadProcessor: parses YOLO output tensors into DetectionResult.
+class DetectionPostProcessor:
+    """Parses YOLO output tensors into DetectionResult.
 
     Implements standard YOLO postprocessing: confidence filtering,
     xywh-to-xyxy conversion, and NMS. Ported from triton_model_tools
@@ -106,7 +105,6 @@ class DetectionPostProcessor(BaseThreadProcessor[InferenceOutput, DetectionResul
         conf_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
         iou_threshold: float = DEFAULT_IOU_THRESHOLD,
     ) -> None:
-        super().__init__()
         self._conf_threshold = conf_threshold
         self._iou_threshold = iou_threshold
 
@@ -167,8 +165,8 @@ class DetectionPostProcessor(BaseThreadProcessor[InferenceOutput, DetectionResul
         ]
 
 
-class OutputSerializer(BaseThreadProcessor[DetectionResult, Envelope[bytes]]):
-    """ThreadProcessor: serializes DetectionResult to Envelope[bytes] for Redis sink.
+class OutputSerializer:
+    """Serializes DetectionResult to Envelope[bytes] for Redis sink.
 
     Converts DetectionResult pydantic model to JSON bytes wrapped in an
     Envelope for the RedisStreamSink to write via XADD.
@@ -184,8 +182,8 @@ class OutputSerializer(BaseThreadProcessor[DetectionResult, Envelope[bytes]]):
         )
 
 
-class ErrorLogSink(BaseThreadSink[InferenceError]):
-    """ThreadSink: logs inference errors without dropping them silently."""
+class ErrorLogSink:
+    """Logs inference errors without dropping them silently."""
 
     def __call__(self, event: InferenceError) -> None:
         """Log the inference error."""

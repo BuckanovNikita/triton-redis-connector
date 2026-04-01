@@ -140,7 +140,6 @@ Key properties:
 - No primitive raises exceptions — errors go to error queues as typed events
 - Inference is `InferenceWorker` (pure `__call__`) wrapped by `MultiProcessProcessor`
 - Factory pattern for shared state: `create_shared() -> SharedContext`, `create_processor(shared) -> Processor`
-- **Deprecated**: `engine/bases.py`, `inference/retry.py` — do NOT test or import
 - **Middleware**: `RetryMiddleware`, `ConcurrencyLimitMiddleware` in `engine/middleware.py`
 - **EventContext**: `current_context()` from `engine/context.py` for per-event metadata
 

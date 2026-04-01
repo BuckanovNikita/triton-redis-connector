@@ -39,6 +39,7 @@ from triton_redis_connector.connectors.redis_stream import (
 from triton_redis_connector.engine.app import Application
 from triton_redis_connector.engine.queue_bus import QueueBus
 from triton_redis_connector.engine.registry import PipelineRegistry
+from triton_redis_connector.engine.wrappers import DetachedThreadProcessor, DetachedThreadSink
 from triton_redis_connector.inference.worker import InferenceWorker
 
 from examples.yolo_detection_pipeline.processors import (
@@ -77,16 +78,16 @@ def main() -> None:
 
     registry = PipelineRegistry()
     registry.register("redis_source", RedisStreamSource(input_connector, source_cfg))
-    registry.register("envelope_extractor", EnvelopeExtractor())
-    registry.register("image_decoder", ImageDeserializer())
-    registry.register("preprocessor", PreprocessorNode(model_name=MODEL_NAME))
+    registry.register("envelope_extractor", DetachedThreadProcessor(EnvelopeExtractor()))
+    registry.register("image_decoder", DetachedThreadProcessor(ImageDeserializer()))
+    registry.register("preprocessor", DetachedThreadProcessor(PreprocessorNode(model_name=MODEL_NAME)))
     registry.register(
         "inference",
         InferenceWorker(grpc_url=config.inference.grpc_url),
     )
-    registry.register("postprocessor", DetectionPostProcessor())
-    registry.register("serializer", OutputSerializer())
-    registry.register("error_sink", ErrorLogSink())
+    registry.register("postprocessor", DetachedThreadProcessor(DetectionPostProcessor()))
+    registry.register("serializer", DetachedThreadProcessor(OutputSerializer()))
+    registry.register("error_sink", DetachedThreadSink(ErrorLogSink()))
     registry.register("redis_sink", RedisStreamSink(output_connector))
 
     app = Application(config=config, registry=registry, queue_bus=QueueBus(config=config.queues))

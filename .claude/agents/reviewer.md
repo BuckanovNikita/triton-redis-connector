@@ -135,8 +135,6 @@ Verify each component:
 - **Wrappers** (`DetachedThreadSource`, `DetachedThreadProcessor`, `ThreadedProcessor`,
   `MultiProcessProcessor`, `DetachedThreadSink`) add `stop`, `variant`, and optional
   `MetricAggregator`. Verify wrappers satisfy `WrappedNode` protocol.
-- **Deprecated modules**: `engine/bases.py` and `inference/retry.py`. Flag any new
-  code that imports from these — should use wrappers + middleware instead.
 
 ### Middleware Compliance
 
@@ -199,7 +197,6 @@ Verify each component:
 - Retry/concurrency handled by middleware wrapping, NOT inside the worker.
 - Flag any retry logic, semaphore, or threading code inside `InferenceWorker`.
 - Flag any direct `triton_client.infer()` call outside a ProcessPoolProcessor's `__call__`.
-- Flag any import from deprecated `inference/retry.py` — should use `RetryMiddleware`.
 
 ### Metric Marker Review
 

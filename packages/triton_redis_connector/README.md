@@ -40,7 +40,7 @@
 | `Sink` | Inline, синхронный | -- |
 | `ThreadSink` | Выделенный поток | `threading.Event` |
 
-Все протоколы определены в `triton_redis_connector/protocols.py`. Базовые классы для параллельных вариантов -- в `triton_redis_connector/engine/bases.py`.
+Все протоколы определены в `triton_redis_connector/protocols.py`. Обёртки для параллельных вариантов -- в `triton_redis_connector/engine/wrappers.py`.
 
 ## Построение графа
 
@@ -178,7 +178,7 @@ debug:
 
 ## Точки расширения
 
-1. **Новый Source/Processor/Sink** -- реализуйте протокол из `protocols.py` или наследуйте базовый класс из `engine/bases.py`
+1. **Новый Source/Processor/Sink** -- реализуйте протокол из `protocols.py` и оберните через `engine/wrappers.py`
 2. **Новый Router** -- реализуйте метод `route(event) -> list[RoutingTarget]`
 3. **Новый декодер** -- реализуйте `ImageDecoder` протокол (`preprocessing/protocols.py`)
 4. **Кастомные метрики** -- реализуйте `AggregationRuleProtocol`
@@ -192,7 +192,7 @@ triton_redis_connector/
   connectors/     -- Redis Stream I/O, consumer groups, output router
   engine/         -- Application, PipelineRegistry, QueueBus, diagram
   errors/         -- типизированные ошибки (ConnectorError, InferenceError, ...)
-  inference/      -- InferenceWorker, retry, model registry
+  inference/      -- InferenceWorker, model registry
   metrics/        -- MetricBuffer, MetricEmitter, TritonCollector, агрегация
   preprocessing/  -- декодеры (OpenCV, TurboJPEG), letterbox
   protocols/      -- все 9 вариантов, Envelope, фабрики

@@ -213,9 +213,6 @@ Wrappers in `engine/wrappers.py`:
 Each wrapper adds `stop: threading.Event`, `variant` property (satisfies `WrappedNode` protocol),
 and optional `MetricAggregator` for per-call timing/error/empty tracking.
 
-**Deprecated**: `engine/bases.py` (abstract base classes) and `inference/retry.py`
-(async retry handler). Do NOT use for new code.
-
 ### Composable Middleware
 
 Cross-cutting concerns compose via nesting in `engine/middleware.py`:
