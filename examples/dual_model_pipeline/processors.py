@@ -15,12 +15,14 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 from loguru import logger
+from triton_redis_connector.engine.context import current_context
 from triton_redis_connector.engine.events import InferenceInput
 from triton_redis_connector.errors.models import InferenceError
 from triton_redis_connector.inference.worker import InferenceWorker
 from triton_redis_connector.preprocessing.decoder import TurboJPEGDecoder
 from triton_redis_connector.preprocessing.letterbox import LetterBoxPreprocessor
 from triton_redis_connector.protocols import Envelope
+from triton_shared_models.nms import nms
 
 from examples.dual_model_pipeline.events import (
     EvenCameraFrame,
@@ -94,12 +96,16 @@ class CameraBranchRouter:
                 camera_no=event.camera_no,
                 frame_counter=event.frame_counter,
                 metal_type="HK",
+                receipt_ts=event.receipt_ts,
+                image_path=event.image_path,
             )
         return OddCameraFrame(
             image_bytes=image_bytes,
             camera_no=event.camera_no,
             frame_counter=event.frame_counter,
             metal_type="GK",
+            receipt_ts=event.receipt_ts,
+            image_path=event.image_path,
         )
 
 
@@ -123,6 +129,8 @@ class DaliPreprocessor:
             camera_no=event.camera_no,
             frame_counter=event.frame_counter,
             metal_type=event.metal_type,
+            receipt_ts=event.receipt_ts,
+            image_path=event.image_path,
         )
 
 
@@ -159,6 +167,8 @@ class TurboJpegPreprocessor:
             camera_no=event.camera_no,
             frame_counter=event.frame_counter,
             metal_type=event.metal_type,
+            receipt_ts=event.receipt_ts,
+            image_path=event.image_path,
         )
 
 
@@ -187,6 +197,8 @@ class MetadataInferenceWorker:
             camera_no=event.camera_no,
             frame_counter=event.frame_counter,
             metal_type=event.metal_type,
+            receipt_ts=event.receipt_ts,
+            image_path=event.image_path,
         )
 
 
@@ -234,6 +246,8 @@ class InspectionPostProcessor:
             inference_time_ms=output.inference_time_ms,
             num_detections=len(detections),
             frame_counter=event.frame_counter,
+            receipt_ts=event.receipt_ts,
+            image_path=event.image_path,
         )
 
     def _postprocess_end2end(
@@ -283,7 +297,7 @@ class InspectionPostProcessor:
             return []
 
         boxes_xyxy = _xywh_to_xyxy(filtered_boxes_xywh)
-        keep = _nms_numpy(boxes_xyxy, filtered_scores, self._iou_threshold)
+        keep = nms(boxes_xyxy, filtered_scores, self._iou_threshold)
 
         return [
             {
@@ -302,9 +316,20 @@ class OutputSerializer:
     """Serializes InspectionResult to Envelope[bytes] for the Redis sink."""
 
     def __call__(self, event: InspectionResult) -> Envelope[bytes] | None:
-        """Serialize InspectionResult to JSON bytes wrapped in an Envelope."""
+        """Serialize InspectionResult to JSON bytes wrapped in an Envelope.
+
+        Preserves original_fields, source_stream, and message_id from the
+        EventContext so that the output Envelope carries all input metadata
+        through to the Redis sink.
+        """
+        ctx = current_context()
         payload = event.model_dump_json().encode()
-        return Envelope(payload=payload)
+        return Envelope(
+            payload=payload,
+            original_fields=dict(ctx.original_fields),
+            source_stream=ctx.source_stream,
+            message_id=ctx.message_id,
+        )
 
 
 class ErrorLogSink:
@@ -330,45 +355,3 @@ def _xywh_to_xyxy(boxes: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
     result[:, 2] = boxes[:, 0] + half_w
     result[:, 3] = boxes[:, 1] + half_h
     return result
-
-
-def _nms_numpy(
-    boxes: npt.NDArray[np.float32],
-    scores: npt.NDArray[np.float32],
-    iou_threshold: float,
-) -> list[int]:
-    """Pure-numpy NMS implementation."""
-    x1 = boxes[:, 0]
-    y1 = boxes[:, 1]
-    x2 = boxes[:, 2]
-    y2 = boxes[:, 3]
-
-    areas = (x2 - x1) * (y2 - y1)
-    order = scores.argsort()[::-1]
-
-    keep: list[int] = []
-    while order.size > 0:
-        idx = int(order[0])
-        keep.append(idx)
-
-        if order.size == 1:
-            break
-
-        rest = order[1:]
-
-        xx1 = np.maximum(x1[idx], x1[rest])
-        yy1 = np.maximum(y1[idx], y1[rest])
-        xx2 = np.minimum(x2[idx], x2[rest])
-        yy2 = np.minimum(y2[idx], y2[rest])
-
-        inter_w = np.maximum(0.0, xx2 - xx1)
-        inter_h = np.maximum(0.0, yy2 - yy1)
-        intersection = inter_w * inter_h
-
-        union = areas[idx] + areas[rest] - intersection
-        iou = np.where(union > 0, intersection / union, np.float32(0.0))
-
-        remaining_mask = iou <= iou_threshold
-        order = rest[remaining_mask]
-
-    return keep

@@ -7,7 +7,7 @@ and timing information without receiving the framework-internal Envelope.
 from __future__ import annotations
 
 from contextvars import ContextVar, Token
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,7 @@ class EventContext:
     message_id: str
     source_stream: str
     created_at: float
+    original_fields: dict[str, str] = field(default_factory=dict)
 
 
 _context_var: ContextVar[EventContext] = ContextVar("event_context")

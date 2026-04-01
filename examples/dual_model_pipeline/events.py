@@ -38,6 +38,8 @@ class EvenCameraFrame(Event):
     camera_no: Annotated[int, GroupBy("camera_no_per_minute", window_s=60)]
     frame_counter: int
     metal_type: str
+    receipt_ts: float
+    image_path: str
 
 
 class OddCameraFrame(Event):
@@ -51,6 +53,8 @@ class OddCameraFrame(Event):
     camera_no: Annotated[int, GroupBy("camera_no_per_minute", window_s=60)]
     frame_counter: int
     metal_type: str
+    receipt_ts: float
+    image_path: str
 
 
 class MetadataInferenceInput(BaseModel):
@@ -62,6 +66,8 @@ class MetadataInferenceInput(BaseModel):
     camera_no: int
     frame_counter: int
     metal_type: Annotated[str, GroupBy("metal_type_per_minute", window_s=60)]
+    receipt_ts: float
+    image_path: str
 
 
 class MetadataInferenceOutput(BaseModel):
@@ -73,6 +79,8 @@ class MetadataInferenceOutput(BaseModel):
     camera_no: int
     frame_counter: int
     metal_type: str
+    receipt_ts: float
+    image_path: str
 
 
 class InspectionResult(Event):
@@ -87,6 +95,8 @@ class InspectionResult(Event):
     inference_time_ms: Annotated[float, Gauge("inspection_inference_ms")]
     num_detections: int
     frame_counter: int
+    receipt_ts: float
+    image_path: str
 
 
 MetadataInferenceInput.model_rebuild()

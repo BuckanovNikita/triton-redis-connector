@@ -161,6 +161,7 @@ class Application:
                 message_id=envelope.message_id,
                 source_stream=envelope.source_stream,
                 created_at=envelope.created_at,
+                original_fields=dict(envelope.original_fields),
             )
         )
 
