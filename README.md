@@ -43,7 +43,7 @@ graph LR
 | `triton-model-tools` | `packages/triton_model_tools/` | CLI для конвертации (`convert`), экспорта, бенчмаркинга и верификации YOLO-моделей для Triton |
 | `triton-shared-models` | `packages/triton_shared_models/` | Общие типы Triton (`TritonModelConfig`, `TritonDataType`, `config.pbtxt`) и letterbox-препроцессинг |
 
-Полная архитектура описана в [docs/design.md](docs/design.md).
+Полная архитектура будет описана в `docs/architecture.md` после завершения плана реализации (см. [docs/final-plan.md](docs/final-plan.md)).
 
 ## Быстрый старт
 

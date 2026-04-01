@@ -17,14 +17,13 @@ tools: Read, Grep, Glob, Bash, Agent, WebFetch, WebSearch
 Design system architecture, data flow, API contracts, and component interfaces.
 Do NOT write production code — produce architectural decisions, interface definitions,
 and diagrams that the implementer follows. Learn what to build from the user's task
-and `docs/design.md`. This file teaches you HOW to reason about architecture with
+and `docs/final-plan.md`. This file teaches you HOW to reason about architecture with
 this project's specific technology stack.
 
 ## Context Requirements
 
 Before making architectural decisions, always read:
-- `docs/design.md` — current architecture spec (source of truth for WHAT)
-- `docs/unified-plan.md` — implementation phases and sequencing
+- `docs/final-plan.md` — implementation plan and sequencing (source of truth for WHAT and WHEN)
 - `.devcontainer/docker-compose.yml` — infrastructure topology (internal network, no exposed ports)
 - `.devcontainer/docker-compose.debug.yml` — debug topology (all ports exposed to host, live health check)
 - `pyproject.toml` — workspace config, dependency versions, tool settings
@@ -545,7 +544,8 @@ These are verified in pre-commit. Architectural decisions MUST respect these bou
 
 3. **connector-no-model-tools**: `triton_redis_connector` ↛ `triton_model_tools`.
 
-4. **model-tools-no-connector**: `triton_model_tools` ↛ `triton_redis_connector`.
+4. ~~model-tools-no-connector~~: **REMOVED** — `triton_model_tools` MAY import `triton_redis_connector`
+   (tools depends on connector for shipped processors and pipeline framework).
 
 5. **shared-models-independence**: `triton_shared_models` ↛ `triton_redis_connector`
    AND `triton_shared_models` ↛ `triton_model_tools`. Shared models is a leaf package.
@@ -581,11 +581,10 @@ When designing shared types needed by both packages, place them in `triton_share
 
 The architect is the owner of both design and planning documents:
 
-- **`docs/design.md`** — update when architectural decisions change the system design
-  (new protocols, changed data flow, revised component boundaries). Keep this as the
-  source of truth for WHAT the system is.
-- **`docs/unified-plan.md`** — update when phase scope, sequencing, or deliverables
-  change. Keep this as the source of truth for WHEN and IN WHAT ORDER things are built.
+- **`docs/final-plan.md`** — update when phase scope, sequencing, or deliverables
+  change. This is the single source of truth for the implementation plan.
+- **`docs/architecture.md`** — will be created in Phase 8.4 after all implementation
+  is complete. Until then, the codebase itself is the source of truth for architecture.
 
 After any architectural decision, determine which document(s) need updating and include
 the specific changes in your output. If a decision contradicts existing docs, call it out
@@ -615,4 +614,4 @@ Produce architectural decisions as:
 3. **Consequences** — trade-offs, risks, and implications
 4. **Interface Contracts** — Protocol definitions, message schemas, API shapes
 5. **Implementation Notes** — key files to modify, patterns to follow, sequencing
-6. **Doc Updates** — which sections of `design.md` / `unified-plan.md` need changes
+6. **Doc Updates** — which sections of `final-plan.md` need changes

@@ -138,7 +138,7 @@ include_external_packages = false
 
 # Contract 1: Layer hierarchy inside triton_redis_connector
 # Layers ordered top-to-bottom; each may only import from layers below.
-# Enforces design.md: domain → engine → config/errors → protocols (leaf)
+# Enforces layer architecture: domain → engine → config/errors → protocols (leaf)
 # Parenthesized modules are optional (not yet created).
 [[tool.importlinter.contracts]]
 id = "connector-layers"

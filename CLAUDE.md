@@ -8,12 +8,13 @@ Analyzer any user input to update your instructions to work process or for avoid
 
 **triton-redis-connector** — microservice component for ML model inference. Receives data from Redis Streams, sends it to NVIDIA Triton Inference Server, returns results back to Redis Streams.
 
-Monorepo contains two packages:
+Monorepo contains three packages:
 - **triton-redis-connector** (`packages/triton_redis_connector/`) — core Redis ↔ Triton connector
 - **triton-model-tools** (`packages/triton_model_tools/`) — ultralytics model conversion and verification tools for Triton
+- **triton-shared-models** (`packages/triton_shared_models/`) — shared types and preprocessing (leaf package, no deps on other two)
 
 **Language**: Python 3.12, strict typing (mypy strict + pyright strict)
-**Documentation**: Russian (README.md, user-facing docs)
+**Documentation**: Only README.md in Russian. All other docs (CLAUDE.md, docs/*.md, agents, skills) in English.
 
 ## Development Commands
 
@@ -48,7 +49,7 @@ packages/
     triton_redis_connector/             — source code
     tests/                              — tests
   triton_model_tools/                   — model tools
-    pyproject.toml                      — deps: ultralytics, onnx, onnxruntime, tritonclient
+    pyproject.toml                      — deps: ultralytics, onnx, onnxruntime, tritonclient, triton-redis-connector
     triton_model_tools/                 — source code (subpackages below)
       models/                           — shared types: Detection, YoloModelVariant, YOLO_MODELS
       export/                           — YOLO → ONNX/TRT → Triton repository (+ templates/, scripts/)
@@ -56,13 +57,33 @@ packages/
       testing/                          — E2E test harness (Redis pipeline integration)
       benchmarks/                       — performance measurement, comparison, dataset tools
     tests/                              — tests (flat, not mirroring subpackage structure)
+  triton_shared_models/                 — shared types (leaf package)
+    pyproject.toml                      — deps: pydantic, numpy, opencv-python-headless, jinja2
+    triton_shared_models/               — source code
+    tests/                              — tests
 ```
 
-### Import Layer Architecture (import-linter contract)
+### Package Dependency Direction
 
+```
+triton_model_tools → triton_redis_connector → triton_shared_models (leaf)
+```
+
+### Import Layer Architecture (import-linter contracts)
+
+**connector-layers** (triton_redis_connector internal):
+```
+providers → connectors | inference | preprocessing | metrics | routers → engine → config | errors → protocols (leaf)
+```
+
+**model-tools-layers** (triton_model_tools internal):
 ```
 __main__ (CLI) → benchmarks → testing → inference | export → models (leaf)
 ```
+
+**Cross-package contracts**:
+- `connector-no-model-tools`: connector ↛ model_tools
+- `shared-models-independence`: shared_models ↛ connector AND shared_models ↛ model_tools
 
 Modules within a `|` group are siblings at the same layer and must NOT cross-import.
 

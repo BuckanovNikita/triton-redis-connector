@@ -255,7 +255,8 @@ Run `uv run lint-imports` to verify. The root `pyproject.toml` enforces 6 contra
 2. **Domain independence**: modules on the same layer (connectors, inference, preprocessing,
    metrics, routers) must NOT import each other. Flag any cross-domain import.
 3. **connector-no-model-tools**: `triton_redis_connector` ↛ `triton_model_tools`.
-4. **model-tools-no-connector**: `triton_model_tools` ↛ `triton_redis_connector`.
+4. ~~model-tools-no-connector~~: **REMOVED** — `triton_model_tools` MAY import `triton_redis_connector`
+   (tools depends on connector for shipped processors and pipeline framework).
 5. **shared-models-independence**: `triton_shared_models` ↛ `triton_redis_connector` AND
    `triton_shared_models` ↛ `triton_model_tools`. Flag any import from shared_models to
    either consumer package.

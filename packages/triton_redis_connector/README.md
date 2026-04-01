@@ -200,4 +200,4 @@ triton_redis_connector/
   routers/        -- FieldBasedRouter, BroadcastRouter
 ```
 
-Подробная архитектура -- в [docs/design.md](../../docs/design.md).
+Подробная архитектура будет в `docs/architecture.md` после завершения плана (см. [docs/final-plan.md](../../docs/final-plan.md)).

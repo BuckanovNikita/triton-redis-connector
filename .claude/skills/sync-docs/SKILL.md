@@ -3,9 +3,8 @@ name: sync-docs
 description: >
   Documentation synchronization checker. Use when updating docs after code
   changes, checking for documentation drift, marking phases as done in the
-  unified plan, or "/sync-docs". Compares docs/design.md, docs/unified-plan.md,
-  README.md, and CLAUDE.md against actual codebase state and produces a
-  discrepancy report.
+  unified plan, or "/sync-docs". Compares docs/final-plan.md, README.md,
+  and CLAUDE.md against actual codebase state and produces a discrepancy report.
 ---
 
 # Documentation Synchronization
@@ -17,32 +16,28 @@ and update docs to match reality.
 
 | File | Language | Content |
 |------|----------|---------|
-| `docs/design.md` | Russian | Architecture spec, protocols, data flow |
-| `docs/unified-plan.md` | Russian | 7-phase implementation plan, deliverables |
+| `docs/final-plan.md` | Russian | 9-phase implementation plan (26 tasks, 4 execution waves), deliverables |
 | `README.md` | Russian | Quick start, commands, infrastructure |
 | `CLAUDE.md` | English | Agent guidance, workspace structure, commands |
 
+**Note**: `docs/design.md` was removed as obsolete. A new `docs/architecture.md` will be created in Phase 8.4 after all implementation is complete.
+
 ## Step 1: Read All Documents
 
-Read all four documentation files in full. Note the key factual claims:
+Read all three documentation files in full. Note the key factual claims:
 - Package structure and file paths
 - Dependency versions
 - Infrastructure configuration (ports, images, commands)
-- Protocol definitions and signatures
 - Phase deliverables and their status
 - Development commands
 
 ## Step 2: Scan Codebase for Discrepancies
 
 ### Package structure
-- Compare `docs/design.md` package structure tree against actual `packages/` contents
+- Compare package structure claims in docs against actual `packages/` contents
 - Use Glob to check which packages and modules actually exist
 - Flag any packages/modules mentioned in docs that don't exist yet (expected for future phases)
 - Flag any packages/modules that exist but aren't documented
-
-### Protocol definitions
-- Compare protocol signatures in docs against actual source code (if protocols are implemented)
-- Check `__call__` signatures, `stop` field presence, return types
 
 ### Dependency versions
 - Compare versions in docs against `pyproject.toml` files (root and per-package)
@@ -53,7 +48,7 @@ Read all four documentation files in full. Note the key factual claims:
 - Check: image tags, ports, volume mounts, health checks, command flags
 
 ### Phase deliverables
-- For each phase in `docs/unified-plan.md`, check if deliverable files exist
+- For each phase in `docs/final-plan.md`, check if deliverable files exist
 - Mark deliverables as: exists (with real code), exists (placeholder only), missing
 
 ### Development commands
@@ -67,11 +62,7 @@ Output a structured report:
 ```markdown
 ## Documentation Discrepancies
 
-### docs/design.md
-- [ ] Section 2: Package structure shows `triton_shared_models` but package doesn't exist yet (Phase 1 deliverable — expected)
-- [x] Section 5: `tritonclient>=2.52.0` but pyproject.toml has `>=2.66.0` — **needs update**
-
-### docs/unified-plan.md
+### docs/final-plan.md
 - [x] Phase 0: All deliverables complete — **mark as done**
 - [ ] Phase 1.3: Envelope module exists but has only placeholder code
 
@@ -90,10 +81,8 @@ expected gaps (future work not yet implemented).
 After the user reviews the report and confirms, update each document:
 
 ### Language rules
-- `docs/design.md` — Russian
-- `docs/unified-plan.md` — Russian
 - `README.md` — Russian
-- `CLAUDE.md` — English (always)
+- All other docs (`CLAUDE.md`, `docs/*.md`, agents, skills) — English
 
 ### Update guidelines
 - Only update factual claims that are verifiably wrong (versions, file paths, commands)

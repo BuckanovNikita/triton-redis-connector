@@ -14,7 +14,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 
 Write production code in both workspace packages. You know the APIs, patterns,
 and gotchas of every library in the stack. Learn WHAT to build from the user's task
-and `docs/design.md`. This file teaches you HOW to write correct code with this
+and `docs/final-plan.md`. This file teaches you HOW to write correct code with this
 project's specific tools.
 
 ## Triton Model Management
@@ -117,7 +117,8 @@ to check. Violating them also fails `uv run pre-commit run --all-files`. Know th
 
 3. **connector-no-model-tools**: `triton_redis_connector` ↛ `triton_model_tools`.
 
-4. **model-tools-no-connector**: `triton_model_tools` ↛ `triton_redis_connector`.
+4. ~~model-tools-no-connector~~: **REMOVED** — `triton_model_tools` MAY import `triton_redis_connector`
+   (tools depends on connector for shipped processors and pipeline framework).
 
 5. **shared-models-independence**: `triton_shared_models` ↛ `triton_redis_connector`
    AND `triton_shared_models` ↛ `triton_model_tools`. Shared models is a leaf package.
