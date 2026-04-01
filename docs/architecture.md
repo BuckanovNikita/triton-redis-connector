@@ -117,12 +117,12 @@ registry.register("proc", MyProcessor("triton:8001"))
 
 ### Config-Driven Node Assembly
 
-Shipped processors and framework building blocks can be assembled from YAML config via `NodeConfig` entries. The variant is a deployment decision in config, not hardcoded in the processor.
+`NodeConfig` is primarily for **user-defined processors** that need a `class_path` to be imported dynamically. Shipped processors (extractor, preprocessor, inference worker, serializer, error sink) are registered automatically by `build_application` from config fields -- no `NodeConfig` entries needed. The variant is a deployment decision in config, not hardcoded in the processor.
 
 Config schema (`config/schema.py`):
 - `NodeVariant` -- StrEnum mirroring `ExecutionVariant` (SOURCE, THREAD_SOURCE, PROCESS_SOURCE, PROCESSOR, THREAD_PROCESSOR, THREAD_POOL_PROCESSOR, PROCESS_POOL_PROCESSOR, SINK, THREAD_SINK)
 - `NodeConfig` -- name, class_path, variant, params, tracked, pool_size
-- `AppConfig.nodes: list[NodeConfig]` replaces the old `processors: list[str]`
+- `AppConfig.nodes: list[NodeConfig]` for user-defined processors that require dynamic import
 
 Assembly (`engine/assembly.py`):
 - `import_class(class_path)` -- dynamic import from fully-qualified dotted path
@@ -133,18 +133,52 @@ Assembly (`engine/assembly.py`):
 DI Provider (`providers/node_assembly_provider.py`):
 - `NodeAssemblyProvider` reads `AppConfig.nodes`, assembles, and registers all nodes before `Application` starts
 
+### build_application Factory
+
+`providers/app_factory.py` provides `build_application()` -- a high-level factory that creates a fully wired `Application` from an `AppConfig` with minimal boilerplate.
+
+```python
+app = build_application(
+    config,
+    event_model=SteelInspectionInput,
+    postprocessor=YoloPostProcessorBridge(
+        conf_threshold=config.pipeline.postprocessor.conf_threshold,
+        iou_threshold=config.pipeline.postprocessor.iou_threshold,
+        end2end=config.pipeline.postprocessor.end2end,
+    ),
+    extra_nodes=[("branch_router", CameraBranchRouter())],
+)
+```
+
+What `build_application` does automatically:
+- Creates Redis client and verifies connectivity
+- Creates `RedisStreamSource`/`RedisStreamSink` from `config.sources`/`config.sinks`
+- Registers shipped processors from config fields: `EnvelopeExtractor` (from `event_model`), preprocessor (from `preprocessing.decoder` + `pipeline.model_name`), `InferenceWorker` (from `inference.grpc_url`), `EventSerializer`, `LogErrorSink`
+- Assembles any `NodeConfig` entries from `config.nodes`
+- Registers user processors passed via `extra_nodes`
+
+Separation of concerns:
+- **Config** contains only infrastructure params (Redis URLs, model names, thresholds, tensor names) -- no class paths for shipped processors
+- **Code** provides `event_model` (pydantic model for envelope extraction) and `postprocessor` (e.g., `YoloPostProcessorBridge` from model_tools)
+- **extra_nodes** receives user-defined processors that extend the pipeline graph
+
 ## Shipped Processors
 
-Six reusable processors provided out of the box. Five live in `triton_redis_connector.engine.shipped_processors`, one in `triton_model_tools.inference.yolo_bridge`. Shipped processors are variant-agnostic plain callables and can be assembled from YAML config with any execution variant via `NodeConfig` entries (see "Config-Driven Node Assembly" above).
+Seven reusable processors provided out of the box. Five live in `triton_redis_connector.engine.shipped_processors`, one in `triton_redis_connector.providers.shipped_factories`, one in `triton_model_tools.inference.yolo_bridge`. Shipped processors are variant-agnostic plain callables. When using `build_application`, they are registered automatically from config fields. They can also be assembled manually from YAML config with any execution variant via `NodeConfig` entries (see "Config-Driven Node Assembly" above).
 
 | Processor | Location | Input | Output | Purpose |
 |---|---|---|---|---|
 | `EnvelopeExtractor[T]` | connector | `Envelope[bytes]` | `T` (pydantic) | Deserialize envelope bytes into a typed pydantic model |
-| `DaliInferenceInputBuilder` | connector | `_ImageBytesEvent` | `InferenceInput` | Wrap raw image bytes for DALI ensemble inference |
+| `DaliInferenceInputBuilder` | connector | `_ImageBytesEvent` or `_ImagePathEvent` | `InferenceInput` | Wrap raw image bytes for DALI ensemble inference (reads from path if needed) |
 | `ClientPreprocessor` | connector | `_ImagePathEvent` | `InferenceInput` | Read file, decode, letterbox, wrap as tensor |
+| `ConfigurableClientPreprocessor` | connector (providers) | `_ImagePathEvent` | `InferenceInput` | Config-friendly ClientPreprocessor (decoder_type + target_size) |
 | `EventSerializer[T]` | connector | `T` (pydantic) | `Envelope[bytes]` | Serialize event to JSON bytes with original_fields passthrough |
 | `LogErrorSink` | connector | `BaseModel` | `None` | Log error events at error level via loguru |
-| `YoloPostProcessorBridge` | model_tools | `InferenceOutput` | `DetectionResult` | YOLO postprocessing (NMS + confidence filter) |
+| `YoloPostProcessorBridge` | model_tools | `InferenceOutput` | `DetectionResult` | YOLO postprocessing (NMS + confidence filter), config-friendly constructor |
+
+**Metadata bypass**: All preprocessors (`DaliInferenceInputBuilder`, `ClientPreprocessor`, `ConfigurableClientPreprocessor`) support metadata passthrough. If the input event carries a `metadata: dict[str, Any]` field, it is copied through the pipeline via `InferenceInput.metadata` -> `InferenceOutput.metadata` -> `DetectionResult.metadata` without interpretation. This allows domain-specific fields (camera ID, timestamp, custom tags) to travel alongside inference data.
+
+`YoloPostProcessorBridge` accepts config-friendly constructor params (`end2end`, `conf_threshold`, `iou_threshold`) directly and constructs the internal `YoloPostprocessor` automatically. A pre-built `YoloPostprocessor` instance can also be passed for programmatic use.
 
 ## EventContext and Field Passthrough
 
@@ -169,6 +203,34 @@ Defined in `config/schema.py`. Controls Redis Stream consumer group startup beha
 | `FROM_OLDEST` | `0` | Process all messages from the beginning of the stream |
 
 Configured per source via `SourceConfig.collector_mode`.
+
+## PipelineConfig
+
+`AppConfig` includes a `pipeline` section (`PipelineConfig` in `config/schema.py`) that configures shipped processors resolved by `build_application`:
+
+- `model_name: str` -- Triton model name used by the preprocessor and inference worker
+- `model_input_name: str` -- input tensor name (default `"images"`)
+- `model_output_names: list[str]` -- output tensor names (default `["output0"]`)
+- `postprocessor: PostprocessorConfig` -- YOLO postprocessor thresholds:
+  - `conf_threshold: float` (default 0.25)
+  - `iou_threshold: float` (default 0.45)
+  - `end2end: bool` (default False)
+
+These are pure infrastructure parameters. The actual `event_model` type and `postprocessor` instance come from Python code, not config.
+
+## DecoderType
+
+`DecoderType` (`config/schema.py`) controls which image decoder backend `build_application` uses for the preprocessor:
+
+| Value | Preprocessor Used | Preprocessing Location |
+|---|---|---|
+| `OPENCV` | `ConfigurableClientPreprocessor` (OpenCV decoder) | Client-side |
+| `TURBOJPEG` | `ConfigurableClientPreprocessor` (TurboJPEG decoder) | Client-side |
+| `DALI` | `DaliInferenceInputBuilder` | Server-side (Triton DALI ensemble) |
+
+When `decoder: dali`, `build_application` sends raw image bytes to Triton for server-side decoding and preprocessing via a DALI ensemble pipeline. Client-side decoders (`opencv`, `turbojpeg`) read the file, decode, letterbox, and send the preprocessed tensor.
+
+Configured via `PreprocessingConfig.decoder` (default: `OPENCV`).
 
 ## Per-Model Output Routing
 
@@ -231,6 +293,16 @@ Container is not picklable. Workers receive only picklable config and create the
 Both satisfy `Processor[TIn, TOut]` and compose via nesting.
 
 ## Pipeline Construction
+
+### Preferred: build_application (recommended)
+
+1. Load config via `load_config()` (Hydra YAML + env var interpolation)
+2. Call `build_application(config, event_model=..., postprocessor=..., extra_nodes=[...])`
+3. `app.run()`
+
+The factory handles Redis client creation, shipped processor registration, and graph wiring. See "build_application Factory" above for details.
+
+### Manual construction (advanced)
 
 1. Load config via `load_config()` (Hydra YAML + env var interpolation)
 2. Create `PipelineRegistry`, register nodes with type-annotated `__call__`

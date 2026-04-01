@@ -212,22 +212,28 @@ class MyProcessor(BaseThreadProcessor[InputEvent, OutputEvent]):
 registry.register("proc", MyProcessor("value"))
 ```
 
-### Approach B: Config-Driven Assembly (shipped/framework processors)
+### Approach B: build_application Factory (preferred for pipelines)
 
-`NodeConfig` in YAML config declares shipped processor nodes with variant and params.
-Assembled via `assemble_all(config.nodes, registry)` or `NodeAssemblyProvider` in DI.
+`build_application()` registers shipped processors automatically from config fields.
+Event model and postprocessor come from code. User processors via `extra_nodes`.
 
-```yaml
-nodes:
-  - name: extractor
-    class_path: triton_redis_connector.engine.shipped_processors.EnvelopeExtractor
-    variant: thread_processor
-    params:
-      model_class: myapp.events.InputEvent
+```python
+from triton_redis_connector.providers.app_factory import build_application
+
+app = build_application(
+    config,
+    event_model=MyInputEvent,
+    postprocessor=MyPostProcessor(),
+    extra_nodes=[("my_router", MyRouter())],
+)
+app.run()
 ```
 
+Shipped processors resolved: EnvelopeExtractor, preprocessor (from `preprocessing.decoder`),
+InferenceWorker, EventSerializer, LogErrorSink. Config has no class paths.
+
+For advanced cases, `NodeConfig` in YAML declares user-defined nodes with `class_path`.
 `engine/assembly.py` provides `assemble_all(config.nodes, registry)`.
-`providers/node_assembly_provider.py` handles DI wiring.
 
 ### Approach C: Manual Wrapping (legacy/advanced)
 

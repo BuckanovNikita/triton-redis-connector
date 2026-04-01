@@ -103,14 +103,14 @@ uv run pytest
 
 ## Пример: dual_model_pipeline
 
-Полный пайплайн стальной инспекции с двумя моделями и ветвлением по камерам. Демонстрирует использование shipped-процессоров (`EnvelopeExtractor`, `EventSerializer`, `LogErrorSink`).
+Полный пайплайн стальной инспекции с двумя моделями и ветвлением по камерам. Использует фабрику `build_application` — shipped-процессоры (`EnvelopeExtractor`, `DaliInferenceInputBuilder`, `ClientPreprocessor`, `InferenceWorker`, `YoloPostProcessorBridge`, `EventSerializer`, `LogErrorSink`) резолвятся автоматически из конфига с прозрачным пробросом метаданных.
 
 ```
 examples/dual_model_pipeline/
-├── config.yaml           — конфигурация (Redis, Triton, очереди)
-├── run_pipeline.py       — точка входа (загрузка конфига + регистрация узлов)
-├── processors.py         — доменные процессоры (роутинг, препроцессинг, инференс, постпроцессинг)
-├── events.py             — модели событий с Counter/Gauge/GroupBy метриками
+├── config.yaml           — конфигурация (Redis, Triton, pipeline параметры)
+├── run_pipeline.py       — точка входа (build_application + пользовательские процессоры из кода)
+├── processors.py         — один доменный процессор (CameraBranchRouter — роутинг по камерам)
+├── events.py             — модели событий с Counter/GroupBy метриками
 └── test_deterministic.py — детерминистический тест без Triton
 ```
 
@@ -118,11 +118,11 @@ examples/dual_model_pipeline/
 
 ```
 RedisStreamSource -> EnvelopeExtractor -> CameraBranchRouter
-  -> [even] DaliPreprocessor --------+
-  -> [odd]  TurboJpegPreprocessor ---+-> MetadataInferenceWorker
-                                         -> InspectionPostProcessor
-                                             -> EventSerializer -> RedisStreamSink
-                                         -> LogErrorSink (InferenceError)
+  -> [even] DaliInferenceInputBuilder ---+
+  -> [odd]  ClientPreprocessor ----------+-> InferenceWorker
+                                              -> YoloPostProcessorBridge
+                                                  -> EventSerializer -> RedisStreamSink
+                                              -> LogErrorSink (InferenceError)
 ```
 
 Запуск:

@@ -5,10 +5,10 @@
 **Частично.** Вся инфраструктурная конфигурация (Redis, Triton, очереди, метрики) задаётся
 в `config.yaml` и поддерживает переменные окружения через `${oc.env:VAR,default}`.
 
-Однако **процессоры требуют Python-кода**, потому что:
-- Каждый процессор -- это класс с типизированным `__call__` 
+Однако **доменные процессоры требуют Python-кода**, потому что:
+- Каждый процессор -- это класс с типизированным `__call__`
 - Фреймворк строит DAG автоматически по аннотациям типов
-- Нет встроенного реестра процессоров по имени (поле `processors` в конфиге зарезервировано, но не реализовано)
+- Shipped-процессоры (EnvelopeExtractor, DaliInferenceInputBuilder/ClientPreprocessor, InferenceWorker, EventSerializer, LogErrorSink) регистрируются автоматически через `build_application()` на основе полей конфигурации
 
 ### Что настраивается через YAML
 
@@ -18,33 +18,34 @@
 | `sources` | Входные Redis Streams (имя, consumer group, batch size) |
 | `sinks` | Выходные Redis Streams (имя, maxlen) |
 | `inference` | Triton gRPC URL, число воркеров, retry-политика |
-| `preprocessing` | Декодер (opencv/turbojpeg), размер тензора |
+| `preprocessing` | Декодер (opencv/turbojpeg/dali), размер тензора |
+| `pipeline` | Модель Triton, имена тензоров, пороги постпроцессора |
 | `queues` | Размер внутренних очередей |
 | `metrics` | Стрим метрик, интервалы опроса |
 
 ### Что требует Python-кода
 
-- Реализация процессоров (классы с `__call__`)
-- Регистрация узлов в `PipelineRegistry`
-- Создание `Application` и вызов `app.run()`
+- Класс события для десериализации (`event_model`)
+- Постпроцессор (`YoloPostProcessorBridge` или кастомный)
+- Пользовательские процессоры (`extra_nodes`)
 
 ### Минимальный шаблон запуска
 
 ```python
 from pathlib import Path
 from triton_redis_connector.config.hydra_app import load_config
-from triton_redis_connector.engine.app import Application
-from triton_redis_connector.engine.queue_bus import QueueBus
-from triton_redis_connector.engine.registry import PipelineRegistry
+from triton_redis_connector.providers.app_factory import build_application
 
 config = load_config(config_name="config", config_dir=Path(__file__).parent)
 
-registry = PipelineRegistry()
-registry.register("source", MySource())
-registry.register("processor", MyProcessor())
-registry.register("sink", MySink())
-
-app = Application(config=config, registry=registry, queue_bus=QueueBus(config=config.queues))
+app = build_application(
+    config,
+    event_model=MyInputEvent,
+    postprocessor=MyPostProcessor(),
+    extra_nodes=[
+        ("my_processor", MyProcessor()),
+    ],
+)
 app.run()
 ```
 
@@ -67,8 +68,8 @@ REDIS_HOST=localhost TRITON_GRPC_URL=localhost:8001 uv run python my_pipeline.py
 examples/dual_model_pipeline/
 ├── config.yaml           — конфигурация (Redis, Triton, очереди)
 ├── run_pipeline.py       — точка входа (загрузка конфига + регистрация узлов)
-├── processors.py         — доменные процессоры (роутинг, препроцессинг, инференс, постпроцессинг)
-├── events.py             — модели событий с Counter/Gauge/GroupBy метриками
+├── processors.py         — один доменный процессор (CameraBranchRouter -- роутинг)
+├── events.py             — модели событий (SteelInspectionInput, EvenCameraFrame, OddCameraFrame)
 └── test_deterministic.py — детерминистический тест без Triton
 ```
 
@@ -86,9 +87,9 @@ uv run python examples/dual_model_pipeline/run_pipeline.py
 
 ```
 RedisStreamSource -> EnvelopeExtractor -> CameraBranchRouter
-  -> [even] DaliPreprocessor --------+
-  -> [odd]  TurboJpegPreprocessor ---+-> MetadataInferenceWorker
-                                         -> InspectionPostProcessor
-                                             -> EventSerializer -> RedisStreamSink
-                                         -> LogErrorSink (InferenceError)
+  -> [even] DaliInferenceInputBuilder ---+
+  -> [odd]  ClientPreprocessor ----------+-> InferenceWorker
+                                              -> YoloPostProcessorBridge
+                                                  -> EventSerializer -> RedisStreamSink
+                                              -> LogErrorSink (InferenceError)
 ```

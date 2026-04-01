@@ -118,22 +118,25 @@ Both approaches (wrapper-based and subclass-based) work and are fully compatible
 
 ## Config-Driven Variant Selection
 
-For shipped processors and reusable building blocks, the variant is selected in YAML config:
+### Preferred: build_application (shipped processors from config)
 
-```yaml
-nodes:
-  - name: input_extractor
-    class_path: triton_redis_connector.engine.shipped_processors.EnvelopeExtractor
-    variant: thread_processor
-    params:
-      model_class: myapp.events.InputEvent
+Shipped processors are registered automatically by `build_application()` from config fields.
+No class paths in config — variants are determined by the factory:
 
-  - name: error_sink
-    class_path: triton_redis_connector.engine.shipped_processors.LogErrorSink
-    variant: thread_sink
+```python
+from triton_redis_connector.providers.app_factory import build_application
+
+app = build_application(
+    config,
+    event_model=MyInputEvent,
+    postprocessor=MyPostProcessor(),
+    extra_nodes=[("my_processor", MyProcessor())],
+)
 ```
 
-The `assemble_all()` function imports classes, resolves parameters, wraps with the configured variant, and registers in the pipeline registry. Pool variants support `pool_size` for parallel instances:
+### Advanced: NodeConfig (user-defined nodes)
+
+For user-defined processors or advanced control, the variant is selected in YAML config:
 
 ```yaml
 nodes:
@@ -144,6 +147,8 @@ nodes:
     params:
       decoder: turbojpeg
 ```
+
+The `assemble_all()` function imports classes, resolves parameters, wraps with the configured variant, and registers in the pipeline registry.
 
 
 ## Wrapping at Assembly Time

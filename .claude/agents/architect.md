@@ -132,17 +132,19 @@ User processors can inherit from base classes in `protocols.py` to declare their
 Each provides `variant` property (satisfies `WrappedNode`) and `stop: threading.Event` for
 parallel variants. No wrapping needed at registration.
 
-### Config-Driven Node Assembly
+### build_application Factory
 
-`NodeConfig` in YAML config declares shipped processor nodes with variant and params:
-```yaml
-nodes:
-  - name: extractor
-    class_path: triton_redis_connector.engine.shipped_processors.EnvelopeExtractor
-    variant: thread_processor
-    params:
-      model_class: myapp.events.InputEvent
-```
+`providers/app_factory.py` provides `build_application(config, *, event_model, postprocessor, extra_nodes)`:
+- Creates Redis client, connectors, source/sink from config automatically
+- Registers shipped processors from config fields (decoder type, model name, grpc_url)
+- `event_model` (class) and `postprocessor` (instance) come from **code**, not config
+- User processors passed via `extra_nodes` parameter
+- Config contains only infrastructure params — no class paths
+
+### Config-Driven Node Assembly (advanced)
+
+`NodeConfig` in YAML config declares user-defined nodes with `class_path`, variant, and params.
+Used when `build_application` is insufficient or for advanced cases.
 
 `engine/assembly.py` provides `assemble_all(config.nodes, registry)`. `providers/node_assembly_provider.py`
 handles DI wiring.

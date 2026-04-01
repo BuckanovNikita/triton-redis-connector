@@ -133,8 +133,9 @@ Verify each component:
 - **Base class processors**: User processors that inherit from `BaseThreadProcessor`,
   `BaseThreadSink`, etc. are valid. Do NOT flag `self.stop = threading.Event()` when
   it comes from `super().__init__()` in a base class.
-- **Config-driven nodes**: Shipped processors assembled from `AppConfig.nodes` via
-  `assemble_all()`. Verify `NodeConfig` entries have valid class paths and variant values.
+- **build_application**: Shipped processors registered automatically by `build_application()`.
+  Config should not contain class paths — only infrastructure params. `NodeConfig` entries
+  with `class_path` are only for user-defined processors in advanced scenarios.
 - **Flag** manual wrapping (`DetachedThreadProcessor(MyProcessor())`) when the processor
   already inherits from a base class — double-wrapping is an error.
 - **Flag** new processors/sources/sinks that contain `self.stop = threading.Event()`

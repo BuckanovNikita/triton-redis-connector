@@ -75,6 +75,21 @@ nodes:
 
 Функция `assemble_all()` импортирует классы, подставляет параметры, оборачивает в нужный вариант и регистрирует в пайплайне.
 
+Для shipped-процессоров используйте `build_application()`:
+
+```python
+from triton_redis_connector.providers.app_factory import build_application
+
+app = build_application(
+    config,
+    event_model=MyInputEvent,
+    postprocessor=MyPostProcessor(),
+)
+app.run()
+```
+
+Shipped-процессоры (EnvelopeExtractor, DaliInferenceInputBuilder/ClientPreprocessor, InferenceWorker, EventSerializer, LogErrorSink) регистрируются автоматически на основе полей конфигурации.
+
 ## Построение графа
 
 Граф строится автоматически по `__call__`-сигнатурам. `PipelineRegistry` инспектирует типовые аннотации каждого узла и создает ребра по совпадению типов:
@@ -140,13 +155,19 @@ sinks:
   - stream_name: detection_results
     maxlen: 10000
 
+pipeline:
+  model_name: yolo11s
+  postprocessor:
+    conf_threshold: 0.25
+    iou_threshold: 0.45
+
 inference:
   grpc_url: ${oc.env:TRITON_GRPC_URL,triton:8001}
   num_inference_workers: 2
   max_concurrent_per_worker: 8
 
 preprocessing:
-  decoder: opencv          # opencv | turbojpeg
+  decoder: opencv          # opencv | turbojpeg | dali
   decoder_pool_type: thread # thread | process
   decoder_pool_workers: 4
   default_target_size: [640, 640]
@@ -229,7 +250,7 @@ triton_redis_connector/
   metrics/        -- MetricBuffer, MetricEmitter, TritonCollector, агрегация
   preprocessing/  -- декодеры (OpenCV, TurboJPEG), letterbox
   protocols/      -- все 9 вариантов, Envelope, фабрики
-  providers/      -- Dishka DI-провайдеры
+  providers/      -- Dishka DI-провайдеры, build_application, ConfigurableClientPreprocessor
   routers/        -- FieldBasedRouter, BroadcastRouter
 ```
 
