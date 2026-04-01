@@ -148,7 +148,7 @@ layers = [
     "(triton_redis_connector.protocols)",
 ]
 ignore_imports = [
-    "triton_redis_connector.engine.app -> triton_redis_connector.metrics.collector",
+    "triton_redis_connector.engine.wrappers -> triton_redis_connector.metrics.collector",
 ]
 
 # Contract 2: Domain modules must not import each other.

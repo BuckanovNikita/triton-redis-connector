@@ -1,7 +1,9 @@
 """Periodic emitter that flushes MetricBuffer to a Redis stream.
 
 Runs in a background daemon thread, draining buffered metrics at a
-configurable interval via XADD.
+configurable interval via XADD. Supports a zero-value guarantee:
+registered metric names that are absent in a flush cycle are emitted
+with value 0.0 so monitoring dashboards always have data.
 """
 
 from __future__ import annotations
@@ -10,6 +12,8 @@ import threading
 from typing import TYPE_CHECKING
 
 from loguru import logger
+
+from triton_redis_connector.metrics.collector import MetricEvent
 
 if TYPE_CHECKING:
     from redis import Redis
@@ -22,6 +26,8 @@ class MetricEmitter:
 
     Each flush cycle atomically swaps the buffer, serializes all MetricEvent
     instances, and writes them to the configured Redis stream via XADD.
+    After flushing real events, emits zero-value MetricEvents for any
+    known metric names not seen in this cycle.
     """
 
     def __init__(  # noqa: D107
@@ -30,6 +36,7 @@ class MetricEmitter:
         client: Redis[bytes],
         stream: str,
         interval_s: float,
+        known_metrics: set[str] | None = None,
     ) -> None:
         self._buffer = buffer
         self._client = client
@@ -37,6 +44,11 @@ class MetricEmitter:
         self._interval_s = interval_s
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._known_metrics: set[str] = known_metrics.copy() if known_metrics is not None else set()
+
+    def register_metric(self, name: str) -> None:
+        """Register a metric name for zero-value guarantee."""
+        self._known_metrics.add(name)
 
     def start(self) -> None:
         """Start the background emission thread."""
@@ -66,21 +78,34 @@ class MetricEmitter:
 
     def _flush_to_redis(self) -> None:
         events = self._buffer.flush()
-        if not events:
-            return
+        seen_this_cycle: set[str] = set()
+
         for event in events:
-            fields = {k: str(v) for k, v in event.model_dump().items()}
-            try:
-                self._client.xadd(
-                    name=self._stream,
-                    fields=fields,
-                    maxlen=10_000,
-                    approximate=True,
-                )
-            except ConnectionError:
-                logger.error(
-                    "Failed to XADD metric to stream {}: measure={}",
-                    self._stream,
-                    event.measure,
-                )
-        logger.debug("Flushed {} metric events to {}", len(events), self._stream)
+            seen_this_cycle.add(event.measure)
+            self._xadd_event(event)
+
+        for name in self._known_metrics:
+            if name not in seen_this_cycle:
+                zero_event = MetricEvent(component_name="system", measure=name, value=0.0)
+                self._xadd_event(zero_event)
+
+        total = len(events) + len(self._known_metrics - seen_this_cycle)
+        if total > 0:
+            logger.debug("Flushed {} metric events to {}", total, self._stream)
+
+    def _xadd_event(self, event: MetricEvent) -> None:
+        """Write a single MetricEvent to Redis via XADD."""
+        fields = {k: str(v) for k, v in event.model_dump().items()}
+        try:
+            self._client.xadd(
+                name=self._stream,
+                fields=fields,
+                maxlen=10_000,
+                approximate=True,
+            )
+        except ConnectionError:
+            logger.error(
+                "Failed to XADD metric to stream {}: measure={}",
+                self._stream,
+                event.measure,
+            )

@@ -1,4 +1,4 @@
-"""Tests for Application lifecycle — startup, shutdown, inline dispatch, metrics."""
+"""Tests for Application lifecycle — startup, shutdown, inline dispatch."""
 
 from __future__ import annotations
 
@@ -9,10 +9,11 @@ from typing import Annotated, ClassVar
 import pytest
 from triton_redis_connector.config.schema import AppConfig, QueueConfig
 from triton_redis_connector.engine.app import Application
-from triton_redis_connector.engine.metric_aggregator import Counter, Gauge, MetricAggregator
+from triton_redis_connector.engine.metric_aggregator import MetricAggregator
 from triton_redis_connector.engine.queue_bus import QueueBus
 from triton_redis_connector.engine.registry import PipelineRegistry
 from triton_redis_connector.metrics.buffer import MetricBuffer
+from triton_redis_connector.protocols import Counter, Gauge, GroupBy
 
 
 class EventA:
@@ -34,8 +35,11 @@ class EventWithValue:
         self.latency = latency
 
 
-class EventWithCountedMetric:
-    _metrics_: ClassVar[list[Counter]] = [Counter("counted_metric")]
+class EventWithGroupBy:
+    camera_no: Annotated[str, GroupBy("camera_events", window_s=60)]
+
+    def __init__(self, camera_no: str) -> None:
+        self.camera_no = camera_no
 
 
 class SimpleSource:
@@ -177,10 +181,8 @@ class TestShutdown:
         assert not run_thread.is_alive()
 
 
-class TestStatsMetrics:
-    def test_log_stats_emits_zero_value_metrics_when_idle(
-        self, config: AppConfig, registry: PipelineRegistry, queue_bus: QueueBus
-    ) -> None:
+class TestLogStats:
+    def test_log_stats_only_logs_text(self, config: AppConfig, registry: PipelineRegistry, queue_bus: QueueBus) -> None:
         source = SimpleSource()
         proc = SimpleProcessor()
         sink = SimpleSink()
@@ -193,108 +195,7 @@ class TestStatsMetrics:
         app._log_stats()
 
         events = buffer.flush()
-        measures = {e.measure for e in events}
-
-        assert "stats_processed" in measures
-        assert "stats_in_progress" in measures
-        assert "stats_errors" in measures
-        assert "node_events_total" in measures
-        assert "node_events_interval" in measures
-        assert "node_errors" in measures
-        assert "sink_write_total" in measures
-
-        for event in events:
-            if event.measure in ("stats_processed", "stats_in_progress", "stats_errors"):
-                assert event.value == 0.0
-
-    def test_log_stats_emits_per_node_for_all_nodes(
-        self, config: AppConfig, registry: PipelineRegistry, queue_bus: QueueBus
-    ) -> None:
-        source = SimpleSource()
-        proc = SimpleProcessor()
-        sink = SimpleSink()
-        registry.register("src", source)
-        registry.register("proc", proc)
-        registry.register("sink", sink)
-
-        buffer = MetricBuffer()
-        app = Application(config=config, registry=registry, queue_bus=queue_bus, metric_buffer=buffer)
-        app._log_stats()
-
-        events = buffer.flush()
-        node_total_events = [e for e in events if e.measure == "node_events_total"]
-        assert len(node_total_events) == 3
-
-    def test_log_stats_interval_shows_delta(
-        self, config: AppConfig, registry: PipelineRegistry, queue_bus: QueueBus
-    ) -> None:
-        source = SimpleSource()
-        proc = SimpleProcessor()
-        sink = SimpleSink()
-        registry.register("src", source)
-        registry.register("proc", proc)
-        registry.register("sink", sink)
-
-        buffer = MetricBuffer()
-        app = Application(config=config, registry=registry, queue_bus=queue_bus, metric_buffer=buffer)
-
-        app._stats_per_node["proc"] = 5
-        app._log_stats()
-        buffer.flush()
-
-        app._stats_per_node["proc"] = 8
-        app._log_stats()
-        events = buffer.flush()
-
-        interval_events = [e for e in events if e.measure == "node_events_interval"]
-        assert any(e.value == 3.0 for e in interval_events)
-
-    def test_node_processing_ms_emitted_on_dispatch(
-        self, config: AppConfig, registry: PipelineRegistry, queue_bus: QueueBus
-    ) -> None:
-        source = SimpleSource()
-        proc = SimpleProcessor()
-        sink = SimpleSink()
-        source.add_event(EventA())
-        registry.register("src", source)
-        registry.register("proc", proc)
-        registry.register("sink", sink)
-
-        buffer = MetricBuffer()
-        app = Application(config=config, registry=registry, queue_bus=queue_bus, metric_buffer=buffer)
-
-        run_thread = threading.Thread(target=app.run, daemon=True)
-        run_thread.start()
-        time.sleep(0.1)
-        app.shutdown()
-        run_thread.join(timeout=2.0)
-
-        events = buffer.flush()
-        processing_events = [e for e in events if e.measure == "node_processing_ms"]
-        assert len(processing_events) >= 1
-        assert all(e.value >= 0.0 for e in processing_events)
-
-    def test_queue_depth_metrics_emitted(
-        self, config: AppConfig, registry: PipelineRegistry, queue_bus: QueueBus
-    ) -> None:
-        source = SimpleSource()
-        proc = SimpleProcessor()
-        sink = SimpleSink()
-        registry.register("src", source)
-        registry.register("proc", proc)
-        registry.register("sink", sink)
-
-        queue_bus.get_queue("test:input")
-        queue_bus.put("test:input", "item")
-
-        buffer = MetricBuffer()
-        app = Application(config=config, registry=registry, queue_bus=queue_bus, metric_buffer=buffer)
-        app._log_stats()
-
-        events = buffer.flush()
-        depth_events = [e for e in events if e.measure == "queue_depth"]
-        assert len(depth_events) >= 1
-        assert any(e.value == 1.0 for e in depth_events)
+        assert len(events) == 0
 
 
 class TestWrapperAggregator:
@@ -340,87 +241,119 @@ class TestWrapperAggregator:
         assert wrapper("5") == "55"  # type: ignore[arg-type]
 
 
-class TestAnnotatedMetricRules:
-    def test_counter_incremented_on_matching_result(
-        self, config: AppConfig, registry: PipelineRegistry, queue_bus: QueueBus
-    ) -> None:
-        class CountedProcessor:
-            def __call__(self, event: EventA) -> EventWithCounter | None:
-                return EventWithCounter()
-
-        class CounterSink:
-            def __call__(self, event: EventWithCounter) -> None:
-                pass
-
-        source = SimpleSource()
-        source.add_event(EventA())
-        registry.register("src", source)
-        registry.register("proc", CountedProcessor())
-        registry.register("sink", CounterSink())
+class TestWrapperMetricExtraction:
+    def test_counter_extracted_to_buffer(self) -> None:
+        from triton_redis_connector.engine.wrappers import DetachedThreadProcessor
 
         buffer = MetricBuffer()
-        app = Application(config=config, registry=registry, queue_bus=queue_bus, metric_buffer=buffer)
 
-        run_thread = threading.Thread(target=app.run, daemon=True)
-        run_thread.start()
-        time.sleep(0.1)
-        app.shutdown()
-        run_thread.join(timeout=2.0)
+        def produce_counted(_: EventA) -> EventWithCounter:
+            return EventWithCounter()
 
-        assert app._stats_counters.get("my_counter") == 1
+        wrapper: DetachedThreadProcessor[EventA, EventWithCounter] = DetachedThreadProcessor(
+            produce_counted, metric_recorder=buffer, component_name="test"
+        )
+        wrapper(EventA())
 
-    def test_gauge_emitted_on_matching_result(
-        self, config: AppConfig, registry: PipelineRegistry, queue_bus: QueueBus
-    ) -> None:
-        class GaugeProcessor:
-            def __call__(self, event: EventA) -> EventWithValue | None:
-                return EventWithValue(latency=42.5)
+        events = buffer.flush()
+        counter_events = [e for e in events if e.measure == "my_counter"]
+        assert len(counter_events) == 1
+        assert counter_events[0].value == 1.0
 
-        class ValueSink:
-            def __call__(self, event: EventWithValue) -> None:
-                pass
-
-        source = SimpleSource()
-        source.add_event(EventA())
-        registry.register("src", source)
-        registry.register("proc", GaugeProcessor())
-        registry.register("sink", ValueSink())
+    def test_gauge_extracted_to_buffer(self) -> None:
+        from triton_redis_connector.engine.wrappers import DetachedThreadProcessor
 
         buffer = MetricBuffer()
-        app = Application(config=config, registry=registry, queue_bus=queue_bus, metric_buffer=buffer)
 
-        run_thread = threading.Thread(target=app.run, daemon=True)
-        run_thread.start()
-        time.sleep(0.1)
-        app.shutdown()
-        run_thread.join(timeout=2.0)
+        def produce_gauged(_: EventA) -> EventWithValue:
+            return EventWithValue(latency=42.5)
+
+        wrapper: DetachedThreadProcessor[EventA, EventWithValue] = DetachedThreadProcessor(
+            produce_gauged, metric_recorder=buffer, component_name="test"
+        )
+        wrapper(EventA())
 
         events = buffer.flush()
         gauge_events = [e for e in events if e.measure == "my_gauge"]
-        assert len(gauge_events) >= 1
+        assert len(gauge_events) == 1
         assert gauge_events[0].value == 42.5
 
-    def test_zero_value_counters_emitted_for_annotated_processors(
-        self, config: AppConfig, registry: PipelineRegistry, queue_bus: QueueBus
-    ) -> None:
-        class CountedProcessor:
-            def __call__(self, event: EventA) -> EventWithCountedMetric | None:
-                return EventWithCountedMetric()
-
-        class CountedSink:
-            def __call__(self, event: EventWithCountedMetric) -> None:
-                pass
-
-        source = SimpleSource()
-        registry.register("src", source)
-        registry.register("proc", CountedProcessor())
-        registry.register("sink", CountedSink())
+    def test_group_by_extracted_to_buffer(self) -> None:
+        from triton_redis_connector.engine.wrappers import DetachedThreadProcessor
 
         buffer = MetricBuffer()
-        app = Application(config=config, registry=registry, queue_bus=queue_bus, metric_buffer=buffer)
-        app._log_stats()
+
+        def produce_grouped(_: EventA) -> EventWithGroupBy:
+            return EventWithGroupBy(camera_no="cam_2")
+
+        wrapper: DetachedThreadProcessor[EventA, EventWithGroupBy] = DetachedThreadProcessor(
+            produce_grouped, metric_recorder=buffer, component_name="test"
+        )
+        wrapper(EventA())
 
         events = buffer.flush()
-        counter_events = [e for e in events if e.measure == "counted_metric"]
+        group_events = [e for e in events if e.measure == "camera_events:cam_2"]
+        assert len(group_events) == 1
+        assert group_events[0].value == 1.0
+
+    def test_node_processing_ms_emitted(self) -> None:
+        from triton_redis_connector.engine.wrappers import DetachedThreadProcessor
+
+        buffer = MetricBuffer()
+
+        wrapper: DetachedThreadProcessor[str, str] = DetachedThreadProcessor(
+            lambda x: x.upper(), metric_recorder=buffer, component_name="test"
+        )
+        wrapper("hello")
+
+        events = buffer.flush()
+        processing_events = [e for e in events if e.measure == "node_processing_ms"]
+        assert len(processing_events) == 1
+        assert processing_events[0].value >= 0.0
+
+    def test_no_metrics_emitted_when_result_is_none(self) -> None:
+        from triton_redis_connector.engine.wrappers import DetachedThreadProcessor
+
+        buffer = MetricBuffer()
+
+        wrapper: DetachedThreadProcessor[str, str | None] = DetachedThreadProcessor(
+            lambda _: None, metric_recorder=buffer, component_name="test"
+        )
+        wrapper("hello")
+
+        events = buffer.flush()
+        assert len(events) == 0
+
+    def test_source_wrapper_extracts_metrics(self) -> None:
+        from triton_redis_connector.engine.wrappers import DetachedThreadSource
+
+        buffer = MetricBuffer()
+
+        wrapper: DetachedThreadSource[EventWithCounter] = DetachedThreadSource(
+            EventWithCounter, metric_recorder=buffer, component_name="test"
+        )
+        wrapper()
+
+        events = buffer.flush()
+        counter_events = [e for e in events if e.measure == "my_counter"]
         assert len(counter_events) == 1
-        assert counter_events[0].value == 0.0
+
+    def test_sink_wrapper_extracts_metrics(self) -> None:
+        from triton_redis_connector.engine.wrappers import DetachedThreadSink
+
+        buffer = MetricBuffer()
+        received: list[EventWithValue] = []
+
+        def sink_fn(event: EventWithValue) -> EventWithValue:
+            received.append(event)
+            return event
+
+        wrapper: DetachedThreadSink[EventWithValue] = DetachedThreadSink(
+            sink_fn, metric_recorder=buffer, component_name="test"
+        )
+        wrapper(EventWithValue(latency=99.9))
+
+        events = buffer.flush()
+        gauge_events = [e for e in events if e.measure == "my_gauge"]
+        assert len(gauge_events) == 1
+        assert gauge_events[0].value == 99.9

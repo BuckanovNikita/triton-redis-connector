@@ -166,6 +166,23 @@ def extract_field_group_bys(event_type: type) -> list[tuple[str, GroupBy]]:
     ]
 
 
+def extract_field_value(result: object, field_name: str) -> object | None:
+    """Extract a field value from a result object by name.
+
+    Supports pydantic BaseModel (via model_dump) and plain objects (via vars).
+    Returns None if the field is missing.
+    """
+    try:
+        dump_method = result.model_dump  # type: ignore[attr-defined]
+        return dump_method().get(field_name)  # type: ignore[no-any-return]
+    except AttributeError:
+        pass
+    try:
+        return vars(result).get(field_name)
+    except TypeError:
+        return None
+
+
 def _get_class_attr(cls: type, name: str) -> list[object]:
     """Safely get a list attribute from a class, returning empty list if absent."""
     for klass in cls.__mro__:
