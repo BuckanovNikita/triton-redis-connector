@@ -163,4 +163,4 @@ __main__ (CLI) -> benchmarks -> testing -> inference | export -> models (leaf)
 
 Модули на одном уровне (`inference` и `export`) не импортируют друг друга.
 
-Подробная архитектура будет в `docs/architecture.md` после завершения плана (см. [docs/final-plan.md](../../docs/final-plan.md)).
+Подробная архитектура описана в [docs/architecture.md](../../docs/architecture.md).

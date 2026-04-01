@@ -59,6 +59,7 @@ class DecoderType(StrEnum):
 
     OPENCV = "opencv"
     TURBOJPEG = "turbojpeg"
+    DALI = "dali"
 
 
 class DecoderPoolType(StrEnum):
@@ -172,7 +173,11 @@ _POOL_VARIANTS = {NodeVariant.THREAD_POOL_PROCESSOR, NodeVariant.PROCESS_POOL_PR
 
 
 class NodeConfig(BaseModel):
-    """Configuration for a single pipeline node assembled from config."""
+    """Configuration for a single pipeline node assembled from config.
+
+    Used only for user-defined processors that need ``class_path``.
+    Shipped processors are registered automatically by ``build_application``.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -193,6 +198,31 @@ class NodeConfig(BaseModel):
         return self
 
 
+class PostprocessorConfig(BaseModel):
+    """YOLO postprocessor thresholds for shipped YoloPostProcessorBridge."""
+
+    model_config = ConfigDict(frozen=True)
+
+    conf_threshold: float = Field(default=0.25, ge=0.0, le=1.0)
+    iou_threshold: float = Field(default=0.45, ge=0.0, le=1.0)
+    end2end: bool = False
+
+
+class PipelineConfig(BaseModel):
+    """Shipped processor configuration resolved by build_application.
+
+    Infrastructure params for shipped processors. All class references
+    (event model, user processors) come from code, not config.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    model_name: str = ""
+    model_input_name: str = "images"
+    model_output_names: list[str] = Field(default_factory=lambda: ["output0"])
+    postprocessor: PostprocessorConfig = PostprocessorConfig()
+
+
 class AppConfig(BaseModel):
     """Top-level application configuration, composed from Hydra YAML files."""
 
@@ -203,6 +233,7 @@ class AppConfig(BaseModel):
     sources: list[SourceConfig] = []
     sinks: list[SinkConfig] = []
     nodes: list[NodeConfig] = []
+    pipeline: PipelineConfig = PipelineConfig()
     inference: InferenceConfig = InferenceConfig()
     preprocessing: PreprocessingConfig = PreprocessingConfig()
     queues: QueueConfig = QueueConfig()

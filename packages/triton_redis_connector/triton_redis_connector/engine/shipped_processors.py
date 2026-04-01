@@ -2,13 +2,17 @@
 
 Provides ready-made building blocks: envelope extraction, DALI input
 wrapping, client-side preprocessing, event serialization, and error logging.
+
+All preprocessors support metadata bypass: if the input event carries a
+``metadata`` dict, it is copied through to the ``InferenceInput`` without
+interpretation.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from loguru import logger
 from pydantic import BaseModel, ValidationError
@@ -35,6 +39,12 @@ class _ImagePathEvent(Protocol):
 
 
 @runtime_checkable
+class _MetadataCarrier(Protocol):
+    @property
+    def metadata(self) -> dict[str, Any]: ...
+
+
+@runtime_checkable
 class _DecoderProtocol(Protocol):
     def decode(self, raw: bytes) -> npt.NDArray[np.uint8]: ...
 
@@ -45,6 +55,12 @@ class _PreprocessorProtocol(Protocol):
         self,
         image: npt.NDArray[np.uint8],
     ) -> tuple[npt.NDArray[np.float32], float, tuple[int, int]]: ...
+
+
+def _extract_metadata(event: object) -> dict[str, Any]:
+    if isinstance(event, _MetadataCarrier):
+        return dict(event.metadata)
+    return {}
 
 
 class EnvelopeExtractor[T: BaseModel]:
@@ -75,6 +91,9 @@ class DaliInferenceInputBuilder:
 
     When Triton uses a DALI ensemble for server-side preprocessing,
     the client sends raw encoded image bytes rather than preprocessed tensors.
+
+    Accepts events with ``image_bytes`` (already loaded) or ``image_path``
+    (reads from filesystem). Bypasses metadata from the input event.
     """
 
     def __init__(  # noqa: D107
@@ -86,15 +105,26 @@ class DaliInferenceInputBuilder:
     ) -> None:
         self._model_name = model_name
         self._input_name = input_name
-        self._output_names = output_names
+        self._output_names = tuple(output_names)
 
-    def __call__(self, event: _ImageBytesEvent) -> InferenceInput:
+    def __call__(self, event: _ImageBytesEvent | _ImagePathEvent) -> InferenceInput | None:
         """Create InferenceInput with image_bytes for server-side decoding."""
+        raw: bytes
+        if isinstance(event, _ImageBytesEvent):
+            raw = event.image_bytes
+        else:
+            try:
+                raw = Path(event.image_path).read_bytes()
+            except (FileNotFoundError, PermissionError, OSError):
+                logger.exception("Failed to read image at {}", event.image_path)
+                return None
+
         return InferenceInput(
             model_name=self._model_name,
-            image_bytes=event.image_bytes,
+            image_bytes=raw,
             input_name=self._input_name,
             output_names=self._output_names,
+            metadata=_extract_metadata(event),
         )
 
 
@@ -103,7 +133,7 @@ class ClientPreprocessor:
 
     Reads an image file from the filesystem, decodes it using the provided
     decoder, applies letterbox preprocessing, and creates an InferenceInput
-    with the resulting tensor.
+    with the resulting tensor. Bypasses metadata from the input event.
     """
 
     def __init__(  # noqa: D107
@@ -119,18 +149,29 @@ class ClientPreprocessor:
         self._preprocessor = preprocessor
         self._model_name = model_name
         self._input_name = input_name
-        self._output_names = output_names
+        self._output_names = tuple(output_names)
 
-    def __call__(self, event: _ImagePathEvent) -> InferenceInput:
+    def __call__(self, event: _ImagePathEvent) -> InferenceInput | None:
         """Read image from filesystem, preprocess, and wrap as InferenceInput."""
-        raw_bytes = Path(event.image_path).read_bytes()
-        decoded = self._decoder.decode(raw_bytes)
+        try:
+            raw_bytes = Path(event.image_path).read_bytes()
+        except (FileNotFoundError, PermissionError, OSError):
+            logger.exception("Failed to read image at {}", event.image_path)
+            return None
+
+        try:
+            decoded = self._decoder.decode(raw_bytes)
+        except ValueError:
+            logger.exception("Decode failed for {}", event.image_path)
+            return None
+
         tensor, _scale, _pad_offset = self._preprocessor.preprocess(decoded)
         return InferenceInput(
             model_name=self._model_name,
             raw_image=tensor,
             input_name=self._input_name,
             output_names=self._output_names,
+            metadata=_extract_metadata(event),
         )
 
 

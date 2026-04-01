@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING
 
 from triton_redis_connector.engine.events import DetectionResult
 
+from triton_model_tools.inference.postprocessing import YoloPostprocessor
+
 if TYPE_CHECKING:
     from triton_redis_connector.inference.request import InferenceOutput
-
-    from triton_model_tools.inference.postprocessing import YoloPostprocessor
 
 
 class YoloPostProcessorBridge:
@@ -17,18 +17,23 @@ class YoloPostProcessorBridge:
 
     Takes raw InferenceOutput from Triton, runs YOLO postprocessing
     (NMS + confidence filtering), and produces a serializable DetectionResult.
+    Bypasses metadata from the inference output.
+
+    Config-friendly: accepts simple params and constructs YoloPostprocessor
+    internally. For programmatic use, pass a pre-built ``postprocessor``.
     """
 
-    def __init__(  # noqa: D107
+    def __init__(  # noqa: D107, PLR0913
         self,
-        postprocessor: YoloPostprocessor,
         *,
+        postprocessor: YoloPostprocessor | None = None,
+        end2end: bool = False,
         scale: float = 1.0,
         pad_offset: tuple[int, int] = (0, 0),
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.45,
     ) -> None:
-        self._postprocessor = postprocessor
+        self._postprocessor = postprocessor or YoloPostprocessor(end2end=end2end)
         self._scale = scale
         self._pad_offset = pad_offset
         self._conf_threshold = conf_threshold
@@ -49,4 +54,5 @@ class YoloPostProcessorBridge:
             model_name=output.model_name,
             inference_time_ms=output.inference_time_ms,
             num_detections=len(detections),
+            metadata=output.metadata,
         )

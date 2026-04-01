@@ -278,10 +278,10 @@ def _test_wrapper_metrics() -> bool:
     logger.info("--- Wrapper metric extraction test ---")
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from triton_redis_connector.engine.events import DetectionResult  # noqa: PLC0415
+
     from examples.dual_model_pipeline.events import (  # noqa: PLC0415
         EvenCameraFrame,
-        InspectionResult,
-        MetadataInferenceInput,
         OddCameraFrame,
         SteelInspectionInput,
     )
@@ -292,7 +292,7 @@ def _test_wrapper_metrics() -> bool:
         (SteelInspectionInput, "inspection_received"),
         (EvenCameraFrame, "even_camera_frame"),
         (OddCameraFrame, "odd_camera_frame"),
-        (InspectionResult, "inspection_complete"),
+        (DetectionResult, "detection_done"),
     ]:
         counters = extract_event_counters(cls)
         names = [c.name for c in counters]
@@ -302,18 +302,17 @@ def _test_wrapper_metrics() -> bool:
             logger.error("  Counter '{}' NOT FOUND on {}", expected, cls.__name__)
             all_pass = False
 
-    gauges = extract_field_gauges(InspectionResult)
+    gauges = extract_field_gauges(DetectionResult)
     gauge_names = [g.name for _, g in gauges]
-    if "inspection_inference_ms" in gauge_names:
-        logger.info("  Gauge 'inspection_inference_ms' on InspectionResult: OK")
+    if "inference_time_ms" in gauge_names:
+        logger.info("  Gauge 'inference_time_ms' on DetectionResult: OK")
     else:
-        logger.error("  Gauge 'inspection_inference_ms' NOT FOUND on InspectionResult")
+        logger.error("  Gauge 'inference_time_ms' NOT FOUND on DetectionResult")
         all_pass = False
 
     for cls, expected in [
         (EvenCameraFrame, "camera_no_per_minute"),
         (OddCameraFrame, "camera_no_per_minute"),
-        (MetadataInferenceInput, "metal_type_per_minute"),
     ]:
         group_bys = extract_field_group_bys(cls)
         gb_names = [g.name for _, g in group_bys]

@@ -66,6 +66,7 @@ class InferenceWorker:
             model_version=event.model_version,
             outputs=output_arrays,
             inference_time_ms=elapsed_ms,
+            metadata=event.metadata,
         )
 
 

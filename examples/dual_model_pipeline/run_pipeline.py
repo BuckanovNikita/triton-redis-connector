@@ -1,22 +1,20 @@
 """Dual-model steel inspection pipeline: Redis Stream -> Branch -> Triton -> Redis Stream.
 
 Pipeline graph:
-  RedisStreamSource -> EnvelopeExtractor -> CameraBranchRouter
-    -> [even] DaliPreprocessor --------+
-    -> [odd]  TurboJpegPreprocessor ---+-> MetadataInferenceWorker
-                                           -> InspectionPostProcessor
-                                               -> EventSerializer -> RedisStreamSink
-                                           -> LogErrorSink (InferenceError)
+  RedisStreamSource -> EnvelopeExtractor[SteelInspectionInput]
+    -> CameraBranchRouter
+      -> [even] DaliInferenceInputBuilder --+
+      -> [odd]  ClientPreprocessor ---------+-> InferenceWorker
+                                                 -> YoloPostProcessorBridge
+                                                     -> EventSerializer -> RedisStreamSink
+                                                 -> LogErrorSink (InferenceError)
+
+Shipped processors (extractor, preprocessor, inference, postprocessor,
+serializer, error_sink) are resolved automatically from config.
+User processors (CameraBranchRouter) are passed via extra_nodes.
 
 Usage:
     uv run python examples/dual_model_pipeline/run_pipeline.py
-
-Environment variables (or override in config.yaml):
-    REDIS_HOST       (default: redis)
-    REDIS_PORT       (default: 6379)
-    TRITON_GRPC_URL  (default: triton:8001)
-    INPUT_STREAM     (default: steel:inspection_input)
-    OUTPUT_STREAM    (default: steel:inspection_results)
 """
 
 from __future__ import annotations
@@ -30,27 +28,12 @@ if TYPE_CHECKING:
     import types
 
 from loguru import logger
-from redis import Redis
+from triton_model_tools.inference.yolo_bridge import YoloPostProcessorBridge
 from triton_redis_connector.config.hydra_app import load_config
-from triton_redis_connector.connectors.consumer_group import ConsumerGroupManager
-from triton_redis_connector.connectors.redis_stream import (
-    RedisStreamInputConnector,
-    RedisStreamOutputConnector,
-    RedisStreamSink,
-    RedisStreamSource,
-)
-from triton_redis_connector.engine.app import Application
-from triton_redis_connector.engine.assembly import assemble_all
-from triton_redis_connector.engine.queue_bus import QueueBus
-from triton_redis_connector.engine.registry import PipelineRegistry
+from triton_redis_connector.providers.app_factory import build_application
 
-from examples.dual_model_pipeline.processors import (
-    CameraBranchRouter,
-    DaliPreprocessor,
-    InspectionPostProcessor,
-    MetadataInferenceWorker,
-    TurboJpegPreprocessor,
-)
+from examples.dual_model_pipeline.events import SteelInspectionInput
+from examples.dual_model_pipeline.processors import CameraBranchRouter
 
 CONFIG_DIR = Path(__file__).resolve().parent
 
@@ -60,39 +43,18 @@ def main() -> None:
     config = load_config(config_name="config", config_dir=CONFIG_DIR)
     logger.info("Starting {}", config.app_name)
 
-    redis_client: Redis[bytes] = Redis(
-        host=config.redis.host,
-        port=config.redis.port,
-        db=config.redis.db,
-        decode_responses=False,
+    app = build_application(
+        config,
+        event_model=SteelInspectionInput,
+        postprocessor=YoloPostProcessorBridge(
+            conf_threshold=config.pipeline.postprocessor.conf_threshold,
+            iou_threshold=config.pipeline.postprocessor.iou_threshold,
+            end2end=config.pipeline.postprocessor.end2end,
+        ),
+        extra_nodes=[
+            ("branch_router", CameraBranchRouter()),
+        ],
     )
-    redis_client.ping()
-    logger.info("Connected to Redis at {}:{}", config.redis.host, config.redis.port)
-
-    source_cfg = config.sources[0]
-    sink_cfg = config.sinks[0]
-
-    group_manager = ConsumerGroupManager()
-    input_connector = RedisStreamInputConnector(redis_client, source_cfg, group_manager)
-    output_connector = RedisStreamOutputConnector(redis_client, sink_cfg)
-
-    registry = PipelineRegistry()
-
-    registry.register("redis_source", RedisStreamSource(input_connector, source_cfg))
-    registry.register("redis_sink", RedisStreamSink(output_connector))
-
-    assemble_all(config.nodes, registry)
-
-    registry.register("branch_router", CameraBranchRouter())
-    registry.register("even_preprocessor", DaliPreprocessor())
-    registry.register("odd_preprocessor", TurboJpegPreprocessor())
-    registry.register(
-        "inference",
-        MetadataInferenceWorker(grpc_url=config.inference.grpc_url),
-    )
-    registry.register("postprocessor", InspectionPostProcessor())
-
-    app = Application(config=config, registry=registry, queue_bus=QueueBus(config=config.queues))
 
     def handle_shutdown(signum: int, _frame: types.FrameType | None) -> None:
         logger.info("Received {}, shutting down...", signal.Signals(signum).name)

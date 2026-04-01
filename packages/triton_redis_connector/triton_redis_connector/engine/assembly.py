@@ -5,6 +5,9 @@ Shipped processors remain variant-agnostic callables — the variant is selected
 at assembly time via the config and applied through framework wrappers.
 User processors that inherit from base classes already declare their variant
 and are registered directly (no wrapping).
+
+User processors use ``class_path`` in NodeConfig. Shipped processors are
+registered automatically by ``build_application`` based on AppConfig fields.
 """
 
 from __future__ import annotations

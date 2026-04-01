@@ -91,32 +91,50 @@ Modules within a `|` group are siblings at the same layer and must NOT cross-imp
 
 ### Shipped Processors
 
-Six reusable processors for common pipeline patterns:
+Six reusable processors for common pipeline patterns. All preprocessors support **metadata bypass** — if the input event carries a `metadata: dict[str, Any]`, it is copied through `InferenceInput` → `InferenceOutput` → `DetectionResult` without interpretation.
 
 | Processor | Package | Purpose |
 |---|---|---|
 | `EnvelopeExtractor[T]` | connector | Deserialize envelope bytes into typed pydantic model |
-| `DaliInferenceInputBuilder` | connector | Wrap raw image bytes for DALI ensemble inference |
+| `DaliInferenceInputBuilder` | connector | Wrap image bytes/path for DALI ensemble inference |
 | `ClientPreprocessor` | connector | Read file, decode, letterbox, wrap as InferenceInput |
+| `ConfigurableClientPreprocessor` | connector (providers) | Config-friendly ClientPreprocessor (takes decoder_type string) |
 | `EventSerializer[T]` | connector | Serialize event to JSON bytes with original_fields passthrough |
 | `LogErrorSink` | connector | Log error events at error level via loguru |
 | `YoloPostProcessorBridge` | model_tools | YOLO postprocessing (NMS + confidence filter) into DetectionResult |
 
-See: `engine/shipped_processors.py`, `triton_model_tools/inference/yolo_bridge.py`
+See: `engine/shipped_processors.py`, `providers/shipped_factories.py`, `triton_model_tools/inference/yolo_bridge.py`
+
+### build_application Factory
+
+`providers/app_factory.py` provides `build_application(config, *, event_model, postprocessor, extra_nodes)`:
+- Creates Redis client, connectors, source/sink from config — automatically
+- Registers shipped processors from config fields (decoder type, model name, grpc_url)
+- Event model class and postprocessor come from **code** (not config)
+- User processors passed via `extra_nodes` parameter
+
+Config contains only infrastructure params (thresholds, model names, URLs). No class paths in config.
+
+### PipelineConfig
+
+`AppConfig.pipeline` configures shipped processor params:
+- `model_name` — Triton model for the preprocessor
+- `model_input_name`, `model_output_names` — tensor names
+- `postprocessor.conf_threshold`, `postprocessor.iou_threshold`, `postprocessor.end2end`
 
 ### Base Classes for User Processors
 
 Nine base classes in `protocols.py` for explicit variant declaration:
 `BaseSource`, `BaseThreadSource`, `BaseProcessSource`, `BaseProcessor`, `BaseThreadProcessor`, `BaseThreadPoolProcessor`, `BaseProcessPoolProcessor`, `BaseSink`, `BaseThreadSink`.
 
-User processors inherit to declare variant. Shipped processors stay variant-agnostic and use config-driven assembly via `NodeConfig` in YAML.
+User processors inherit to declare variant. Shipped processors stay variant-agnostic and are wrapped at registration time.
 
 ### Config-Driven Node Assembly
 
-- `NodeVariant` + `NodeConfig` in `config/schema.py` -- declare nodes with class_path, variant, params
-- `engine/assembly.py` -- import, resolve, wrap, register
-- `providers/node_assembly_provider.py` -- DI provider assembles config-driven nodes
-- `AppConfig.nodes: list[NodeConfig]` replaces old `processors: list[str]`
+- `NodeConfig` in `config/schema.py` — for user-defined nodes with class_path + variant + params
+- `engine/assembly.py` — import, resolve type params, wrap, register
+- `providers/node_assembly_provider.py` — DI provider assembles config-driven nodes
+- `AppConfig.nodes: list[NodeConfig]` — optional, for advanced use cases only
 
 ### CLI Commands (triton-model-tools)
 

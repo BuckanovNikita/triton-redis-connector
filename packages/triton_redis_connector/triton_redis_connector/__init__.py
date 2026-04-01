@@ -68,6 +68,7 @@ from triton_redis_connector.protocols import (
 )
 from triton_redis_connector.providers import (
     ConfigProvider,
+    ConfigurableClientPreprocessor,
     ConnectorProvider,
     ConnectorScope,
     EngineProvider,
@@ -75,6 +76,7 @@ from triton_redis_connector.providers import (
     MetricsProvider,
     NodeAssemblyProvider,
     PreprocessingProvider,
+    build_application,
 )
 
 __all__ = [
@@ -91,6 +93,7 @@ __all__ = [
     "BaseThreadSource",
     "ClientPreprocessor",
     "ConfigProvider",
+    "ConfigurableClientPreprocessor",
     "ConnectorProvider",
     "ConnectorScope",
     "Counter",
@@ -138,5 +141,6 @@ __all__ = [
     "Tracked",
     "TurboJPEGDecoder",
     "WrappedNode",
+    "build_application",
     "current_context",
 ]
