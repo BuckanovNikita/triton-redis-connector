@@ -14,6 +14,10 @@ if TYPE_CHECKING:
     from triton_redis_connector.config.schema import OutputRoutingConfig, SinkConfig
 
 
+class UnroutableModelError(ValueError):
+    """Raised when a model has no configured output stream and no default is set."""
+
+
 class OutputStreamRouter:
     """Resolves model_name to output stream. Creates per-stream connectors lazily."""
 
@@ -27,10 +31,52 @@ class OutputStreamRouter:
         self._redis_client = redis_client
         self._sink_config = sink_config
         self._connectors: dict[str, RedisStreamOutputConnector] = {}
+        self._validated = False
+
+    def validate_routing(self, known_models: list[str]) -> None:
+        """Check that every known model has a routable output stream.
+
+        Call this at startup before processing begins. Logs warnings for
+        models that will fall back to the default stream. Raises
+        UnroutableModelError if any model has no route and no default
+        stream is configured.
+        """
+        unroutable: list[str] = []
+        for model in known_models:
+            if model in self._config.model_streams:
+                continue
+            if self._config.default_stream:
+                logger.warning(
+                    "Model {} has no explicit output stream, will use default {}",
+                    model,
+                    self._config.default_stream,
+                )
+            else:
+                unroutable.append(model)
+
+        if unroutable:
+            msg = (
+                f"No output stream configured for models {unroutable} "
+                f"and no default_stream is set in OutputRoutingConfig"
+            )
+            raise UnroutableModelError(msg)
+
+        self._validated = True
+        logger.info(
+            "Output routing validated: {} model-specific streams, default={}",
+            len(self._config.model_streams),
+            self._config.default_stream,
+        )
 
     def resolve_stream(self, model_name: str) -> str:
         """Return the output stream name for a given model."""
-        return self._config.model_streams.get(model_name, self._config.default_stream)
+        stream = self._config.model_streams.get(model_name)
+        if stream is not None:
+            return stream
+        if self._config.default_stream:
+            return self._config.default_stream
+        msg = f"No output stream configured for model {model_name!r} and no default_stream is set"
+        raise UnroutableModelError(msg)
 
     def get_connector(self, model_name: str) -> RedisStreamOutputConnector:
         """Return (or lazily create) the output connector for a model's stream."""

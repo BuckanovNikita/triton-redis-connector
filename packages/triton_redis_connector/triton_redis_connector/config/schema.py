@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class RedisConnectionConfig(BaseModel):
@@ -16,6 +17,14 @@ class RedisConnectionConfig(BaseModel):
     port: int = Field(default=6379, ge=1, le=65535)
     db: int = Field(default=0, ge=0)
     decode_responses: bool = False
+
+
+class CollectorMode(StrEnum):
+    """Redis Stream collector startup behavior."""
+
+    RECOVERY = "recovery"
+    FROM_LATEST = "from_latest"
+    FROM_OLDEST = "from_oldest"
 
 
 class SourceConfig(BaseModel):
@@ -32,7 +41,7 @@ class SourceConfig(BaseModel):
     newest_first_on_recovery: bool = True
     recovery_interleave_ratio: int = Field(default=4, ge=1)
     pending_ttl_s: float = Field(default=60.0, gt=0.0)
-    skip_existing: bool = False
+    collector_mode: CollectorMode = CollectorMode.RECOVERY
 
 
 class SinkConfig(BaseModel):
@@ -129,8 +138,16 @@ class OutputRoutingConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    default_stream: str = "detection_results"
+    default_stream: str | None = "detection_results"
     model_streams: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def require_at_least_one_routing_target(self) -> Self:
+        """Ensure at least default_stream or model_streams is configured."""
+        if not self.default_stream and not self.model_streams:
+            msg = "OutputRoutingConfig requires at least one of 'default_stream' or 'model_streams' to be set"
+            raise ValueError(msg)
+        return self
 
 
 class AppConfig(BaseModel):
