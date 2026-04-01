@@ -47,3 +47,4 @@ benchmarks/data/
 *.png
 *.bmp
 *.tiff
+model_repository_1/**

@@ -27,6 +27,7 @@ dev = [
     "triton-model-tools",
     "triton-shared-models",
     "pre-commit>=4.5.1,<5.0.0",
+    "nvitop>=1.6.2",
     { include-group = "lint" },
     { include-group = "test" },
 ]
@@ -80,6 +81,8 @@ exclude = [
     "packages/triton_model_tools/tests/",
     "packages/triton_shared_models/tests/",
     "packages/triton_model_tools/triton_model_tools/export/scripts/",
+    "model_repository/",
+    "model_repository_1/",
 ]
 
 [[tool.mypy.overrides]]

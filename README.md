@@ -40,8 +40,8 @@ graph LR
 | Пакет | Путь | Описание |
 |-------|------|----------|
 | `triton-redis-connector` | `packages/triton_redis_connector/` | Коннектор Redis Streams <-> Triton: граф-пайплайн с 9 вариантами исполнения |
-| `triton-model-tools` | `packages/triton_model_tools/` | CLI для конвертации, бенчмаркинга и верификации YOLO-моделей для Triton |
-| `triton-shared-models` | `packages/triton_shared_models/` | Общие типы Triton: `TritonModelConfig`, `TritonDataType`, генерация `config.pbtxt` |
+| `triton-model-tools` | `packages/triton_model_tools/` | CLI для конвертации (`convert`), экспорта, бенчмаркинга и верификации YOLO-моделей для Triton |
+| `triton-shared-models` | `packages/triton_shared_models/` | Общие типы Triton (`TritonModelConfig`, `TritonDataType`, `config.pbtxt`) и letterbox-препроцессинг |
 
 Полная архитектура описана в [docs/design.md](docs/design.md).
 

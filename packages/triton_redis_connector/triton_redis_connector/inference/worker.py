@@ -39,7 +39,7 @@ class InferenceWorker:
         retry_backoff_multiplier: float = 4.0,
     ) -> None:
         self._grpc_module: Any = grpcclient
-        self._client: Any = grpcclient.InferenceServerClient(url=grpc_url)
+        self._client: grpcclient.InferenceServerClient = grpcclient.InferenceServerClient(url=grpc_url)
         self._semaphore = threading.Semaphore(max_concurrent)
         self._retry_handler = RetryHandler(
             max_attempts=max_retry_attempts,
@@ -80,6 +80,9 @@ class InferenceWorker:
                 outputs=outputs,
                 model_version=event.model_version or "",
             )
+            if result is None:
+                msg = f"Triton returned None for model {event.model_name}"
+                raise RuntimeError(msg)
 
             elapsed_ms = (time.monotonic() - start) * 1000.0
 

@@ -79,13 +79,12 @@ class PreprocessorNode(BaseThreadProcessor[DecodedImage, InferenceInput]):
         target_size: tuple[int, int] = (640, 640),
     ) -> None:
         super().__init__()
-        self._preprocessor = LetterBoxPreprocessor()
+        self._preprocessor = LetterBoxPreprocessor(target_size=target_size)
         self._model_name = model_name
-        self._target_size = target_size
 
     def __call__(self, event: DecodedImage) -> InferenceInput | None:
         """Preprocess decoded image into an InferenceInput tensor."""
-        tensor, _scale, _pad = self._preprocessor.preprocess(event.image, self._target_size)
+        tensor, _scale, _pad = self._preprocessor.preprocess(event.image)
         return InferenceInput(
             model_name=self._model_name,
             raw_image=tensor,

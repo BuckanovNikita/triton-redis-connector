@@ -59,12 +59,13 @@ class ImagePreprocessorProtocol(Protocol):
     5. /255.0
     6. float32
     7. Batch dim
+
+    Target size is provided at construction time.
     """
 
     def preprocess(
         self,
         image: npt.NDArray[np.uint8],
-        target_size: tuple[int, int],
     ) -> tuple[npt.NDArray[np.float32], float, tuple[int, int]]:
         """Preprocess image to model-ready tensor.
 

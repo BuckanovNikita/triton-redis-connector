@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dishka import Provider, provide
 
+from triton_redis_connector.config.schema import PreprocessingConfig  # noqa: TC001
 from triton_redis_connector.preprocessing.decoder import OpenCVDecoder
 from triton_redis_connector.preprocessing.letterbox import LetterBoxPreprocessor
 from triton_redis_connector.providers.scopes import ConnectorScope
@@ -22,5 +23,5 @@ class PreprocessingProvider(Provider):
         return OpenCVDecoder()
 
     @provide
-    def letterbox_preprocessor(self) -> LetterBoxPreprocessor:  # noqa: D102
-        return LetterBoxPreprocessor()
+    def letterbox_preprocessor(self, config: PreprocessingConfig) -> LetterBoxPreprocessor:  # noqa: D102
+        return LetterBoxPreprocessor(target_size=config.default_target_size)

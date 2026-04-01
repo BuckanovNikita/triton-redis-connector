@@ -65,6 +65,7 @@ class YoloModelVariant(BaseModel):
     export_kwargs: dict[str, Any] = {}
     imgsz: int | tuple[int, int] = 640
     end2end_export: bool = False
+    rect: bool = True
 
     @field_validator("imgsz")
     @classmethod

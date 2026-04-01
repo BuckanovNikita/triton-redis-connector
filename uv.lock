@@ -1319,6 +1319,15 @@ wheels = [
 ]
 
 [[package]]
+name = "nvidia-ml-py"
+version = "13.590.48"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/af/a0/f4fc18cf72f06821a9a665085435b901449986855519d5b3843532db35e9/nvidia_ml_py-13.590.48.tar.gz", hash = "sha256:8184d1be52914ac7f0991cd1c0d946c65dc88a840c754cd12c274b77b88760dd", size = 49732, upload-time = "2026-01-22T01:14:56.456Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fd/72/fb2af0d259a651affdce65fd6a495f0e07a685a0136baf585c5065204ee7/nvidia_ml_py-13.590.48-py3-none-any.whl", hash = "sha256:fd43d30ee9cd0b7940f5f9f9220b68d42722975e3992b6c21d14144c48760e43", size = 50680, upload-time = "2026-01-22T01:14:55.281Z" },
+]
+
+[[package]]
 name = "nvidia-nccl-cu13"
 version = "2.28.9"
 source = { registry = "https://pypi.org/simple" }
@@ -1352,6 +1361,21 @@ source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c2/f3/d86c845465a2723ad7e1e5c36dcd75ddb82898b3f53be47ebd429fb2fa5d/nvidia_nvtx-13.0.85-py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:4936d1d6780fbe68db454f5e72a42ff64d1fd6397df9f363ae786930fd5c1cd4", size = 148047, upload-time = "2025-09-04T08:29:01.761Z" },
     { url = "https://files.pythonhosted.org/packages/a8/64/3708a90d1ebe202ffdeb7185f878a3c84d15c2b2c31858da2ce0583e2def/nvidia_nvtx-13.0.85-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:cb7780edb6b14107373c835bf8b72e7a178bac7367e23da7acb108f973f157a6", size = 148878, upload-time = "2025-09-04T08:28:53.627Z" },
+]
+
+[[package]]
+name = "nvitop"
+version = "1.6.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "nvidia-ml-py" },
+    { name = "psutil" },
+    { name = "windows-curses", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1b/bd/82f3bb53482cd078abc0d618098a2793c7c9caa7f26934051575397414e6/nvitop-1.6.2.tar.gz", hash = "sha256:267b341b66ac3819f116ad11819f4da2e121fe2be1dde979026b6526966211e9", size = 221935, upload-time = "2026-01-27T17:08:25.2Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f7/c9/3f1fcb72597b51c96ff227d77bcacfb156571219a82f1b2714a853b0098d/nvitop-1.6.2-py3-none-any.whl", hash = "sha256:f3b8a0f4062108a953f5fbdd6042acd2041550d0b62d290b7e1d5c4e68d9a659", size = 215479, upload-time = "2026-01-27T17:08:22.721Z" },
 ]
 
 [[package]]
@@ -2274,6 +2298,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyturbojpeg" },
     { name = "redis" },
+    { name = "triton-shared-models" },
     { name = "tritonclient", extra = ["grpc"] },
 ]
 
@@ -2288,6 +2313,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.12.5,<3.0.0" },
     { name = "pyturbojpeg", specifier = ">=1.7.0,<2.0.0" },
     { name = "redis", specifier = ">=5.2.0,<6.0.0" },
+    { name = "triton-shared-models", editable = "packages/triton_shared_models" },
     { name = "tritonclient", extras = ["grpc"], specifier = ">=2.67.0,<3.0.0" },
 ]
 
@@ -2300,6 +2326,7 @@ source = { virtual = "." }
 dev = [
     { name = "import-linter" },
     { name = "mypy" },
+    { name = "nvitop" },
     { name = "pre-commit" },
     { name = "pyright" },
     { name = "pytest" },
@@ -2334,6 +2361,7 @@ test = [
 dev = [
     { name = "import-linter", specifier = ">=2.11,<3.0.0" },
     { name = "mypy", specifier = ">=1.19.1,<2.0.0" },
+    { name = "nvitop", specifier = ">=1.6.2" },
     { name = "pre-commit", specifier = ">=4.5.1,<5.0.0" },
     { name = "pyright", specifier = ">=1.1.408,<2.0.0" },
     { name = "pytest", specifier = ">=9.0.2,<10.0.0" },
@@ -2369,6 +2397,8 @@ source = { editable = "packages/triton_shared_models" }
 dependencies = [
     { name = "jinja2" },
     { name = "loguru" },
+    { name = "numpy" },
+    { name = "opencv-python-headless" },
     { name = "pydantic" },
 ]
 
@@ -2376,6 +2406,8 @@ dependencies = [
 requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6,<4.0.0" },
     { name = "loguru", specifier = ">=0.7.3,<1.0.0" },
+    { name = "numpy", specifier = ">=2.4.4,<3.0.0" },
+    { name = "opencv-python-headless", specifier = ">=4.13.0.92,<5.0.0" },
     { name = "pydantic", specifier = ">=2.12.5,<3.0.0" },
 ]
 
@@ -2547,4 +2579,17 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b3/8f/705086c9d734d3b663af0e9bb3d4de6578d08f46b1b101c2442fd9aecaa2/win32_setctime-1.2.0.tar.gz", hash = "sha256:ae1fdf948f5640aae05c511ade119313fb6a30d7eabe25fef9764dca5873c4c0", size = 4867, upload-time = "2024-12-07T15:28:28.314Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e1/07/c6fe3ad3e685340704d314d765b7912993bcb8dc198f0e7a89382d37974b/win32_setctime-1.2.0-py3-none-any.whl", hash = "sha256:95d644c4e708aba81dc3704a116d8cbc974d70b3bdb8be1d150e36be6e9d1390", size = 4083, upload-time = "2024-12-07T15:28:26.465Z" },
+]
+
+[[package]]
+name = "windows-curses"
+version = "2.4.2"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2e/9c/b2a3706c8edadae8ae88b327ba072d6056ad1b492f9996214cff027e9f01/windows_curses-2.4.2-cp312-cp312-win32.whl", hash = "sha256:7ec4629685add716d494e8fbdd0b83485de726e9deeda57d30e742c77a32a156", size = 71547, upload-time = "2026-03-31T12:44:37.797Z" },
+    { url = "https://files.pythonhosted.org/packages/8b/ee/8c5da36191524856fb2c675f8cae99211ccf77bcd4e4a9010477e08000ac/windows_curses-2.4.2-cp312-cp312-win_amd64.whl", hash = "sha256:df782859176f9e8142618e4966d6cee7a53a8b1c819faeb6e606a60fa4f8972a", size = 82282, upload-time = "2026-03-31T12:44:39.106Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/54/195f2c4d0258ced34a401c8e3c9eefa2aa2221a9f0179ae64ad3cb039e64/windows_curses-2.4.2-cp313-cp313-win32.whl", hash = "sha256:248bf3f1d973e92ca193b1ea8a626ec7f81a66be6f6d6c5e31ff82056453678d", size = 71458, upload-time = "2026-03-31T12:44:40.184Z" },
+    { url = "https://files.pythonhosted.org/packages/47/e8/38fd0fef95271280a77a4f3b65e0961d3c39716388b39c08b3040bfb4f2c/windows_curses-2.4.2-cp313-cp313-win_amd64.whl", hash = "sha256:1bf3d0c902374b6c430a954adcb686a5ecd7a31fc4195d31136385b5c1bea925", size = 82200, upload-time = "2026-03-31T12:44:41.503Z" },
+    { url = "https://files.pythonhosted.org/packages/d2/22/f90c7d1d83464eb63345802f33e8de41bd732521d9a60a69ad985c8faa90/windows_curses-2.4.2-cp314-cp314-win32.whl", hash = "sha256:a970bf067b3126251423b4da051ef8c1c77acf6294ec96a7d6de7f6b9e5c27a0", size = 77028, upload-time = "2026-03-31T12:44:42.611Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/6a/1f8754de746474a049a841e139b443b250a96908d6913ccf2db9a4303584/windows_curses-2.4.2-cp314-cp314-win_amd64.whl", hash = "sha256:6c22cb0310500dfbfe54c76354e37070e300d5473596d48ac4f9c65b2d578b6f", size = 86361, upload-time = "2026-03-31T12:44:43.893Z" },
 ]

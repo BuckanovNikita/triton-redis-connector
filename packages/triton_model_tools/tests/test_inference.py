@@ -227,7 +227,7 @@ class TestYoloPostprocessorStandard:
         postprocessor = YoloPostprocessor(end2end=False)
 
         num_classes = 80
-        num_preds = 5
+        num_preds = 100
         features = 4 + num_classes
 
         raw = np.zeros((1, features, num_preds), dtype=np.float32)
@@ -254,11 +254,11 @@ class TestYoloPostprocessorStandard:
         postprocessor = YoloPostprocessor(end2end=False)
 
         num_classes = 80
-        num_preds = 3
+        num_preds = 100
         features = 4 + num_classes
 
         raw = np.zeros((1, features, num_preds), dtype=np.float32)
-        for i in range(num_preds):
+        for i in range(3):
             raw[0, 0, i] = 320.0
             raw[0, 1, i] = 320.0
             raw[0, 2, i] = 100.0
@@ -279,9 +279,10 @@ class TestYoloPostprocessorStandard:
     def test_standard_rescales_coordinates(self) -> None:
         postprocessor = YoloPostprocessor(end2end=False)
         num_classes = 80
+        num_preds = 100
         features = 4 + num_classes
 
-        raw = np.zeros((1, features, 1), dtype=np.float32)
+        raw = np.zeros((1, features, num_preds), dtype=np.float32)
         raw[0, 0, 0] = 320.0
         raw[0, 1, 0] = 320.0
         raw[0, 2, 0] = 100.0
@@ -312,8 +313,9 @@ class TestYoloPostprocessorStandard:
     def test_standard_no_detections_above_threshold(self) -> None:
         postprocessor = YoloPostprocessor(end2end=False)
         num_classes = 80
+        num_preds = 100
         features = 4 + num_classes
-        raw = np.zeros((1, features, 1), dtype=np.float32)
+        raw = np.zeros((1, features, num_preds), dtype=np.float32)
         raw[0, 0, 0] = 320.0
         raw[0, 1, 0] = 320.0
         raw[0, 2, 0] = 100.0

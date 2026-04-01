@@ -11,6 +11,7 @@ from triton_model_tools.cli import (
     batch_benchmark,
     benchmark,
     compare_folders,
+    convert,
     download_coco,
     e2e_test,
     export,
@@ -32,6 +33,7 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command")
 
     export.build_parser(subparsers)
+    convert.build_parser(subparsers)
     infer.build_parser(subparsers)
     download_coco.build_parser(subparsers)
     benchmark.build_parser(subparsers)

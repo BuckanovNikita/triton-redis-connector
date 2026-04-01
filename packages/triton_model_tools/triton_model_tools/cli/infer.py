@@ -70,6 +70,12 @@ def build_parser(subparsers: SubParsers) -> None:
         default=0.45,
         help="IoU threshold for NMS (default: 0.45)",
     )
+    infer_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Directory to save detection txt files (optional)",
+    )
     infer_parser.set_defaults(func=run)
 
 
@@ -86,6 +92,7 @@ def run(args: argparse.Namespace) -> None:
     conf_threshold: float = args.conf_threshold
     iou_threshold: float = args.iou_threshold
     repository_root: Path | None = args.repository_root
+    output_dir: Path | None = args.output_dir
 
     if repository_root is not None:
         discovered = discover_models(repository_root)
@@ -115,6 +122,15 @@ def run(args: argparse.Namespace) -> None:
     logger.info("Results: {} images processed", len(result.results))
     logger.info("Total time: {:.2f}s", result.total_time_s)
     logger.info("Average time: {:.1f}ms per image", result.avg_time_ms)
+
+    if output_dir is not None:
+        from triton_model_tools.inference.detection_io import save_detections_to_txt  # noqa: PLC0415
+
+        resolved_output_dir = output_dir.resolve()
+        resolved_output_dir.mkdir(parents=True, exist_ok=True)
+        for img_result in result.results:
+            stem = Path(img_result.image_path).stem
+            save_detections_to_txt(img_result.detections, resolved_output_dir / f"{stem}.txt")
 
     for img_result in result.results:
         logger.info(
