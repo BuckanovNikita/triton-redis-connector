@@ -10,11 +10,13 @@ the import-linter sibling constraint.
 
 from __future__ import annotations
 
-from typing import Self
+from typing import Annotated, Self
 
 import numpy as np  # noqa: TC002 — pydantic needs runtime access for model_rebuild()
 import numpy.typing as npt  # noqa: TC002
 from pydantic import BaseModel, ConfigDict, model_validator
+
+from triton_redis_connector.protocols import Counter, Gauge
 
 
 class Event(BaseModel):
@@ -64,6 +66,8 @@ class DecodedImage(BaseModel):
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
+    _metrics_ = [Counter("decode_success")]
+
     image: npt.NDArray[np.uint8]
     original_height: int
     original_width: int
@@ -76,9 +80,11 @@ class DetectionResult(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    _metrics_ = [Counter("detection_done")]
+
     detections_json: str
     model_name: str
-    inference_time_ms: float
+    inference_time_ms: Annotated[float, Gauge("inference_time_ms")]
     num_detections: int
     source_stream: str = ""
     message_id: str = ""

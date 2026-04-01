@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
+from triton_redis_connector.protocols import Counter
+
 
 class ConnectorError(BaseModel):
     """Error originating from a Redis connector (source or sink).
@@ -51,6 +53,8 @@ class PreprocessingError(BaseModel):
     """
 
     model_config = ConfigDict(frozen=True)
+
+    _metrics_ = [Counter("decode_failure")]
 
     message_id: str
     decoder_type: str

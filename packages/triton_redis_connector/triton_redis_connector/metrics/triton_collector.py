@@ -7,7 +7,6 @@ MetricEvent instances for downstream consumption.
 from __future__ import annotations
 
 import threading
-import time
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -82,21 +81,18 @@ class TritonMetricsCollector:
             logger.warning("Failed to poll Triton inference statistics")
             return
 
-        timestamp_ms = int(time.time() * 1000)
         model_stats = self._parse_statistics(response)
 
         with self._lock:
             self._latest_stats = model_stats
 
-        for model_name, stats in model_stats.items():
+        for stats in model_stats.values():
             for measure, value in stats.items():
                 self._buffer.record(
                     MetricEvent(
                         component_name="triton",
                         measure=measure,
                         value=value,
-                        timestamp_ms=timestamp_ms,
-                        tags={"model": model_name},
                     ),
                 )
 

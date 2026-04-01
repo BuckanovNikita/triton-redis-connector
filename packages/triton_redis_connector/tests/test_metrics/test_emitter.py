@@ -15,7 +15,6 @@ def _make_event(measure: str = "test", value: float = 1.0) -> MetricEvent:
         component_name="test-component",
         measure=measure,
         value=value,
-        timestamp_ms=int(time.time() * 1000),
     )
 
 

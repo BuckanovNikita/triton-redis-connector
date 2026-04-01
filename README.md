@@ -115,15 +115,22 @@ uv run pytest
 | `source_read_empty` | app_name | `node` | counter | Попытки чтения, вернувшие None |
 | `sink_write_total` | app_name | `node` | counter | Общее число записей в Sink |
 
-### Annotated метрики (объявляются на процессорах)
+### Метрики на событиях (объявляются на event-классах)
 
 | Метрика | Тип | Объявление | Описание |
 |---------|-----|------------|----------|
-| `decode_success` | Counter | `Annotated[DecodedImage, Counter("decode_success")]` | Успешные декодирования |
-| `decode_failure` | Counter | `Annotated[PreprocessingError, Counter("decode_failure")]` | Ошибки декодирования |
-| `inference_time_ms` | Gauge | `Annotated[DetectionResult, Gauge("inference_time_ms", field="inference_time_ms")]` | Время инференса (мс) |
+| `decode_success` | Counter | `_metrics_ = [Counter("decode_success")]` на `DecodedImage` | Успешные декодирования |
+| `decode_failure` | Counter | `_metrics_ = [Counter("decode_failure")]` на `PreprocessingError` | Ошибки декодирования |
+| `detection_done` | Counter | `_metrics_ = [Counter("detection_done")]` на `DetectionResult` | Завершённые детекции |
+| `inference_time_ms` | Gauge | `Annotated[float, Gauge("inference_time_ms")]` на поле `DetectionResult` | Время инференса (мс) |
 
-Для добавления новых метрик используйте `Counter("name")` и `Gauge("name", field="field")` в `Annotated` на return-типах процессоров. Framework автоматически извлекает и применяет правила.
+Для добавления новых метрик:
+- **Counter**: `_metrics_ = [Counter("name")]` на классе события — считает количество
+- **Gauge**: `Annotated[float, Gauge("name")]` на поле события — извлекает числовое значение
+- **GroupBy**: `Annotated[str, GroupBy("name", window_s=60)]` на поле события — группировка по значению поля
+
+`Counter`, `Gauge`, `GroupBy` импортируются из `triton_redis_connector.protocols`.
+`MetricEvent` содержит только 3 поля: `component_name`, `measure`, `value`.
 
 ### Queue метрики
 

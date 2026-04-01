@@ -19,6 +19,10 @@ import typing
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
+from triton_redis_connector.protocols import Counter, Gauge, GroupBy
+
+__all__ = ["Counter", "Gauge", "GroupBy"]
+
 
 @dataclass(frozen=True, slots=True)
 class Tracked:
@@ -30,31 +34,6 @@ class Tracked:
     """
 
     name: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class Counter:
-    """Annotated marker: increment a named counter each time this result type is produced.
-
-    Usage on processor return types::
-
-        def __call__(self, event: bytes) -> Annotated[DecodedImage, Counter("decode_success")] | None:
-    """
-
-    name: str
-
-
-@dataclass(frozen=True, slots=True)
-class Gauge:
-    """Annotated marker: extract a field value from the result and record it as a metric.
-
-    Usage on processor return types::
-
-        def __call__(self, event: X) -> Annotated[Y, Gauge("latency_ms", field="inference_time_ms")] | None:
-    """
-
-    name: str
-    field: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +63,7 @@ class MetricAggregator:
         "_total_ms",
     )
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
         self._lock = threading.Lock()
         self._call_count: int = 0
         self._error_count: int = 0
@@ -149,11 +128,49 @@ def extract_tracked(annotation: Any) -> Tracked | None:  # noqa: ANN401
     return None
 
 
-def extract_metric_markers(annotation: Any) -> list[Counter | Gauge]:  # noqa: ANN401
-    """Extract ``Counter`` and ``Gauge`` markers from ``Annotated`` metadata.
+def extract_metric_markers(annotation: Any) -> list[Counter | Gauge | GroupBy]:  # noqa: ANN401
+    """Extract ``Counter``, ``Gauge``, and ``GroupBy`` markers from ``Annotated`` metadata.
 
     Returns empty list if the annotation is not ``Annotated`` or has no
     metric markers.
     """
     args = typing.get_args(annotation)
-    return [arg for arg in args if isinstance(arg, (Counter, Gauge))]
+    return [arg for arg in args if isinstance(arg, (Counter, Gauge, GroupBy))]
+
+
+def extract_event_counters(event_type: type) -> list[Counter]:
+    """Extract ``Counter`` markers from an event class's ``_metrics_`` attribute."""
+    metrics_list: list[object] = _get_class_attr(event_type, "_metrics_")
+    return [m for m in metrics_list if isinstance(m, Counter)]
+
+
+def extract_field_gauges(event_type: type) -> list[tuple[str, Gauge]]:
+    """Extract ``(field_name, Gauge)`` pairs from ``Annotated`` type hints on an event class."""
+    hints = typing.get_type_hints(event_type, include_extras=True)
+    return [
+        (field_name, marker)
+        for field_name, annotation in hints.items()
+        for marker in extract_metric_markers(annotation)
+        if isinstance(marker, Gauge)
+    ]
+
+
+def extract_field_group_bys(event_type: type) -> list[tuple[str, GroupBy]]:
+    """Extract ``(field_name, GroupBy)`` pairs from ``Annotated`` type hints on an event class."""
+    hints = typing.get_type_hints(event_type, include_extras=True)
+    return [
+        (field_name, marker)
+        for field_name, annotation in hints.items()
+        for marker in extract_metric_markers(annotation)
+        if isinstance(marker, GroupBy)
+    ]
+
+
+def _get_class_attr(cls: type, name: str) -> list[object]:
+    """Safely get a list attribute from a class, returning empty list if absent."""
+    for klass in cls.__mro__:
+        if name in klass.__dict__:
+            val = klass.__dict__[name]
+            if isinstance(val, list):
+                return val
+    return []

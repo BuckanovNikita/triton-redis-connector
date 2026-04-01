@@ -90,11 +90,13 @@ All infrastructure runs via the devcontainer compose file.
 
 **App must be abstracted from domain metrics.** No domain event types (DecodedImage, DetectionResult, etc.) in `engine/app.py`.
 
-- **Annotated on return types**: Declare metrics via `Annotated[ReturnType, Counter("name")]` or `Annotated[ReturnType, Gauge("name", field="field")]` on processor `__call__` return types. The framework extracts and applies rules automatically.
-- **Tracked on wrappers**: Use `Annotated[ProcessorType, Tracked("name")]` when registering parallel nodes to enable per-call metric collection via `MetricAggregator`
-- **Zero-value guarantee**: `_log_stats` emits all registered Counter names (from `registry.all_counter_names`) even if no events matched — idle counters emit 0
-- **No domain imports in engine/app.py**: App uses `registry.get_type_metrics(type(result))` to apply rules generically
-- When adding new metrics: annotate the processor's return type, framework does the rest
+- **Counter on event classes**: Declare `_metrics_ = [Counter("name")]` on the event class to count occurrences
+- **Gauge on event fields**: Use `Annotated[float, Gauge("name")]` on event fields to extract and emit values
+- **GroupBy on event fields**: Use `Annotated[str, GroupBy("name", window_s=60)]` for time-windowed per-key counting
+- **Counter/Gauge/GroupBy** live in `protocols.py` (leaf layer) — any module can import them
+- **Tracked on wrappers**: Use `Annotated[ProcessorType, Tracked("name")]` for per-call metrics on parallel nodes
+- **MetricEvent**: Only 3 fields — `component_name`, `measure`, `value` (no timestamp, no tags)
+- **Zero-value guarantee**: `_log_stats` emits all registered Counter names even when idle
 - Update metrics table in `README.md` (section "Метрики") when adding new metrics
 
 ## Testing Policy

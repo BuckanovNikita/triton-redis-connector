@@ -23,17 +23,15 @@ if TYPE_CHECKING:
 
 
 class CountByRule:
-    """Counts events grouped by a key field extracted from tags."""
+    """Counts events grouped by measure name."""
 
     def __init__(  # noqa: D107
         self,
         metric_name: str,
         window_seconds: int,
-        tag_key: str,
     ) -> None:
         self._metric_name = metric_name
         self._window_seconds = window_seconds
-        self._tag_key = tag_key
 
     @property
     def metric_name(self) -> str:  # noqa: D102
@@ -44,24 +42,22 @@ class CountByRule:
         return self._window_seconds
 
     def extract_key(self, event: MetricEvent) -> str:  # noqa: D102
-        return event.tags.get(self._tag_key, "unknown")
+        return event.measure
 
     def aggregate(self, count: int) -> float:  # noqa: D102
         return float(count)
 
 
 class SumByRule:
-    """Sums a numeric field (MetricEvent.value) grouped by a tag key."""
+    """Sums a numeric field (MetricEvent.value) grouped by measure name."""
 
     def __init__(  # noqa: D107
         self,
         metric_name: str,
         window_seconds: int,
-        tag_key: str,
     ) -> None:
         self._metric_name = metric_name
         self._window_seconds = window_seconds
-        self._tag_key = tag_key
 
     @property
     def metric_name(self) -> str:  # noqa: D102
@@ -72,14 +68,14 @@ class SumByRule:
         return self._window_seconds
 
     def extract_key(self, event: MetricEvent) -> str:  # noqa: D102
-        return event.tags.get(self._tag_key, "unknown")
+        return event.measure
 
     def aggregate(self, count: int) -> float:  # noqa: D102
         return float(count)
 
 
 class AvgByRule:
-    """Averages a numeric field (MetricEvent.value) grouped by a tag key.
+    """Averages a numeric field (MetricEvent.value) grouped by measure name.
 
     The aggregate method receives event count; actual average is computed
     by TimeWindowAggregator using stored sum / count.
@@ -89,11 +85,9 @@ class AvgByRule:
         self,
         metric_name: str,
         window_seconds: int,
-        tag_key: str,
     ) -> None:
         self._metric_name = metric_name
         self._window_seconds = window_seconds
-        self._tag_key = tag_key
 
     @property
     def metric_name(self) -> str:  # noqa: D102
@@ -104,7 +98,7 @@ class AvgByRule:
         return self._window_seconds
 
     def extract_key(self, event: MetricEvent) -> str:  # noqa: D102
-        return event.tags.get(self._tag_key, "unknown")
+        return event.measure
 
     def aggregate(self, count: int) -> float:  # noqa: D102
         return float(count)
@@ -186,8 +180,6 @@ class TimeWindowAggregator:
         if not bucket.counts:
             return
 
-        timestamp_ms = int(time.time() * 1000)
-
         for key, count in bucket.counts.items():
             value_sum = bucket.sums.get(key, 0.0)
             aggregate_value: float
@@ -204,8 +196,6 @@ class TimeWindowAggregator:
                     component_name="aggregation",
                     measure=rule.metric_name,
                     value=aggregate_value,
-                    timestamp_ms=timestamp_ms,
-                    tags={"key": key},
                 ),
             )
 

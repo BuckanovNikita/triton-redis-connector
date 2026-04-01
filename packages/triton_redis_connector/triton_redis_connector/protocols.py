@@ -18,6 +18,46 @@ if TYPE_CHECKING:
     import threading
 
 
+@dataclass(frozen=True, slots=True)
+class Counter:
+    """Class-level metric: increment a named counter each time this event is produced.
+
+    Declare on event classes via ``_metrics_`` class attribute::
+
+        class DecodedImage(Event):
+            _metrics_ = [Counter("decode_success")]
+    """
+
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class Gauge:
+    """Field-level metric: extract a field value and record it as a named metric.
+
+    Declare on event fields via ``Annotated``::
+
+        class DetectionResult(Event):
+            inference_time_ms: Annotated[float, Gauge("inference_time_ms")]
+    """
+
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class GroupBy:
+    """Field-level metric: count events grouped by this field over a time window.
+
+    Declare on event fields via ``Annotated``::
+
+        class ImageEvent(Event):
+            camera_no: Annotated[str, GroupBy("camera_events", window_s=60)]
+    """
+
+    name: str
+    window_s: int = 60
+
+
 T = TypeVar("T")
 U = TypeVar("U")
 TOut_co = TypeVar("TOut_co", covariant=True)

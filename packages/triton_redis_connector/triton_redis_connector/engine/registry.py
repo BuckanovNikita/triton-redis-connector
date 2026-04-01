@@ -14,11 +14,9 @@ from enum import StrEnum, auto
 from loguru import logger
 
 from triton_redis_connector.engine.metric_aggregator import (
-    Counter,
-    Gauge,
     InstrumentedNode,
     MetricAggregator,
-    extract_metric_markers,
+    extract_event_counters,
 )
 from triton_redis_connector.protocols import (
     ProcessPoolProcessor,
@@ -86,7 +84,6 @@ class PipelineRegistry:
         self._type_producers: dict[type, list[str]] = {}
         self._type_consumers: dict[type, list[str]] = {}
         self._aggregators: dict[str, MetricAggregator] = {}
-        self._type_metrics: dict[type, list[Counter | Gauge]] = {}
 
     def register(self, name: str, node: object) -> None:
         """Register a pipeline node by inspecting its __call__ type hints."""
@@ -107,8 +104,6 @@ class PipelineRegistry:
         graph_node.output_types = set(output_types)
         for out_type in output_types:
             self._type_producers.setdefault(out_type, []).append(name)
-
-        self._extract_return_type_metrics(return_annotation)
 
         self._nodes[name] = graph_node
 
@@ -201,18 +196,16 @@ class PipelineRegistry:
         """Return the node-name-to-aggregator mapping for metrics collection."""
         return dict(self._aggregators)
 
-    def get_type_metrics(self, result_type: type) -> list[Counter | Gauge]:
-        """Return metric rules declared via Annotated for a result type."""
-        return list(self._type_metrics.get(result_type, []))
-
     @property
     def all_counter_names(self) -> set[str]:
-        """Return all registered Counter metric names for zero-value emission."""
+        """Return all Counter metric names from event types in the graph.
+
+        Scans ``_metrics_`` on all registered output event types.
+        """
         names: set[str] = set()
-        for markers in self._type_metrics.values():
-            for marker in markers:
-                if isinstance(marker, Counter):
-                    names.add(marker.name)
+        for event_type in self._type_producers:
+            for counter in extract_event_counters(event_type):
+                names.add(counter.name)
         return names
 
     def _check_connectivity(self) -> list[str]:
@@ -318,28 +311,6 @@ class PipelineRegistry:
         if base not in exclude:
             return [base]
         return []
-
-    def _extract_return_type_metrics(self, annotation: type | None) -> None:
-        """Extract Counter/Gauge markers from Annotated return types."""
-        if annotation is None:
-            return
-        origin = typing.get_origin(annotation)
-        candidates: list[type]
-        if origin is types.UnionType or origin is typing.Union:
-            candidates = list(typing.get_args(annotation))
-        else:
-            candidates = [annotation]
-
-        for candidate in candidates:
-            if typing.get_origin(candidate) is not typing.Annotated:
-                continue
-            base_type: type = typing.get_args(candidate)[0]
-            markers = extract_metric_markers(candidate)
-            if markers:
-                existing = self._type_metrics.setdefault(base_type, [])
-                for marker in markers:
-                    if marker not in existing:
-                        existing.append(marker)
 
     @staticmethod
     def _unwrap_annotated(annotation: type) -> type:

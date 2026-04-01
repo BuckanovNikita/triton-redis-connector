@@ -17,7 +17,7 @@ from loguru import logger
 
 from triton_redis_connector.engine.context import EventContext, reset_context, set_context
 from triton_redis_connector.engine.diagram import generate_mermaid
-from triton_redis_connector.engine.metric_aggregator import Counter
+from triton_redis_connector.engine.metric_aggregator import extract_event_counters, extract_field_gauges
 from triton_redis_connector.engine.registry import INLINE_VARIANTS, SINK_VARIANTS, SOURCE_VARIANTS
 from triton_redis_connector.errors.models import ConnectorError, InferenceError, PreprocessingError
 from triton_redis_connector.protocols import (
@@ -42,8 +42,6 @@ def _make_metric(
     component_name: str,
     measure: str,
     value: float,
-    timestamp_ms: int,
-    tags: dict[str, str] | None = None,
 ) -> object:
     """Create a MetricEvent with lazy import to avoid engine->metrics layer violation."""
     from triton_redis_connector.metrics.collector import MetricEvent  # noqa: PLC0415
@@ -52,8 +50,6 @@ def _make_metric(
         component_name=component_name,
         measure=measure,
         value=value,
-        timestamp_ms=timestamp_ms,
-        tags=tags or {},
     )
 
 
@@ -252,34 +248,32 @@ class Application:
                 component_name=self._config.app_name,
                 measure="event_total_transit_ms",
                 value=envelope.transit_time_ms(),
-                timestamp_ms=int(time.time() * 1000),
             ),
         )
 
     def _apply_metric_rules(self, result: object) -> None:
-        """Apply metric rules declared via Annotated markers on processor return types.
+        """Apply metric rules declared on the event class itself.
 
-        Counters are accumulated in ``_stats_counters`` for periodic emission.
-        Gauges are emitted immediately per-event to the metric buffer.
-        Field access uses the declared ``field`` name from the ``Gauge`` annotation.
+        Scans ``_metrics_`` for Counters and ``Annotated`` fields for Gauges.
+        Counters accumulate in ``_stats_counters``; Gauges emit immediately.
         """
-        rules = self._registry.get_type_metrics(type(result))
-        for rule in rules:
-            if isinstance(rule, Counter):
-                self._stats_counters[rule.name] = self._stats_counters.get(rule.name, 0) + 1
-            elif self._metric_buffer is not None:
-                value: float | None = _extract_gauge_value(result, rule.field)
+        result_type = type(result)
+        for counter in extract_event_counters(result_type):
+            self._stats_counters[counter.name] = self._stats_counters.get(counter.name, 0) + 1
+
+        if self._metric_buffer is not None:
+            for field_name, gauge in extract_field_gauges(result_type):
+                value: float | None = _extract_gauge_value(result, field_name)
                 if value is not None:
                     self._metric_buffer.record(
                         _make_metric(
                             component_name=self._config.app_name,
-                            measure=rule.name,
+                            measure=gauge.name,
                             value=value,
-                            timestamp_ms=int(time.time() * 1000),
                         ),
                     )
 
-    def _emit_node_processing_metric(self, node_name: str, elapsed_ms: float) -> None:
+    def _emit_node_processing_metric(self, _node_name: str, elapsed_ms: float) -> None:
         """Emit per-call node_processing_ms metric for inline nodes."""
         if self._metric_buffer is None:
             return
@@ -288,8 +282,6 @@ class Application:
                 component_name=self._config.app_name,
                 measure="node_processing_ms",
                 value=elapsed_ms,
-                timestamp_ms=int(time.time() * 1000),
-                tags={"node": node_name},
             ),
         )
 
@@ -356,7 +348,6 @@ class Application:
         if self._metric_buffer is None:
             return
 
-        timestamp_ms = int(time.time() * 1000)
         app_name = self._config.app_name
 
         for measure, value in [
@@ -369,7 +360,6 @@ class Application:
                     component_name=app_name,
                     measure=measure,
                     value=value,
-                    timestamp_ms=timestamp_ms,
                 ),
             )
 
@@ -379,14 +369,13 @@ class Application:
                     component_name=app_name,
                     measure=counter_name,
                     value=float(self._stats_counters.get(counter_name, 0)),
-                    timestamp_ms=timestamp_ms,
                 ),
             )
 
-        self._emit_per_node_stats(timestamp_ms, app_name)
-        self._emit_queue_stats(timestamp_ms, app_name)
+        self._emit_per_node_stats(app_name)
+        self._emit_queue_stats(app_name)
 
-    def _emit_per_node_stats(self, timestamp_ms: int, app_name: str) -> None:
+    def _emit_per_node_stats(self, app_name: str) -> None:
         """Emit per-node metrics for ALL registered nodes (zero-value guarantee)."""
         assert self._metric_buffer is not None  # noqa: S101 — caller checks
         aggregators = self._registry.aggregators
@@ -414,8 +403,6 @@ class Application:
                         component_name=app_name,
                         measure=measure,
                         value=value,
-                        timestamp_ms=timestamp_ms,
-                        tags={"node": node_name},
                     ),
                 )
 
@@ -430,8 +417,6 @@ class Application:
                             component_name=app_name,
                             measure=measure,
                             value=value,
-                            timestamp_ms=timestamp_ms,
-                            tags={"node": node_name},
                         ),
                     )
 
@@ -442,36 +427,30 @@ class Application:
                         component_name=app_name,
                         measure="sink_write_total",
                         value=writes,
-                        timestamp_ms=timestamp_ms,
-                        tags={"node": node_name},
                     ),
                 )
 
         self._stats_prev_per_node = dict(self._stats_per_node)
 
-    def _emit_queue_stats(self, timestamp_ms: int, app_name: str) -> None:
+    def _emit_queue_stats(self, app_name: str) -> None:
         """Emit queue depth and drop metrics for all managed queues."""
         assert self._metric_buffer is not None  # noqa: S101 — caller checks
 
-        for queue_name, depth in self._queue_bus.queue_depths().items():
+        for depth in self._queue_bus.queue_depths().values():
             self._metric_buffer.record(
                 _make_metric(
                     component_name=app_name,
                     measure="queue_depth",
                     value=float(depth),
-                    timestamp_ms=timestamp_ms,
-                    tags={"queue": queue_name},
                 ),
             )
 
-        for queue_name, drops in self._queue_bus.drop_counts().items():
+        for drops in self._queue_bus.drop_counts().values():
             self._metric_buffer.record(
                 _make_metric(
                     component_name=app_name,
                     measure="queue_drops_total",
                     value=float(drops),
-                    timestamp_ms=timestamp_ms,
-                    tags={"queue": queue_name},
                 ),
             )
 
@@ -593,8 +572,6 @@ class Application:
                                 component_name=self._config.app_name,
                                 measure="parallel_restart",
                                 value=1.0,
-                                timestamp_ms=int(time.time() * 1000),
-                                tags={"node": name},
                             ),
                         )
 

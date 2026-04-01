@@ -69,7 +69,7 @@ class TestTritonMetricsCollector:
         success_time_event = next(e for e in events if e.measure == "success_time_ms")
         assert success_time_event.value == 2000.0
 
-    def test_poll_tags_events_with_model_name(self) -> None:
+    def test_poll_emits_all_metrics_per_model(self) -> None:
         buffer = MetricBuffer()
         client = MagicMock()
         client.get_inference_statistics.return_value = _build_triton_stats_response(
@@ -80,7 +80,8 @@ class TestTritonMetricsCollector:
         collector._poll_stats()
 
         events = buffer.flush()
-        assert all(e.tags.get("model") == "custom-model" for e in events)
+        assert all(e.component_name == "triton" for e in events)
+        assert len(events) == 7
 
     def test_get_model_stats_returns_none_before_poll(self) -> None:
         buffer = MetricBuffer()
@@ -169,7 +170,4 @@ class TestTritonMetricsCollector:
         collector._poll_stats()
 
         events = buffer.flush()
-        model_a_events = [e for e in events if e.tags.get("model") == "model_a"]
-        model_b_events = [e for e in events if e.tags.get("model") == "model_b"]
-        assert len(model_a_events) == 7
-        assert len(model_b_events) == 7
+        assert len(events) == 14

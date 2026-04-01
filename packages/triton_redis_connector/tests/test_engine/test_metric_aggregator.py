@@ -109,16 +109,16 @@ class TestCounterGauge:
         assert markers == [Counter("my_count")]
 
     def test_extract_gauge_from_annotated(self) -> None:
-        annotation = Annotated[float, Gauge("my_gauge", field="value")]
+        annotation = Annotated[float, Gauge("my_gauge")]
         markers = extract_metric_markers(annotation)
-        assert markers == [Gauge("my_gauge", field="value")]
+        assert markers == [Gauge("my_gauge")]
 
     def test_extract_mixed_markers(self) -> None:
-        annotation = Annotated[int, Counter("c"), Gauge("g", field="f")]
+        annotation = Annotated[int, Counter("c"), Gauge("g")]
         markers = extract_metric_markers(annotation)
         assert len(markers) == 2
         assert Counter("c") in markers
-        assert Gauge("g", field="f") in markers
+        assert Gauge("g") in markers
 
     def test_extract_no_markers_from_plain_type(self) -> None:
         assert extract_metric_markers(int) == []

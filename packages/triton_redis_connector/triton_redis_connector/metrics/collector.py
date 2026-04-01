@@ -7,14 +7,14 @@ flow into a MetricBuffer and are periodically flushed to Redis by MetricEmitter.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 class MetricEvent(BaseModel):
     """Single metric data point produced by any pipeline component.
 
-    Sinks optionally return MetricEvent to report instrumentation data
-    back into the graph (e.g., transit time, results written count).
+    Contains only the essential triple: component, measure, value.
+    Timestamp is provided by the Redis Stream entry ID at write time.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -22,5 +22,3 @@ class MetricEvent(BaseModel):
     component_name: str
     measure: str
     value: float
-    timestamp_ms: int
-    tags: dict[str, str] = Field(default_factory=dict)

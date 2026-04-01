@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 import pytest
 from triton_redis_connector.engine.metric_aggregator import Counter, Gauge
@@ -260,30 +260,63 @@ class TestNodeAccess:
         assert "proc" in registry.nodes
 
 
+class EventWithCounter:
+    _metrics_: ClassVar[list[Counter]] = [Counter("success")]
+
+
+class EventWithFailCounter:
+    _metrics_: ClassVar[list[Counter]] = [Counter("fail")]
+
+
+class EventWithAlpha:
+    _metrics_: ClassVar[list[Counter]] = [Counter("alpha")]
+
+
+class EventWithBeta:
+    _metrics_: ClassVar[list[Counter]] = [Counter("beta")]
+
+
+class EventWithGaugeField:
+    latency: Annotated[float, Gauge("latency")]
+
+    def __init__(self, latency: float) -> None:
+        self.latency = latency
+
+
 class TestAnnotatedMetricExtraction:
-    def test_counter_extracted_from_annotated_return(self, registry: PipelineRegistry) -> None:
-        class CountedProc:
-            def __call__(self, event: EventA) -> Annotated[EventB, Counter("success")] | None:
-                return EventB()
+    def test_counter_from_event_class(self, registry: PipelineRegistry) -> None:
+        class Proc:
+            def __call__(self, event: EventA) -> EventWithCounter | None:
+                return EventWithCounter()
+
+        class CounterSink:
+            def __call__(self, event: EventWithCounter) -> None:
+                pass
 
         registry.register("src", SimpleSource())
-        registry.register("proc", CountedProc())
-        registry.register("sink", SimpleSink())
-        assert registry.get_type_metrics(EventB) == [Counter("success")]
+        registry.register("proc", Proc())
+        registry.register("sink", CounterSink())
+        assert "success" in registry.all_counter_names
 
-    def test_multiple_counters_from_union(self, registry: PipelineRegistry) -> None:
-        class MultiProc:
-            def __call__(
-                self, event: EventA
-            ) -> Annotated[EventB, Counter("ok")] | Annotated[EventC, Counter("fail")] | None:
-                return EventB()
+    def test_multiple_counters_from_event_types(self, registry: PipelineRegistry) -> None:
+        class ProcOk:
+            def __call__(self, event: EventA) -> EventWithCounter | EventWithFailCounter | None:
+                return EventWithCounter()
+
+        class CounterSink:
+            def __call__(self, event: EventWithCounter) -> None:
+                pass
+
+        class FailSink:
+            def __call__(self, event: EventWithFailCounter) -> None:
+                pass
 
         registry.register("src", SimpleSource())
-        registry.register("proc", MultiProc())
-        registry.register("sink_b", SimpleSink())
-        registry.register("sink_c", EventCSink())
-        assert Counter("ok") in registry.get_type_metrics(EventB)
-        assert Counter("fail") in registry.get_type_metrics(EventC)
+        registry.register("proc", ProcOk())
+        registry.register("sink_ok", CounterSink())
+        registry.register("sink_fail", FailSink())
+        assert "success" in registry.all_counter_names
+        assert "fail" in registry.all_counter_names
 
     def test_annotated_does_not_break_output_types(self, registry: PipelineRegistry) -> None:
         class AnnotatedProc:
@@ -297,28 +330,37 @@ class TestAnnotatedMetricExtraction:
 
     def test_all_counter_names(self, registry: PipelineRegistry) -> None:
         class Proc1:
-            def __call__(self, event: EventA) -> Annotated[EventB, Counter("alpha")] | None:
-                return EventB()
+            def __call__(self, event: EventA) -> EventWithAlpha | None:
+                return EventWithAlpha()
 
         class Proc2:
-            def __call__(self, event: EventB) -> Annotated[EventC, Counter("beta")] | None:
-                return EventC()
+            def __call__(self, event: EventWithAlpha) -> EventWithBeta | None:
+                return EventWithBeta()
+
+        class AlphaSink:
+            def __call__(self, event: EventWithAlpha) -> None:
+                pass
+
+        class BetaSink:
+            def __call__(self, event: EventWithBeta) -> None:
+                pass
 
         registry.register("src", SimpleSource())
         registry.register("p1", Proc1())
         registry.register("p2", Proc2())
-        registry.register("sink", EventCSink())
+        registry.register("sink_a", AlphaSink())
+        registry.register("sink_b", BetaSink())
         assert registry.all_counter_names == {"alpha", "beta"}
 
-    def test_get_type_metrics_empty_for_unknown(self, registry: PipelineRegistry) -> None:
-        assert registry.get_type_metrics(EventA) == []
-
-    def test_gauge_extracted_from_annotated_return(self, registry: PipelineRegistry) -> None:
-        class GaugeProc:
-            def __call__(self, event: EventA) -> Annotated[EventB, Gauge("latency", field="ms")] | None:
-                return EventB()
-
+    def test_all_counter_names_empty_when_no_metrics(self, registry: PipelineRegistry) -> None:
         registry.register("src", SimpleSource())
-        registry.register("proc", GaugeProc())
+        registry.register("proc", SimpleProcessor())
         registry.register("sink", SimpleSink())
-        assert registry.get_type_metrics(EventB) == [Gauge("latency", field="ms")]
+        assert registry.all_counter_names == set()
+
+    def test_gauge_extracted_from_event_field(self, registry: PipelineRegistry) -> None:
+        from triton_redis_connector.engine.metric_aggregator import extract_field_gauges
+
+        gauges = extract_field_gauges(EventWithGaugeField)
+        assert len(gauges) == 1
+        assert gauges[0] == ("latency", Gauge("latency"))
