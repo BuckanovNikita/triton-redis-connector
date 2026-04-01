@@ -94,6 +94,10 @@ module = ["ultralytics.*", "onnx.*", "onnxruntime.*", "cv2", "cv2.*", "numpy", "
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["nvidia", "nvidia.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["pydantic", "pydantic.*", "loguru", "loguru.*"]
 ignore_missing_imports = true
 

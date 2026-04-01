@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+import numpy as np
+import numpy.typing as npt
+import pytest
 from triton_model_tools.export.dali import (
     DALI_ENSEMBLE_SUFFIX,
     DALI_PREPROCESS_SUFFIX,
@@ -16,6 +19,15 @@ from triton_model_tools.export.dali import (
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+try:
+    import nvidia.dali  # noqa: F401
+
+    _HAS_DALI = True
+except ImportError:
+    _HAS_DALI = False
+
+requires_dali = pytest.mark.skipif(not _HAS_DALI, reason="nvidia-dali not installed")
 
 
 class TestBuildDaliModelConfig:
@@ -36,12 +48,12 @@ class TestBuildDaliModelConfig:
         model_config = build_dali_model_config("yolo11s", config)
         assert len(model_config.outputs) == 1
         assert model_config.outputs[0].data_type.value == "TYPE_FP32"
-        assert model_config.outputs[0].dims == [3, 640, 640]
+        assert model_config.outputs[0].dims == [1, 3, 640, 640]
 
     def test_custom_target_size_in_output_dims(self) -> None:
         config = DaliPipelineConfig(target_size=(320, 320))
         model_config = build_dali_model_config("yolo11s", config)
-        assert model_config.outputs[0].dims == [3, 320, 320]
+        assert model_config.outputs[0].dims == [1, 3, 320, 320]
 
 
 class TestBuildEnsembleConfig:
@@ -136,3 +148,106 @@ class TestBuildDaliNmsEnsembleConfig:
 
         assert preprocess_step.output_map[0].value == inference_step.input_map[0].value
         assert inference_step.output_map[0].value == nms_step.input_map[0].value
+
+
+@requires_dali
+class TestDaliMatchesUltralytics:
+    """Verify DALI preprocessing produces results matching LetterBoxPreprocessor.
+
+    JPEG encode/decode introduces lossy artifacts, so pixel values differ
+    slightly between DALI (decodes JPEG internally) and OpenCV (works on raw
+    pixels). Tests use tolerances that account for this while still catching
+    any algorithmic mismatches (wrong resize, bad padding, channel swap errors).
+    """
+
+    @staticmethod
+    def _preprocess_both(
+        bgr_image: npt.NDArray[np.uint8],
+        target_size: tuple[int, int],
+    ) -> tuple[npt.NDArray[np.floating[Any]], npt.NDArray[np.floating[Any]]]:
+        from triton_model_tools.export.dali import run_dali_preprocess
+        from triton_model_tools.inference import YoloPreprocessor
+
+        config = DaliPipelineConfig(target_size=target_size)
+        dali_out = run_dali_preprocess(bgr_image, config)
+
+        preprocessor = YoloPreprocessor(target_size=target_size)
+        cpu_out, _, _ = preprocessor.preprocess(bgr_image)
+        return dali_out, cpu_out
+
+    def test_output_shape_matches_square(self) -> None:
+        rng = np.random.default_rng(42)
+        image = rng.integers(0, 255, (480, 640, 3), dtype=np.uint8)
+        dali_out, cpu_out = self._preprocess_both(image, (640, 640))
+        assert dali_out.shape == cpu_out.shape == (1, 3, 640, 640)
+
+    def test_output_shape_matches_nonsquare(self) -> None:
+        rng = np.random.default_rng(42)
+        image = rng.integers(0, 255, (480, 640, 3), dtype=np.uint8)
+        dali_out, cpu_out = self._preprocess_both(image, (960, 640))
+        assert dali_out.shape == cpu_out.shape == (1, 3, 960, 640)
+
+    def test_values_close_landscape(self) -> None:
+        rng = np.random.default_rng(42)
+        image = rng.integers(0, 255, (480, 640, 3), dtype=np.uint8)
+        dali_out, cpu_out = self._preprocess_both(image, (640, 640))
+        np.testing.assert_allclose(dali_out, cpu_out, atol=0.02, rtol=0)
+
+    def test_values_close_portrait(self) -> None:
+        rng = np.random.default_rng(42)
+        image = rng.integers(0, 255, (800, 400, 3), dtype=np.uint8)
+        dali_out, cpu_out = self._preprocess_both(image, (640, 640))
+        np.testing.assert_allclose(dali_out, cpu_out, atol=0.02, rtol=0)
+
+    def test_values_close_nonsquare_target(self) -> None:
+        rng = np.random.default_rng(42)
+        image = rng.integers(0, 255, (300, 400, 3), dtype=np.uint8)
+        dali_out, cpu_out = self._preprocess_both(image, (384, 640))
+        np.testing.assert_allclose(dali_out, cpu_out, atol=0.02, rtol=0)
+
+    def test_padding_region_matches(self) -> None:
+        rng = np.random.default_rng(42)
+        image = rng.integers(0, 255, (480, 640, 3), dtype=np.uint8)
+        dali_out, cpu_out = self._preprocess_both(image, (640, 640))
+
+        scale = min(640 / 480, 640 / 640)
+        new_h = int(480 * scale)
+        pad_top = (640 - new_h) // 2
+
+        if pad_top > 0:
+            dali_pad = dali_out[0, :, :pad_top, :]
+            cpu_pad = cpu_out[0, :, :pad_top, :]
+            np.testing.assert_allclose(dali_pad, cpu_pad, atol=1e-6)
+
+    def test_normalization_range(self) -> None:
+        rng = np.random.default_rng(42)
+        image = rng.integers(0, 255, (480, 640, 3), dtype=np.uint8)
+        dali_out, cpu_out = self._preprocess_both(image, (640, 640))
+        assert dali_out.min() >= 0.0
+        assert dali_out.max() <= 1.0
+        assert cpu_out.min() >= 0.0
+        assert cpu_out.max() <= 1.0
+
+    def test_bgr_to_rgb_channel_order(self) -> None:
+        image = np.zeros((64, 64, 3), dtype=np.uint8)
+        image[:, :, 0] = 200
+        image[:, :, 1] = 0
+        image[:, :, 2] = 100
+
+        dali_out, cpu_out = self._preprocess_both(image, (64, 64))
+
+        dali_r_mean = float(dali_out[0, 0].mean())
+        dali_b_mean = float(dali_out[0, 2].mean())
+        cpu_r_mean = float(cpu_out[0, 0].mean())
+        cpu_b_mean = float(cpu_out[0, 2].mean())
+
+        assert dali_r_mean == pytest.approx(cpu_r_mean, abs=0.02)
+        assert dali_b_mean == pytest.approx(cpu_b_mean, abs=0.02)
+        assert dali_r_mean < dali_b_mean
+
+    def test_square_image_no_padding(self) -> None:
+        rng = np.random.default_rng(42)
+        image = rng.integers(0, 255, (640, 640, 3), dtype=np.uint8)
+        dali_out, cpu_out = self._preprocess_both(image, (640, 640))
+        assert dali_out.shape == (1, 3, 640, 640)
+        np.testing.assert_allclose(dali_out, cpu_out, atol=0.02, rtol=0)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment, FileSystemLoader
 from loguru import logger
@@ -16,6 +17,10 @@ from triton_model_tools.models import (
     TritonModelConfig,
     TritonTensorSpec,
 )
+
+if TYPE_CHECKING:
+    import numpy as np
+    import numpy.typing as npt
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 _JINJA_ENV = Environment(
@@ -101,7 +106,7 @@ def build_dali_model_config(
             TritonTensorSpec(
                 name="OUTPUT_0",
                 data_type=TritonDataType.TYPE_FP32,
-                dims=[3, target_h, target_w],
+                dims=[1, 3, target_h, target_w],
             ),
         ],
         instance_kind=TritonInstanceKind.KIND_GPU,
@@ -112,6 +117,7 @@ def build_ensemble_config(
     model_name: str,
     preprocess_name: str,
     inference_name: str,
+    inference_output_dims: list[int] | None = None,
 ) -> TritonModelConfig:
     """Build an ensemble model config chaining DALI preprocess and inference.
 
@@ -119,11 +125,14 @@ def build_ensemble_config(
         model_name: Name for the ensemble model (e.g. "yolo11s_dali_ensemble").
         preprocess_name: Name of the DALI preprocessing model.
         inference_name: Name of the inference model.
+        inference_output_dims: Output tensor dimensions from the inference model.
+            Must match the inference model's config.pbtxt output dims exactly.
 
     Returns:
         TritonModelConfig with ensemble platform and step mappings.
 
     """
+    output_dims = inference_output_dims if inference_output_dims is not None else [-1]
     return TritonModelConfig(
         name=model_name,
         platform="ensemble",
@@ -139,7 +148,7 @@ def build_ensemble_config(
             TritonTensorSpec(
                 name="OUTPUT_DETECTIONS",
                 data_type=TritonDataType.TYPE_FP32,
-                dims=[-1],
+                dims=output_dims,
             ),
         ],
         ensemble_scheduling=[
@@ -477,7 +486,7 @@ def build_ensemble_directory(
     preprocess_version_dir.mkdir(parents=True, exist_ok=True)
 
     pipeline_script = generate_dali_pipeline_script(config)
-    dali_model_path = preprocess_version_dir / "model.dali"
+    dali_model_path = preprocess_version_dir / "dali.py"
     dali_model_path.write_text(pipeline_script)
     logger.info("Wrote DALI pipeline script to {}", dali_model_path)
 
@@ -502,3 +511,100 @@ def build_ensemble_directory(
     logger.info("Wrote ensemble config to {}", ensemble_config_path)
 
     return ensemble_dir
+
+
+def run_dali_preprocess(
+    bgr_image: npt.NDArray[np.uint8],
+    config: DaliPipelineConfig,
+) -> npt.NDArray[np.floating[Any]]:
+    """Run DALI preprocessing on a BGR image for validation against ultralytics.
+
+    Replicates the same pipeline as the Jinja template (dali_preprocess.py.j2):
+    decode JPEG -> aspect-preserving resize -> centered pad -> BGR->RGB ->
+    normalize /255 -> CHW -> add batch dim.
+
+    Requires nvidia-dali-cuda120 (optional dependency).
+
+    Args:
+        bgr_image: BGR HWC uint8 numpy array.
+        config: DALI pipeline configuration.
+
+    Returns:
+        Float32 tensor with shape (1, 3, target_h, target_w).
+
+    Raises:
+        ImportError: If DALI is not installed.
+
+    """
+    import cv2  # noqa: PLC0415
+    import numpy as np  # noqa: PLC0415
+    from nvidia.dali import fn, types  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+    from nvidia.dali import math as dmath  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+    from nvidia.dali.pipeline import Pipeline  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+
+    target_h, target_w = config.target_size
+
+    _, jpeg_bytes = cv2.imencode(".jpg", bgr_image, [cv2.IMWRITE_JPEG_QUALITY, 100])
+    encoded_np: npt.NDArray[np.uint8] = np.frombuffer(jpeg_bytes.tobytes(), dtype=np.uint8)
+
+    pipe = Pipeline(batch_size=1, num_threads=4, device_id=0)
+    with pipe:
+        encoded = fn.external_source(device="cpu", name="INPUT_0")
+        images = fn.decoders.image(encoded, device="mixed", output_type=types.BGR)
+
+        shapes = fn.peek_image_shape(encoded)
+        orig_h = fn.slice(shapes, 0, 1, axes=[0])
+        orig_w = fn.slice(shapes, 1, 1, axes=[0])
+
+        scale_h = target_h / fn.cast(orig_h, dtype=types.FLOAT)
+        scale_w = target_w / fn.cast(orig_w, dtype=types.FLOAT)
+        scale = dmath.min(scale_h, scale_w)
+
+        new_h = fn.cast(fn.cast(orig_h, dtype=types.FLOAT) * scale, dtype=types.INT32)
+        new_w = fn.cast(fn.cast(orig_w, dtype=types.FLOAT) * scale, dtype=types.INT32)
+
+        resized = fn.resize(
+            images,
+            resize_x=new_w,
+            resize_y=new_h,
+            interp_type=types.INTERP_LINEAR,
+        )
+
+        pad_top = fn.cast((target_h - new_h) / 2, dtype=types.INT32)
+        pad_left = fn.cast((target_w - new_w) / 2, dtype=types.INT32)
+
+        padded = fn.paste(
+            resized,
+            paste_x=fn.cast(pad_left, dtype=types.FLOAT) / target_w,
+            paste_y=fn.cast(pad_top, dtype=types.FLOAT) / target_h,
+            ratio=1.0,
+            fill_value=(config.pad_value, config.pad_value, config.pad_value),
+            min_canvas_size=(target_h, target_w),
+        )
+        padded = fn.crop(
+            padded,
+            crop_h=target_h,
+            crop_w=target_w,
+            crop_pos_x=0.0,
+            crop_pos_y=0.0,
+        )
+
+        rgb = fn.color_space_conversion(padded, image_type=types.BGR, output_type=types.RGB)
+
+        normalized = fn.crop_mirror_normalize(
+            rgb,
+            mean=[0.0, 0.0, 0.0],
+            std=[config.normalize_div, config.normalize_div, config.normalize_div],
+            output_layout=config.output_layout,
+            dtype=types.FLOAT,
+        )
+
+        batched = fn.expand_dims(normalized, axes=[0])
+        pipe.set_outputs(batched)
+
+    pipe.build()
+    pipe.feed_input("INPUT_0", [encoded_np])
+    (output,) = pipe.run()
+
+    result: npt.NDArray[np.floating[Any]] = output.as_cpu().as_array()[0]
+    return result
