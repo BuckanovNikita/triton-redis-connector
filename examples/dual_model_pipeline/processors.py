@@ -222,7 +222,8 @@ class InspectionPostProcessor:
             )
             return None
 
-        detections = self._postprocess_standard(raw)
+        is_end2end = raw.ndim == 3 and raw.shape[-1] == 6
+        detections = self._postprocess_end2end(raw) if is_end2end else self._postprocess_standard(raw)
         detections_json = json.dumps(detections)
 
         return InspectionResult(
@@ -234,6 +235,28 @@ class InspectionPostProcessor:
             num_detections=len(detections),
             frame_counter=event.frame_counter,
         )
+
+    def _postprocess_end2end(
+        self,
+        raw: npt.NDArray[np.float32],
+    ) -> list[dict[str, Any]]:
+        if raw.ndim == 3:
+            raw = raw[0]
+
+        mask = raw[:, 4] >= self._conf_threshold
+        filtered = raw[mask]
+
+        return [
+            {
+                "x1": float(filtered[i, 0]),
+                "y1": float(filtered[i, 1]),
+                "x2": float(filtered[i, 2]),
+                "y2": float(filtered[i, 3]),
+                "confidence": float(filtered[i, 4]),
+                "class_id": int(filtered[i, 5]),
+            }
+            for i in range(len(filtered))
+        ]
 
     def _postprocess_standard(
         self,
