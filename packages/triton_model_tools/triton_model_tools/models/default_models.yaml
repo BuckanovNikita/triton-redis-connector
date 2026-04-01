@@ -8,3 +8,5 @@ models:
     ultralytics_model: yolo11s.pt
   - name: yolo12s
     ultralytics_model: yolo12s.pt
+  - name: yolo26l
+    ultralytics_model: yolo26l.pt

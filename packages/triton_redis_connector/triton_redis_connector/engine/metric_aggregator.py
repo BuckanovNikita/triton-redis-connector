@@ -187,7 +187,7 @@ def _get_class_attr(cls: type, name: str) -> list[object]:
     """Safely get a list attribute from a class, returning empty list if absent."""
     for klass in cls.__mro__:
         if name in klass.__dict__:
-            val = klass.__dict__[name]
+            val: object = klass.__dict__[name]
             if isinstance(val, list):
-                return val
+                return list(val)  # pyright: ignore[reportUnknownArgumentType]
     return []

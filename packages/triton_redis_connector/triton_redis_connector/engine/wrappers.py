@@ -84,9 +84,9 @@ def _call_with_metrics(
         aggregator.record_call(elapsed_ms, is_empty=(result is None))
 
     if metric_recorder is not None and result is not None:
-        _extract_and_record_metrics(result, metric_recorder, component_name, elapsed_ms)
+        _extract_and_record_metrics(result, metric_recorder, component_name, elapsed_ms)  # pyright: ignore[reportUnknownArgumentType]
 
-    return result
+    return result  # pyright: ignore[reportUnknownVariableType]
 
 
 class DetachedThreadSource[TOut]:

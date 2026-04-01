@@ -192,7 +192,7 @@ class TestLogStats:
 
         buffer = MetricBuffer()
         app = Application(config=config, registry=registry, queue_bus=queue_bus, metric_buffer=buffer)
-        app._log_stats()
+        app._log_stats()  # pyright: ignore[reportPrivateUsage]
 
         events = buffer.flush()
         assert len(events) == 0
@@ -202,8 +202,11 @@ class TestWrapperAggregator:
     def test_wrapper_records_metrics_on_call(self) -> None:
         from triton_redis_connector.engine.wrappers import DetachedThreadProcessor
 
+        def _upper(x: str) -> str:
+            return x.upper()
+
         aggregator = MetricAggregator()
-        wrapper: DetachedThreadProcessor[str, str] = DetachedThreadProcessor(lambda x: x.upper(), aggregator=aggregator)
+        wrapper: DetachedThreadProcessor[str, str] = DetachedThreadProcessor(_upper, aggregator=aggregator)
         result = wrapper("hello")
         assert result == "HELLO"
         snap = aggregator.snapshot()
@@ -237,7 +240,10 @@ class TestWrapperAggregator:
     def test_wrapper_without_aggregator_passes_through(self) -> None:
         from triton_redis_connector.engine.wrappers import DetachedThreadProcessor
 
-        wrapper: DetachedThreadProcessor[int, int] = DetachedThreadProcessor(lambda x: x * 2)
+        def _double(x: int) -> int:
+            return x * 2
+
+        wrapper: DetachedThreadProcessor[int, int] = DetachedThreadProcessor(_double)
         assert wrapper("5") == "55"  # type: ignore[arg-type]
 
 
@@ -301,8 +307,11 @@ class TestWrapperMetricExtraction:
 
         buffer = MetricBuffer()
 
+        def _upper(x: str) -> str:
+            return x.upper()
+
         wrapper: DetachedThreadProcessor[str, str] = DetachedThreadProcessor(
-            lambda x: x.upper(), metric_recorder=buffer, component_name="test"
+            _upper, metric_recorder=buffer, component_name="test"
         )
         wrapper("hello")
 
@@ -316,8 +325,11 @@ class TestWrapperMetricExtraction:
 
         buffer = MetricBuffer()
 
+        def _returns_none(_: str) -> None:
+            return None
+
         wrapper: DetachedThreadProcessor[str, str | None] = DetachedThreadProcessor(
-            lambda _: None, metric_recorder=buffer, component_name="test"
+            _returns_none, metric_recorder=buffer, component_name="test"
         )
         wrapper("hello")
 
