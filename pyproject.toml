@@ -174,17 +174,7 @@ forbidden_modules = [
     "triton_model_tools",
 ]
 
-# Contract 4: Package boundary — model_tools must not import connector
-[[tool.importlinter.contracts]]
-id = "model-tools-no-connector"
-name = "triton_model_tools must not import triton_redis_connector"
-type = "forbidden"
-source_modules = [
-    "triton_model_tools",
-]
-forbidden_modules = [
-    "triton_redis_connector",
-]
+# Contract 4: (removed — model_tools now depends on connector)
 
 # Contract 5: Package boundary — shared_models must not import connector or model_tools
 [[tool.importlinter.contracts]]

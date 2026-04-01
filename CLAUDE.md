@@ -84,6 +84,7 @@ __main__ (CLI) → benchmarks → testing → inference | export → models (lea
 **Cross-package contracts**:
 - `connector-no-model-tools`: connector ↛ model_tools
 - `shared-models-independence`: shared_models ↛ connector AND shared_models ↛ model_tools
+- model_tools MAY import from connector (dependency direction allows it)
 
 Modules within a `|` group are siblings at the same layer and must NOT cross-import.
 
