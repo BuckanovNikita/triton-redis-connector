@@ -48,3 +48,4 @@ benchmarks/data/
 *.bmp
 *.tiff
 model_repository_offline/
+test_data/**

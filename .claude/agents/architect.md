@@ -25,7 +25,8 @@ this project's specific technology stack.
 Before making architectural decisions, always read:
 - `docs/design.md` — current architecture spec (source of truth for WHAT)
 - `docs/unified-plan.md` — implementation phases and sequencing
-- `.devcontainer/docker-compose.yml` — infrastructure topology
+- `.devcontainer/docker-compose.yml` — infrastructure topology (internal network, no exposed ports)
+- `.devcontainer/docker-compose.debug.yml` — debug topology (all ports exposed to host, live health check)
 - `pyproject.toml` — workspace config, dependency versions, tool settings
 - Existing source code in the relevant package
 
@@ -499,17 +500,23 @@ without modifying Application).
 
 ## Docker Compose Topology Design
 
+Two compose files in `.devcontainer/`:
+- `docker-compose.yml` — devcontainer default (internal network, no exposed ports)
+- `docker-compose.debug.yml` — debug/host access (all ports exposed to host)
+
+Common topology:
 - Services communicate by hostname (service name). Redis is at `redis:6379`,
   Triton at `triton:8001` (gRPC) / `triton:8000` (HTTP).
-- Health checks: Redis uses `redis-cli ping`, Triton uses HTTP
-  `curl -f http://localhost:8000/v2/health/ready`. Use `depends_on` with
-  `condition: service_healthy` for startup ordering.
+- Health checks: Redis uses `redis-cli ping`. Default compose checks Triton via
+  `/v2/health/ready`; debug compose uses `/v2/health/live` so Triton passes health
+  checks even without GPU (models stay UNAVAILABLE but server is live).
 - GPU allocation: `deploy.resources.reservations.devices` with nvidia driver.
   `shm_size: 1g` for Triton model loading.
 - Shared volumes: `../model_repository:/models` for Triton model access.
   `model_repository_offline/` exists for offline storage of unused models.
 - SDK container (for perf_analyzer): shares workspace and model_repository
   volumes, reaches Triton via hostname `triton`.
+- Debug compose exposed ports: Redis 6379, Triton 8000-8002, RedisInsight 5540, Triton SDK 8010.
 
 ---
 

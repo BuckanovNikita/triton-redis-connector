@@ -137,11 +137,17 @@ contracts in `pyproject.toml` if needed.
 
 ### Docker Compose Changes
 
-When modifying `.devcontainer/docker-compose.yml`:
+Two compose files exist in `.devcontainer/`:
+- `docker-compose.yml` — devcontainer default (no exposed ports, ready health check)
+- `docker-compose.debug.yml` — debug mode (all ports exposed to host, live health check)
+
+When modifying compose files:
 - Use `condition: service_healthy` in `depends_on` for startup ordering
 - Health checks: Redis uses `redis-cli ping`, Triton uses HTTP health endpoint
 - GPU services need `deploy.resources.reservations.devices` with nvidia driver
 - Shared volumes use `..:/workspace:cached` for code, `../model_repository:/models` for models
+- Debug compose uses `/v2/health/live` (not `/v2/health/ready`) so Triton passes health checks even without GPU
+- Debug compose exposed ports: Redis 6379, Triton 8000-8002, RedisInsight 5540, Triton SDK 8010
 
 ### uv Workspace Management
 

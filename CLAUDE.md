@@ -66,14 +66,20 @@ __main__ (CLI) → benchmarks → testing → inference | export → models (lea
 
 Modules within a `|` group are siblings at the same layer and must NOT cross-import.
 
-### Infrastructure (.devcontainer/docker-compose.yml)
+### Infrastructure (.devcontainer/)
 
+Two compose files:
+- `docker-compose.yml` — devcontainer default (internal network, no exposed ports, ready health check)
+- `docker-compose.debug.yml` — debug/host access (all ports exposed, live health check)
+
+Services:
 - **Redis** (`redis:7-alpine`) — port 6379, AOF persistence
 - **Triton** (`nvcr.io/nvidia/tritonserver:26.02-py3`) — ports 8000 (HTTP), 8001 (gRPC), 8002 (metrics). Runs with `--strict-model-config=true` — all config.pbtxt files must be complete (Triton will not infer missing fields).
 - **Triton SDK** (`nvcr.io/nvidia/tritonserver:26.02-py3-sdk`) — provides `perf_analyzer`, `model_analyzer`, and pre-installed `tritonclient` matching the server version. Shares workspace and model_repository volumes, reaches Triton via hostname `triton`.
 - **RedisInsight** (`redis/redisinsight:latest`) — port 5540, Redis web UI
 
-All infrastructure runs via the devcontainer compose file.
+Debug compose exposes: Redis 6379, Triton 8000-8002, RedisInsight 5540, Triton SDK 8010.
+Debug compose uses `/v2/health/live` (not `/v2/health/ready`) so Triton passes health checks even without GPU.
 
 ## Code Style
 

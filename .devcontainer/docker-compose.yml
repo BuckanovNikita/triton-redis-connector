@@ -9,7 +9,7 @@ services:
       - /home/nkt/.claude:/home/vscode/.claude
       - /home/nkt/.local/share/claude:/home/vscode/.local/share/claude
       - /home/nkt/.local/bin/claude:/home/vscode/.local/bin/claude
-      - /mnt/c/Users/bucka/.claude/skills:/home/vscode/.claude/skills
+      - /mnt/c/Users/bucka/.claude/skills:/mnt/c/Users/bucka/.claude/skills
       - /home/nkt/.ssh:/home/vscode/.ssh:ro
       - /home/nkt/.gitconfig:/home/vscode/.gitconfig:ro
     command: sleep infinity
@@ -75,7 +75,7 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu]
+              capabilities: [gpu, utility]
 
   triton-sdk:
     image: nvcr.io/nvidia/tritonserver:26.02-py3-sdk

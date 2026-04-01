@@ -1,0 +1,101 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - ..:/workspace:cached
+      - /mnt/c/Users/bucka/.claude/CLAUDE.md:/home/vscode/CLAUDE.md
+      - /home/nkt/.claude:/home/vscode/.claude
+      - /home/nkt/.local/share/claude:/home/vscode/.local/share/claude
+      - /home/nkt/.local/bin/claude:/home/vscode/.local/bin/claude
+      - /mnt/c/Users/bucka/.claude/skills:/mnt/c/Users/bucka/.claude/skills
+      - /home/nkt/.ssh:/home/vscode/.ssh:ro
+      - /home/nkt/.gitconfig:/home/vscode/.gitconfig:ro
+    command: sleep infinity
+    depends_on:
+      redis:
+        condition: service_started
+      triton:
+        condition: service_started
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+  redis:
+    image: redis:7-alpine
+    ports:
+      - 6379:6379
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: redis-cli ping
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    ports:
+      - 5540:5540
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      RI_REDIS_HOST_default: redis
+      RI_REDIS_PORT_default: 6379
+      RI_REDIS_ALIAS_default: Local Redis
+
+  triton:
+    image: nvcr.io/nvidia/tritonserver:26.02-py3
+    ports:
+      - 8000:8000
+      - 8001:8001
+      - 8002:8002
+    volumes:
+      - ../model_repository:/models
+    shm_size: 1g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      stack: 67108864
+    command: >
+      tritonserver
+        --model-repository=/models
+        --model-control-mode=poll
+        --repository-poll-secs=10
+        --exit-on-error=false
+        --strict-model-config=true
+    healthcheck:
+      test: curl -f http://localhost:8000/v2/health/live || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, utility]
+
+  triton-sdk:
+    image: nvcr.io/nvidia/tritonserver:26.02-py3-sdk
+    ports:
+      - 8010:8000
+    volumes:
+      - ..:/workspace:cached
+      - ../model_repository:/models
+    depends_on:
+      triton:
+        condition: service_healthy
+    command: sleep infinity
+
+volumes:
+  redis_data:

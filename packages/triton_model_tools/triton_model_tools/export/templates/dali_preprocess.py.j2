@@ -1,8 +1,11 @@
 import nvidia.dali.fn as fn
+import nvidia.dali.math as dmath
 import nvidia.dali.types as types
 from nvidia.dali.pipeline import pipeline_def
+from nvidia.dali.plugin.triton import autoserialize
 
 
+@autoserialize
 @pipeline_def(batch_size=1, num_threads=4, device_id=0)
 def pipe():
     encoded = fn.external_source(device="cpu", name="INPUT_0")
@@ -17,7 +20,7 @@ def pipe():
 
     scale_h = target_h / fn.cast(orig_h, dtype=types.FLOAT)
     scale_w = target_w / fn.cast(orig_w, dtype=types.FLOAT)
-    scale = fn.min(scale_h, scale_w)
+    scale = dmath.min(scale_h, scale_w)
 
     new_h = fn.cast(fn.cast(orig_h, dtype=types.FLOAT) * scale, dtype=types.INT32)
     new_w = fn.cast(fn.cast(orig_w, dtype=types.FLOAT) * scale, dtype=types.INT32)
@@ -58,4 +61,5 @@ def pipe():
         dtype=types.FLOAT,
     )
 
-    return normalized
+    batched = fn.expand_dims(normalized, axes=[0])
+    return batched

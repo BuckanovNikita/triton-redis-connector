@@ -883,6 +883,20 @@ not simple field values or defaults.
 
 ## Integration Test Patterns
 
+### Infrastructure
+
+Two compose files exist in `.devcontainer/`:
+- `docker-compose.yml` — devcontainer default (no exposed ports)
+- `docker-compose.debug.yml` — debug mode (all ports exposed to host)
+
+Use debug compose to start services for host-based testing:
+```bash
+docker compose -f .devcontainer/docker-compose.debug.yml up -d
+```
+
+Inside the devcontainer, services are reached by hostname (`redis`, `triton`).
+From the host with debug compose, services are at `localhost` on their exposed ports.
+
 ### Marking Integration Tests
 
 ```python

@@ -11,13 +11,25 @@ description: >
 
 Check Docker service health for the development stack.
 
+## Compose Files
+
+| File | Purpose | Triton health check | Ports exposed |
+|------|---------|---------------------|---------------|
+| `docker-compose.yml` | Devcontainer (default) | `/v2/health/ready` | None (internal network only) |
+| `docker-compose.debug.yml` | Debug / host access | `/v2/health/live` | All services exposed to host |
+
+**Debug compose** uses `/v2/health/live` instead of `/v2/health/ready` so Triton passes
+health checks even when GPU models fail to load (e.g., no GPU available). This allows
+triton-sdk and other dependent services to start.
+
 ## Services Expected
 
-| Service | Image | Ports | Health Check |
-|---------|-------|-------|--------------|
-| Redis | redis:7-alpine | 6379 | `redis-cli ping` → PONG |
-| Triton | nvcr.io/nvidia/tritonserver:26.02-py3 | 8000 (HTTP), 8001 (gRPC), 8002 (metrics) | `curl http://localhost:8000/v2/health/ready` → 200 |
-| RedisInsight | redis/redisinsight:latest | 5540 | Container running |
+| Service | Image | Internal Ports | Debug Host Ports | Health Check |
+|---------|-------|----------------|------------------|--------------|
+| Redis | redis:7-alpine | 6379 | 0.0.0.0:6379 | `redis-cli ping` → PONG |
+| Triton | nvcr.io/nvidia/tritonserver:26.02-py3 | 8000 (HTTP), 8001 (gRPC), 8002 (metrics) | 0.0.0.0:8000-8002 | `curl http://localhost:8000/v2/health/live` → 200 |
+| RedisInsight | redis/redisinsight:latest | 5540 | 0.0.0.0:5540 | Container running |
+| Triton SDK | nvcr.io/nvidia/tritonserver:26.02-py3-sdk | — | 0.0.0.0:8010 | Container running |
 
 ## Step 0: Detect Environment
 
@@ -44,15 +56,15 @@ Expected: `PONG`. If connection refused: Redis container is not running.
 
 #### Triton HTTP Health
 ```bash
-curl -sf http://triton:8000/v2/health/ready && echo "OK" || echo "FAIL"
+curl -sf http://triton:8000/v2/health/live && echo OK || echo FAIL
 ```
 Expected: `OK`. If connection refused: Triton container is not running or still loading.
 
 #### Triton Models
 ```bash
-curl -s http://triton:8000/v2/models | python3 -m json.tool
+curl -s http://triton:8000/v2/repository/index -X POST -d {} | python3 -m json.tool
 ```
-List all loaded models and their state (READY vs UNAVAILABLE).
+List all models in the repository with their state (READY vs UNAVAILABLE).
 
 #### If ANY service is unreachable
 
@@ -64,14 +76,14 @@ List all loaded models and their state (READY vs UNAVAILABLE).
 > Please run these commands from your **host terminal** (outside the container):
 >
 > ```bash
-> # Check what's running
-> docker compose -f .devcontainer/docker-compose.yml ps
+> # Check what's running (use debug compose for exposed ports)
+> docker compose -f .devcontainer/docker-compose.debug.yml ps
 >
-> # Start all services
-> docker compose -f .devcontainer/docker-compose.yml up -d
+> # Start all services with ports exposed
+> docker compose -f .devcontainer/docker-compose.debug.yml up -d
 >
 > # Check logs for a failing service
-> docker compose -f .devcontainer/docker-compose.yml logs <service> --tail=50
+> docker compose -f .devcontainer/docker-compose.debug.yml logs <service> --tail=50
 > ```
 >
 > After fixing, ask me to re-run `/check-infra`.
@@ -86,6 +98,13 @@ After verifying services from inside the container, skip Steps 1-3 and go direct
 
 > **Only when running OUTSIDE the container (not vscode user).**
 
+Determine which compose file is in use. Prefer debug compose if it exists:
+
+```bash
+docker compose -f .devcontainer/docker-compose.debug.yml ps
+```
+
+If no containers running with debug compose, try default:
 ```bash
 docker compose -f .devcontainer/docker-compose.yml ps
 ```
@@ -100,22 +119,39 @@ For each running service, verify health:
 
 ### Redis
 ```bash
-docker compose -f .devcontainer/docker-compose.yml exec redis redis-cli ping
+docker compose -f .devcontainer/docker-compose.debug.yml exec redis redis-cli ping
 ```
 Expected: `PONG`. If it fails: Redis is starting or crashed.
 
-### Triton HTTP Health
+### Triton HTTP Liveness
 ```bash
-curl -s http://localhost:8000/v2/health/ready
+curl -s http://localhost:8000/v2/health/live && echo OK || echo FAIL
 ```
-Expected: HTTP 200. If it fails: Triton is still loading models (30s start period)
-or has a config error.
+Expected: HTTP 200 + `OK`. Liveness means Triton is running.
+
+### Triton HTTP Readiness
+```bash
+curl -s http://localhost:8000/v2/health/ready && echo READY || echo NOT_READY
+```
+Readiness means models are loaded. May be `NOT_READY` without GPU — this is expected.
 
 ### Triton Models
 ```bash
-curl -s http://localhost:8000/v2/models | python3 -m json.tool
+curl -s http://localhost:8000/v2/repository/index -X POST -d {} | python3 -m json.tool
 ```
-List all loaded models and their state (READY vs UNAVAILABLE).
+List all models in the repository with their state (READY vs UNAVAILABLE).
+
+### RedisInsight
+```bash
+curl -s http://localhost:5540 -o /dev/null -w %{http_code}
+```
+Expected: `200`.
+
+### Triton Metrics
+```bash
+curl -s http://localhost:8002/metrics | head -5
+```
+Expected: Prometheus-format metrics.
 
 ## Step 3: Diagnose Failures
 
@@ -124,7 +160,7 @@ List all loaded models and their state (READY vs UNAVAILABLE).
 If Triton is unhealthy or models are UNAVAILABLE:
 
 ```bash
-docker compose -f .devcontainer/docker-compose.yml logs triton --tail=50
+docker compose -f .devcontainer/docker-compose.debug.yml logs triton --tail=50
 ```
 
 ### Common Triton Failures
@@ -133,9 +169,10 @@ docker compose -f .devcontainer/docker-compose.yml logs triton --tail=50
 |---------|-------|-----|
 | `model configuration not found` | Missing config.pbtxt | Create config.pbtxt (strict mode requires it) |
 | `Internal: unable to load` | config.pbtxt parse error | Check syntax, field names, data types |
-| `GPU not available` | nvidia-docker not installed or no GPU | Install nvidia-container-toolkit or run CPU-only |
+| `GPU not available` / `KIND_GPU but no GPUs` | No GPU or nvidia-docker issue | Expected in CPU-only environments. Models stay UNAVAILABLE but Triton is live. |
 | `model version X not found` | Missing version directory | Create `1/` directory with model file |
 | `--exit-on-error=false` but no models | Empty model_repository | Export models first with `triton-model-export` |
+| triton-sdk didn't start | Triton unhealthy | Use debug compose (live health check) or start triton-sdk manually |
 
 ### Common Redis Failures
 
@@ -159,16 +196,17 @@ Compare local models vs what Triton reports as loaded. Each model needs:
 Output a status table:
 
 ```
-| Service      | Status  | Details                     |
-|-------------|---------|-------------------------------|
-| Redis        | UP      | PONG response OK              |
-| Triton       | UP      | 3 models loaded (2 READY)     |
-| RedisInsight | UP      | Web UI at localhost:5540      |
+| Service      | Status  | Details                          |
+|-------------|---------|----------------------------------|
+| Redis        | UP      | PONG response OK, port 6379      |
+| Triton       | UP      | Live, 1 model READY, port 8000   |
+| RedisInsight | UP      | Web UI at localhost:5540         |
+| Triton SDK   | UP      | Container running, port 8010     |
 ```
 
 If services are down and you are OUTSIDE the container, suggest:
 ```bash
-docker compose -f .devcontainer/docker-compose.yml up -d
+docker compose -f .devcontainer/docker-compose.debug.yml up -d
 ```
 
 If services are down and you are INSIDE the container (vscode), follow the
