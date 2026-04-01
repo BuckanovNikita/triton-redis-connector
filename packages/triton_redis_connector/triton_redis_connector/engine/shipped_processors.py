@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from triton_redis_connector.engine.context import current_context
 from triton_redis_connector.engine.events import InferenceInput
@@ -57,9 +57,17 @@ class EnvelopeExtractor[T: BaseModel]:
     def __init__(self, model_class: type[T]) -> None:  # noqa: D107
         self._model_class = model_class
 
-    def __call__(self, envelope: Envelope[bytes]) -> T:
+    def __call__(self, event: Envelope[bytes]) -> T | None:
         """Deserialize envelope bytes payload into a pydantic model."""
-        return self._model_class.model_validate_json(envelope.payload)
+        try:
+            return self._model_class.model_validate_json(event.payload)
+        except ValidationError:
+            logger.exception(
+                "Failed to deserialize {} from envelope {}",
+                self._model_class.__name__,
+                event.message_id,
+            )
+            return None
 
 
 class DaliInferenceInputBuilder:
@@ -148,9 +156,9 @@ class EventSerializer[T: BaseModel]:
 class LogErrorSink:
     """Logs pydantic error events at error level via loguru."""
 
-    def __call__(self, error: BaseModel) -> None:
+    def __call__(self, event: BaseModel) -> None:
         """Log the error event fields at error level."""
         logger.error(
             "Pipeline error: {}",
-            json.dumps(error.model_dump(), default=str),
+            json.dumps(event.model_dump(), default=str),
         )

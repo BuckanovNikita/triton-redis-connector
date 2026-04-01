@@ -3,25 +3,31 @@
 These processors wire framework building blocks into a branching pipeline graph.
 They live in examples/ because they cross import-linter sibling boundaries
 (preprocessing + inference types in the same file).
+
+Shipped processors used (imported in run_pipeline.py):
+  - EnvelopeExtractor[SteelInspectionInput] replaces InputExtractor
+  - EventSerializer[InspectionResult] replaces OutputSerializer
+  - LogErrorSink replaces ErrorLogSink
+
+Custom processors remain here because they carry domain-specific metadata
+(camera_no, metal_type, frame_counter) through the inference boundary,
+which the generic shipped processors do not support.
 """
 
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 from loguru import logger
-from triton_redis_connector.engine.context import current_context
 from triton_redis_connector.engine.events import InferenceInput
 from triton_redis_connector.errors.models import InferenceError
 from triton_redis_connector.inference.worker import InferenceWorker
 from triton_redis_connector.preprocessing.decoder import TurboJPEGDecoder
 from triton_redis_connector.preprocessing.letterbox import LetterBoxPreprocessor
-from triton_redis_connector.protocols import Envelope
 from triton_shared_models.nms import nms
 
 from examples.dual_model_pipeline.events import (
@@ -38,36 +44,6 @@ DEFAULT_IOU_THRESHOLD = 0.45
 
 DALI_ENSEMBLE_MODEL = "yolo11s_960x608_dali_ensemble"
 YOLO26L_MODEL = "yolo26l"
-
-
-class InputExtractor:
-    """Extracts SteelInspectionInput from a Redis stream Envelope[bytes]."""
-
-    def __call__(self, event: Envelope[bytes]) -> SteelInspectionInput | None:
-        """Parse original_fields from the envelope into a typed inspection input."""
-        fields = event.original_fields
-        camera_no_raw = fields.get("camera_no")
-        image_path = fields.get("image_path")
-        frame_counter_raw = fields.get("frame_counter")
-        receipt_ts_raw = fields.get("receipt_ts")
-
-        if not all((camera_no_raw, image_path, frame_counter_raw)):
-            logger.warning(
-                "Missing required fields in envelope {}: camera_no={}, image_path={}, frame_counter={}",
-                event.message_id,
-                camera_no_raw,
-                image_path,
-                frame_counter_raw,
-            )
-            return None
-
-        return SteelInspectionInput(
-            receipt_ts=float(receipt_ts_raw) if receipt_ts_raw else time.monotonic(),
-            camera_no=int(camera_no_raw),  # type: ignore[arg-type]
-            image_path=str(image_path),
-            frame_counter=int(frame_counter_raw),  # type: ignore[arg-type]
-            metal_type=fields.get("metal_type"),
-        )
 
 
 class CameraBranchRouter:
@@ -310,39 +286,6 @@ class InspectionPostProcessor:
             }
             for idx in keep
         ]
-
-
-class OutputSerializer:
-    """Serializes InspectionResult to Envelope[bytes] for the Redis sink."""
-
-    def __call__(self, event: InspectionResult) -> Envelope[bytes] | None:
-        """Serialize InspectionResult to JSON bytes wrapped in an Envelope.
-
-        Preserves original_fields, source_stream, and message_id from the
-        EventContext so that the output Envelope carries all input metadata
-        through to the Redis sink.
-        """
-        ctx = current_context()
-        payload = event.model_dump_json().encode()
-        return Envelope(
-            payload=payload,
-            original_fields=dict(ctx.original_fields),
-            source_stream=ctx.source_stream,
-            message_id=ctx.message_id,
-        )
-
-
-class ErrorLogSink:
-    """Logs inference errors."""
-
-    def __call__(self, event: InferenceError) -> None:
-        """Log the inference error details."""
-        logger.error(
-            "Inference error on model {}: {} (retries={})",
-            event.model_name,
-            event.error_message,
-            event.retry_count,
-        )
 
 
 def _xywh_to_xyxy(boxes: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:

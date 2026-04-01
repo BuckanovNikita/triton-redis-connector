@@ -1,12 +1,12 @@
 """Dual-model steel inspection pipeline: Redis Stream -> Branch -> Triton -> Redis Stream.
 
 Pipeline graph:
-  RedisStreamSource -> InputExtractor -> CameraBranchRouter
+  RedisStreamSource -> EnvelopeExtractor -> CameraBranchRouter
     -> [even] DaliPreprocessor --------+
     -> [odd]  TurboJpegPreprocessor ---+-> MetadataInferenceWorker
                                            -> InspectionPostProcessor
-                                               -> OutputSerializer -> RedisStreamSink
-                                           -> ErrorLogSink (InferenceError)
+                                               -> EventSerializer -> RedisStreamSink
+                                           -> LogErrorSink (InferenceError)
 
 Usage:
     uv run python examples/dual_model_pipeline/run_pipeline.py
@@ -42,16 +42,19 @@ from triton_redis_connector.connectors.redis_stream import (
 from triton_redis_connector.engine.app import Application
 from triton_redis_connector.engine.queue_bus import QueueBus
 from triton_redis_connector.engine.registry import PipelineRegistry
+from triton_redis_connector.engine.shipped_processors import (
+    EnvelopeExtractor,
+    EventSerializer,
+    LogErrorSink,
+)
 from triton_redis_connector.engine.wrappers import DetachedThreadProcessor, DetachedThreadSink
 
+from examples.dual_model_pipeline.events import InspectionResult, SteelInspectionInput
 from examples.dual_model_pipeline.processors import (
     CameraBranchRouter,
     DaliPreprocessor,
-    ErrorLogSink,
-    InputExtractor,
     InspectionPostProcessor,
     MetadataInferenceWorker,
-    OutputSerializer,
     TurboJpegPreprocessor,
 )
 
@@ -81,7 +84,10 @@ def main() -> None:
 
     registry = PipelineRegistry()
     registry.register("redis_source", RedisStreamSource(input_connector, source_cfg))
-    registry.register("input_extractor", DetachedThreadProcessor(InputExtractor()))
+    registry.register(
+        "input_extractor",
+        DetachedThreadProcessor(EnvelopeExtractor(SteelInspectionInput)),
+    )
     registry.register("branch_router", DetachedThreadProcessor(CameraBranchRouter()))
     registry.register("even_preprocessor", DetachedThreadProcessor(DaliPreprocessor()))
     registry.register("odd_preprocessor", DetachedThreadProcessor(TurboJpegPreprocessor()))
@@ -90,8 +96,11 @@ def main() -> None:
         DetachedThreadProcessor(MetadataInferenceWorker(grpc_url=config.inference.grpc_url)),
     )
     registry.register("postprocessor", DetachedThreadProcessor(InspectionPostProcessor()))
-    registry.register("serializer", DetachedThreadProcessor(OutputSerializer()))
-    registry.register("error_sink", DetachedThreadSink(ErrorLogSink()))
+    registry.register(
+        "serializer",
+        DetachedThreadProcessor(EventSerializer[InspectionResult]()),
+    )
+    registry.register("error_sink", DetachedThreadSink(LogErrorSink()))
     registry.register("redis_sink", RedisStreamSink(output_connector))
 
     app = Application(config=config, registry=registry, queue_bus=QueueBus(config=config.queues))

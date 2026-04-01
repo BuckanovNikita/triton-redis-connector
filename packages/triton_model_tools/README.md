@@ -18,7 +18,6 @@ uv sync --dev
 | `infer` | Инференс изображений через Triton gRPC |
 | `predict` | Локальный инференс через ultralytics (без Triton) |
 | `benchmark` | Бенчмарк одной модели через Triton |
-| `full-benchmark` | Матрица производительности по нескольким моделям и конфигурациям |
 | `pipeline-benchmark` | Измерение E2E-производительности Redis-пайплайна |
 | `e2e-test` | E2E-тест: загрузка изображений в Redis, инференс через Triton, сбор результатов |
 | `pipeline-predict` | Прогон изображений через Redis-пайплайн, сохранение txt-результатов |
@@ -85,9 +84,9 @@ uv run python -m triton_model_tools export \
 При наличии Triton model repository модели обнаруживаются автоматически по `config.pbtxt`:
 
 ```bash
-uv run python -m triton_model_tools full-benchmark \
+uv run python -m triton_model_tools benchmark \
   --image-dir data/coco8/images/val \
-  --repository-root /models
+  -m yolo11s --repository-root /models
 ```
 
 Пропускаются служебные модели (`*_dali_*`, `*_ensemble`, `*_nms`, `*_trt`, `*_preprocess`).
@@ -132,16 +131,7 @@ graph TD
 ```bash
 uv run python -m triton_model_tools benchmark \
   --image-dir data/coco8/images/val \
-  -m yolo11s --backend onnx --num-images 100
-```
-
-### Полная матрица
-
-```bash
-uv run python -m triton_model_tools full-benchmark \
-  --image-dir data/coco8/images/val \
-  --models yolo11s yolo11m \
-  --backends onnx tensorrt
+  -m yolo11s --backend onnx --num-images 100 --max-memory-gb 20
 ```
 
 ### E2E Redis-пайплайн

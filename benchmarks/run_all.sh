@@ -66,15 +66,5 @@ uv run triton-model-tools benchmark \
     -o "$BENCHMARK_DIR/yolo12s_onnx.json"
 
 echo ""
-echo "=== Step 8: Full benchmark matrix ==="
-uv run triton-model-tools full-benchmark \
-    --image-dir "$DATA_DIR/val2017" \
-    --models yolo11s yolo26s yolo12s \
-    --triton-url "$TRITON_URL" \
-    --num-images "$NUM_IMAGES" \
-    --warmup-runs "$WARMUP" \
-    --output "$BENCHMARK_DIR/full_matrix.json"
-
-echo ""
 echo "=== Done! Results saved to $BENCHMARK_DIR ==="
 ls -lh "$BENCHMARK_DIR"/*.json

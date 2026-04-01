@@ -13,8 +13,6 @@ from triton_model_tools.benchmarks.benchmark import (
     BenchmarkResult,
     BenchmarkSuite,
     run_benchmark,
-    run_benchmark_matrix,
-    run_ultralytics_benchmark,
 )
 from triton_model_tools.benchmarks.stats import compute_statistics
 
@@ -181,58 +179,3 @@ class TestRunBenchmark:
 
         with pytest.raises(FileNotFoundError, match="No image files found"):
             run_benchmark(config, tmp_path)
-
-
-class TestRunBenchmarkMatrix:
-    @patch("triton_model_tools.benchmarks.benchmark.load_image")
-    @patch("triton_model_tools.benchmarks.benchmark.TritonInferenceClient")
-    def test_runs_all_configs(
-        self,
-        mock_client_cls: MagicMock,
-        mock_load_image: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        for i in range(3):
-            (tmp_path / f"img{i}.jpg").write_bytes(b"fake")
-
-        fake_image = np.zeros((480, 640, 3), dtype=np.uint8)
-        mock_load_image.return_value = fake_image
-
-        mock_client = MagicMock()
-        mock_client.infer_raw.return_value = {
-            "output0": np.zeros((1, 84, 8400), dtype=np.float32),
-        }
-        mock_client_cls.return_value = mock_client
-
-        configs = [
-            BenchmarkConfig(model_name="yolo11s", num_images=3, warmup_runs=0),
-            BenchmarkConfig(model_name="yolo26s", num_images=3, warmup_runs=0),
-        ]
-
-        suite = run_benchmark_matrix(configs, tmp_path)
-
-        assert isinstance(suite, BenchmarkSuite)
-        assert len(suite.results) == 2
-        assert suite.results[0].config.model_name == "yolo11s"
-        assert suite.results[1].config.model_name == "yolo26s"
-
-
-class TestRunUltralyticsBaseline:
-    def test_runs_ultralytics(self, tmp_path: Path) -> None:
-        for i in range(3):
-            (tmp_path / f"img{i}.jpg").write_bytes(b"fake")
-
-        mock_model = MagicMock()
-        mock_yolo_cls = MagicMock(return_value=mock_model)
-
-        with patch("triton_model_tools.benchmarks.benchmark.YOLO", mock_yolo_cls):
-            result = run_ultralytics_benchmark("yolo11s.pt", tmp_path, num_images=3)
-
-        assert isinstance(result, BenchmarkResult)
-        assert result.num_images == 3
-        assert result.config.model_name == "yolo11s.pt"
-        assert mock_model.predict.call_count == 3
-
-    def test_raises_on_empty_directory(self, tmp_path: Path) -> None:
-        with pytest.raises(FileNotFoundError, match="No image files found"):
-            run_ultralytics_benchmark("yolo11s.pt", tmp_path, num_images=10)
