@@ -58,8 +58,7 @@ def convert_model(  # noqa: PLR0913
     merged_kwargs = dict(export_kwargs) if export_kwargs is not None else {}
     if end2end:
         merged_kwargs["end2end"] = True
-    if rect:
-        merged_kwargs["rect"] = True
+    merged_kwargs["rect"] = rect
 
     variant = YoloModelVariant(
         name=model_name,
