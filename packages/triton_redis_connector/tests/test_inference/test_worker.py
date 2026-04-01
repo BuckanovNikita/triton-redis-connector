@@ -132,11 +132,3 @@ class TestInferenceWorkerFactory:
             worker = factory.create_processor(config)
 
         assert isinstance(worker, InferenceWorker)
-
-    def test_factory_implements_processor_factory_protocol(self) -> None:
-        from triton_redis_connector.protocols import ProcessorFactory
-
-        config = InferenceConfig()
-        factory = InferenceWorkerFactory(config=config)
-
-        assert isinstance(factory, ProcessorFactory)

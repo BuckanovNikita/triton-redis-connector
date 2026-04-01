@@ -10,6 +10,7 @@ from __future__ import annotations
 import types
 import typing
 from enum import StrEnum, auto
+from typing import Any, TypeVar, overload
 
 from loguru import logger
 
@@ -19,14 +20,20 @@ from triton_redis_connector.engine.metric_aggregator import (
     extract_event_counters,
 )
 from triton_redis_connector.protocols import (
+    Processor,
     ProcessPoolProcessor,
     ProcessSource,
+    Sink,
+    Source,
     ThreadPoolProcessor,
     ThreadProcessor,
     ThreadSink,
     ThreadSource,
     WrappedNode,
 )
+
+_TIn = TypeVar("_TIn")
+_TOut = TypeVar("_TOut")
 
 
 class ExecutionVariant(StrEnum):
@@ -85,7 +92,16 @@ class PipelineRegistry:
         self._type_consumers: dict[type, list[str]] = {}
         self._aggregators: dict[str, MetricAggregator] = {}
 
-    def register(self, name: str, node: object) -> None:
+    @overload
+    def register(self, name: str, node: Source[_TOut]) -> None: ...
+    @overload
+    def register(self, name: str, node: Processor[_TIn, _TOut]) -> None: ...
+    @overload
+    def register(self, name: str, node: Sink[_TIn]) -> None: ...
+    @overload
+    def register(self, name: str, node: object) -> None: ...
+
+    def register(self, name: str, node: Source[Any] | Processor[Any, Any] | Sink[Any] | object) -> None:
         """Register a pipeline node by inspecting its __call__ type hints."""
         variant = self._detect_variant(node)
         graph_node = GraphNode(name=name, instance=node, variant=variant)

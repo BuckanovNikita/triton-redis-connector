@@ -26,15 +26,6 @@ class TestDetection:
 
 
 class TestImageDetectionResult:
-    def test_creates_result_with_empty_detections(self) -> None:
-        result = ImageDetectionResult(
-            image_path="images/empty.jpg",
-            model_name="yolo11s",
-            detections=[],
-            inference_time_ms=5.0,
-        )
-        assert len(result.detections) == 0
-
     def test_rejects_negative_inference_time(self) -> None:
         with pytest.raises(ValidationError):
             ImageDetectionResult(

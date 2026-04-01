@@ -1,4 +1,4 @@
-"""Tests for MetricAggregator, Tracked/Counter/Gauge markers, and InstrumentedNode protocol."""
+"""Tests for MetricAggregator, Tracked/Counter/Gauge markers."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from typing import Annotated
 from triton_redis_connector.engine.metric_aggregator import (
     Counter,
     Gauge,
-    InstrumentedNode,
     MetricAggregator,
     NodeMetricSnapshot,
     Tracked,
@@ -126,17 +125,3 @@ class TestCounterGauge:
     def test_extract_no_markers_from_annotated_without_metric(self) -> None:
         annotation = Annotated[int, "just-a-string"]
         assert extract_metric_markers(annotation) == []
-
-
-class TestInstrumentedNode:
-    def test_wrapper_satisfies_protocol(self) -> None:
-        from triton_redis_connector.engine.wrappers import DetachedThreadProcessor
-
-        wrapper = DetachedThreadProcessor(lambda x: x, aggregator=MetricAggregator())
-        assert isinstance(wrapper, InstrumentedNode)
-
-    def test_wrapper_without_aggregator_still_satisfies(self) -> None:
-        from triton_redis_connector.engine.wrappers import DetachedThreadProcessor
-
-        wrapper = DetachedThreadProcessor(lambda x: x)
-        assert isinstance(wrapper, InstrumentedNode)

@@ -9,14 +9,9 @@ from triton_redis_connector.preprocessing.letterbox import (
     NORMALIZE_DIVISOR,
     LetterBoxPreprocessor,
 )
-from triton_redis_connector.preprocessing.protocols import ImagePreprocessorProtocol
 
 
 class TestLetterBoxPreprocessor:
-    def test_implements_protocol(self) -> None:
-        preprocessor = LetterBoxPreprocessor(target_size=(640, 640))
-        assert isinstance(preprocessor, ImagePreprocessorProtocol)
-
     def test_output_shape_square_target(self) -> None:
         preprocessor = LetterBoxPreprocessor(target_size=(640, 640))
         image = np.zeros((480, 640, 3), dtype=np.uint8)

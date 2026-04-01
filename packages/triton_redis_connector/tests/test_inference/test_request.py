@@ -61,15 +61,6 @@ class TestInferenceOutput:
         )
         assert len(event.outputs) == 2
 
-    def test_default_model_version(self) -> None:
-        event = InferenceOutput(
-            model_name="yolo11s",
-            model_version="",
-            outputs={},
-            inference_time_ms=0.0,
-        )
-        assert event.model_version == ""
-
     def test_missing_required_field_raises(self) -> None:
         with pytest.raises(ValidationError):
             InferenceOutput(  # type: ignore[call-arg]

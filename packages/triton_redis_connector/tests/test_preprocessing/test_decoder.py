@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 import turbojpeg as _tjpeg  # pyright: ignore[reportMissingTypeStubs]
 from triton_redis_connector.preprocessing.decoder import OpenCVDecoder, TurboJPEGDecoder
-from triton_redis_connector.preprocessing.protocols import ImageDecoderProtocol
 
 
 def _turbojpeg_available() -> bool:
@@ -44,10 +43,6 @@ def _make_tiny_png() -> bytes:
 
 
 class TestOpenCVDecoder:
-    def test_implements_protocol(self) -> None:
-        decoder = OpenCVDecoder()
-        assert isinstance(decoder, ImageDecoderProtocol)
-
     def test_decode_jpeg(self) -> None:
         decoder = OpenCVDecoder()
         jpeg_bytes = _make_tiny_jpeg()

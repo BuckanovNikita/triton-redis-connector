@@ -5,6 +5,7 @@ from __future__ import annotations
 from triton_redis_connector.config.hydra_app import load_config
 from triton_redis_connector.config.schema import (
     AppConfig,
+    CollectorMode,
     DecoderPoolType,
     DecoderType,
     InferenceConfig,
@@ -18,6 +19,7 @@ from triton_redis_connector.config.schema import (
 
 __all__ = [
     "AppConfig",
+    "CollectorMode",
     "DecoderPoolType",
     "DecoderType",
     "InferenceConfig",

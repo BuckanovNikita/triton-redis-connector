@@ -43,6 +43,7 @@ class RedisStreamInputConnector:
             client=self._client,
             stream=self._config.stream_name,
             group=self._config.consumer_group,
+            mode=self._config.collector_mode,
         )
 
     def read_new(self, count: int, block_ms: int) -> list[Envelope[bytes]]:

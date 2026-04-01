@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, cast
 from loguru import logger
 from redis.exceptions import ResponseError
 
+from triton_redis_connector.config.schema import CollectorMode
+
 if TYPE_CHECKING:
     from redis import Redis
 
@@ -20,13 +22,20 @@ type _StreamMessages = list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]
 class ConsumerGroupManager:
     """Manages Redis Stream consumer group lifecycle and message reading."""
 
-    def ensure_group_exists(self, client: Redis[bytes], stream: str, group: str) -> None:
+    def ensure_group_exists(
+        self,
+        client: Redis[bytes],
+        stream: str,
+        group: str,
+        mode: CollectorMode = CollectorMode.RECOVERY,
+    ) -> None:
         """Create consumer group idempotently, ignoring BUSYGROUP if already exists."""
+        start_id = "$" if mode == CollectorMode.FROM_LATEST else "0"
         try:
             client.xgroup_create(
                 name=stream,
                 groupname=group,
-                id="0",
+                id=start_id,
                 mkstream=True,
             )
             logger.info("Created consumer group {} on stream {}", group, stream)

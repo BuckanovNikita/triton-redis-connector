@@ -87,7 +87,7 @@ def main() -> None:
     registry.register("odd_preprocessor", DetachedThreadProcessor(TurboJpegPreprocessor()))
     registry.register(
         "inference",
-        MetadataInferenceWorker(grpc_url=config.inference.grpc_url),
+        DetachedThreadProcessor(MetadataInferenceWorker(grpc_url=config.inference.grpc_url)),
     )
     registry.register("postprocessor", DetachedThreadProcessor(InspectionPostProcessor()))
     registry.register("serializer", DetachedThreadProcessor(OutputSerializer()))

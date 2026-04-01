@@ -25,7 +25,7 @@ from triton_redis_connector.engine.metric_aggregator import (
     extract_field_value,
 )
 from triton_redis_connector.engine.registry import ExecutionVariant
-from triton_redis_connector.protocols import MetricRecorder  # noqa: TC001 — needed at runtime
+from triton_redis_connector.protocols import MetricRecorder, Processor, Sink, Source  # noqa: TC001 — needed at runtime
 
 
 def _make_metric(component_name: str, measure: str, value: float) -> object:
@@ -94,12 +94,12 @@ class DetachedThreadSource[TOut]:
 
     def __init__(  # noqa: D107
         self,
-        inner: object,
+        inner: Source[TOut],
         aggregator: MetricAggregator | None = None,
         metric_recorder: MetricRecorder | None = None,
         component_name: str = "",
     ) -> None:
-        self._inner = inner
+        self._inner: Source[TOut] = inner
         self.aggregator = aggregator
         self._metric_recorder = metric_recorder
         self._component_name = component_name
@@ -120,12 +120,12 @@ class DetachedProcessSource[TOut]:
 
     def __init__(  # noqa: D107
         self,
-        inner: object,
+        inner: Source[TOut],
         aggregator: MetricAggregator | None = None,
         metric_recorder: MetricRecorder | None = None,
         component_name: str = "",
     ) -> None:
-        self._inner = inner
+        self._inner: Source[TOut] = inner
         self.aggregator = aggregator
         self._metric_recorder = metric_recorder
         self._component_name = component_name
@@ -146,12 +146,12 @@ class DetachedThreadProcessor[TIn, TOut]:
 
     def __init__(  # noqa: D107
         self,
-        inner: object,
+        inner: Processor[TIn, TOut],
         aggregator: MetricAggregator | None = None,
         metric_recorder: MetricRecorder | None = None,
         component_name: str = "",
     ) -> None:
-        self._inner = inner
+        self._inner: Processor[TIn, TOut] = inner
         self.aggregator = aggregator
         self._metric_recorder = metric_recorder
         self._component_name = component_name
@@ -177,12 +177,12 @@ class ThreadedProcessor[TIn, TOut]:
 
     def __init__(  # noqa: D107
         self,
-        inner: object,
+        inner: Processor[TIn, TOut],
         aggregator: MetricAggregator | None = None,
         metric_recorder: MetricRecorder | None = None,
         component_name: str = "",
     ) -> None:
-        self._inner = inner
+        self._inner: Processor[TIn, TOut] = inner
         self.aggregator = aggregator
         self._metric_recorder = metric_recorder
         self._component_name = component_name
@@ -207,12 +207,12 @@ class MultiProcessProcessor[TIn, TOut]:
 
     def __init__(  # noqa: D107
         self,
-        inner: object,
+        inner: Processor[TIn, TOut],
         aggregator: MetricAggregator | None = None,
         metric_recorder: MetricRecorder | None = None,
         component_name: str = "",
     ) -> None:
-        self._inner = inner
+        self._inner: Processor[TIn, TOut] = inner
         self.aggregator = aggregator
         self._metric_recorder = metric_recorder
         self._component_name = component_name
@@ -233,12 +233,12 @@ class DetachedThreadSink[TIn]:
 
     def __init__(  # noqa: D107
         self,
-        inner: object,
+        inner: Sink[TIn],
         aggregator: MetricAggregator | None = None,
         metric_recorder: MetricRecorder | None = None,
         component_name: str = "",
     ) -> None:
-        self._inner = inner
+        self._inner: Sink[TIn] = inner
         self.aggregator = aggregator
         self._metric_recorder = metric_recorder
         self._component_name = component_name

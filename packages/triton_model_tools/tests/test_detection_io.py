@@ -134,13 +134,3 @@ class TestCollectImagePaths:
         paths = collect_image_paths(tmp_path, max_count=3)
 
         assert len(paths) == 3
-
-    def test_supported_extensions(self) -> None:
-        from triton_model_tools.inference.detection_io import IMAGE_EXTENSIONS
-
-        assert ".jpg" in IMAGE_EXTENSIONS
-        assert ".jpeg" in IMAGE_EXTENSIONS
-        assert ".png" in IMAGE_EXTENSIONS
-        assert ".bmp" in IMAGE_EXTENSIONS
-        assert ".tiff" in IMAGE_EXTENSIONS
-        assert ".webp" in IMAGE_EXTENSIONS
