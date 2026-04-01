@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from loguru import logger
+from triton_shared_models.nms import nms
 
 from triton_model_tools.models.detection import Detection
 
@@ -14,58 +15,6 @@ if TYPE_CHECKING:
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.25
 DEFAULT_IOU_THRESHOLD = 0.45
-
-
-def _nms_numpy(
-    boxes: npt.NDArray[np.float32],
-    scores: npt.NDArray[np.float32],
-    iou_threshold: float,
-) -> list[int]:
-    """Pure-numpy NMS implementation.
-
-    Args:
-        boxes: (N, 4) array of [x1, y1, x2, y2].
-        scores: (N,) array of confidence scores.
-        iou_threshold: IoU threshold for suppression.
-
-    Returns:
-        List of kept indices.
-
-    """
-    x1 = boxes[:, 0]
-    y1 = boxes[:, 1]
-    x2 = boxes[:, 2]
-    y2 = boxes[:, 3]
-
-    areas = (x2 - x1) * (y2 - y1)
-    order = scores.argsort()[::-1]
-
-    keep: list[int] = []
-    while order.size > 0:
-        idx = int(order[0])
-        keep.append(idx)
-
-        if order.size == 1:
-            break
-
-        rest = order[1:]
-
-        xx1 = np.maximum(x1[idx], x1[rest])
-        yy1 = np.maximum(y1[idx], y1[rest])
-        xx2 = np.minimum(x2[idx], x2[rest])
-        yy2 = np.minimum(y2[idx], y2[rest])
-
-        inter_w = np.maximum(0.0, xx2 - xx1)
-        inter_h = np.maximum(0.0, yy2 - yy1)
-        intersection = inter_w * inter_h
-
-        union = areas[idx] + areas[rest] - intersection
-        iou = np.where(union > 0, intersection / union, np.float32(0.0))
-
-        remaining_mask = iou <= iou_threshold
-        order = rest[remaining_mask]
-
-    return keep
 
 
 class YoloPostprocessor:
@@ -180,7 +129,7 @@ class YoloPostprocessor:
 
         boxes_xyxy = self._xywh_to_xyxy(filtered_boxes_xywh)
 
-        keep = _nms_numpy(boxes_xyxy, filtered_scores, iou_threshold)
+        keep = nms(boxes_xyxy, filtered_scores, iou_threshold)
 
         pad_left, pad_top = pad_offset
         detections = [

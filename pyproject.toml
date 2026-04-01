@@ -90,8 +90,9 @@ module = ["tritonclient.*", "tritonserver.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["ultralytics.*", "onnx.*", "onnxruntime.*", "cv2", "cv2.*", "numpy", "numpy.*", "fiftyone", "fiftyone.*", "turbojpeg", "turbojpeg.*", "yaml", "yaml.*"]
+module = ["ultralytics.*", "onnx.*", "onnxruntime.*", "cv2", "cv2.*", "numpy", "numpy.*", "fiftyone", "fiftyone.*", "turbojpeg", "turbojpeg.*", "yaml", "yaml.*", "torchvision", "torchvision.*"]
 ignore_missing_imports = true
+follow_untyped_imports = true
 
 [[tool.mypy.overrides]]
 module = ["nvidia", "nvidia.*"]

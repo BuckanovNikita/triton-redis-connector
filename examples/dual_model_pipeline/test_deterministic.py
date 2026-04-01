@@ -26,6 +26,7 @@ from triton_redis_connector.engine.metric_aggregator import (
 )
 from triton_redis_connector.preprocessing.decoder import OpenCVDecoder
 from triton_redis_connector.preprocessing.letterbox import LetterBoxPreprocessor
+from triton_shared_models.nms import nms
 
 TEST_IMAGE = Path("/workspace/test_data/coco8/images/train/000000000025.jpg")
 TRITON_URL = "triton:8001"
@@ -103,7 +104,7 @@ def postprocess_standard(
         return []
 
     xyxy = _xywh_to_xyxy(boxes)
-    keep = _nms_numpy(xyxy, scores, iou_threshold)
+    keep = nms(xyxy, scores, iou_threshold)
 
     return [
         {
@@ -387,34 +388,6 @@ def _xywh_to_xyxy(boxes: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
     result[:, 2] = boxes[:, 0] + half_w
     result[:, 3] = boxes[:, 1] + half_h
     return result
-
-
-def _nms_numpy(
-    boxes: npt.NDArray[np.float32],
-    scores: npt.NDArray[np.float32],
-    iou_threshold: float,
-) -> list[int]:
-    x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
-    areas = (x2 - x1) * (y2 - y1)
-    order = scores.argsort()[::-1]
-
-    keep: list[int] = []
-    while order.size > 0:
-        idx = int(order[0])
-        keep.append(idx)
-        if order.size == 1:
-            break
-        rest = order[1:]
-        xx1 = np.maximum(x1[idx], x1[rest])
-        yy1 = np.maximum(y1[idx], y1[rest])
-        xx2 = np.minimum(x2[idx], x2[rest])
-        yy2 = np.minimum(y2[idx], y2[rest])
-        intersection = np.maximum(0.0, xx2 - xx1) * np.maximum(0.0, yy2 - yy1)
-        union = areas[idx] + areas[rest] - intersection
-        iou = np.where(union > 0, intersection / union, np.float32(0.0))
-        order = rest[iou <= iou_threshold]
-
-    return keep
 
 
 if __name__ == "__main__":

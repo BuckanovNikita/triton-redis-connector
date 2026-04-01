@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, cast
 
 from loguru import logger
 
+from triton_redis_connector.config.schema import CollectorMode
 from triton_redis_connector.protocols import Envelope
 
 if TYPE_CHECKING:
@@ -129,11 +130,13 @@ class RedisStreamSource:
         self._config = config
         self._pending_buffer: deque[Envelope[bytes]] = deque()
         self._live_count_since_pending: int = 0
-        self._recovery_done = config.skip_existing
+        self._recovery_done = config.collector_mode != CollectorMode.RECOVERY
         self._pending_ttl_s = config.pending_ttl_s
         self._interleave_ratio = config.recovery_interleave_ratio
-        if config.skip_existing:
-            logger.info("skip_existing=True for stream {}, skipping pending recovery", config.stream_name)
+        if config.collector_mode != CollectorMode.RECOVERY:
+            logger.info(
+                "collector_mode={} for stream {}, skipping pending recovery", config.collector_mode, config.stream_name
+            )
 
     def __call__(self) -> Envelope[bytes] | None:
         """Produce the next event, interleaving pending and live messages.

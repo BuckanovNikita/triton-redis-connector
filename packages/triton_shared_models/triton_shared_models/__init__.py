@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from triton_shared_models.nms import nms
 from triton_shared_models.preprocessing import (
     LETTERBOX_PAD_VALUE,
     YOLO_NORMALIZE_DIVISOR,
@@ -42,4 +43,5 @@ __all__ = [
     "TritonModelConfig",
     "TritonTensorSpec",
     "WarmupInputSpec",
+    "nms",
 ]

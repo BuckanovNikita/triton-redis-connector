@@ -196,7 +196,7 @@ def load_export_config(config_path: Path) -> list[YoloModelVariant]:
         msg = f"Models config file not found: {config_path}"
         raise FileNotFoundError(msg)
 
-    raw = yaml.safe_load(config_path.read_text())
+    raw = yaml.safe_load(config_path.read_text())  # type: ignore[no-untyped-call]
 
     if not isinstance(raw, dict) or "models" not in raw:
         msg = f"Invalid models config: expected top-level 'models' key in {config_path}"

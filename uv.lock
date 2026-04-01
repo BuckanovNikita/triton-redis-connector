@@ -2585,6 +2585,8 @@ dependencies = [
     { name = "numpy" },
     { name = "opencv-python-headless" },
     { name = "pydantic" },
+    { name = "torch" },
+    { name = "torchvision" },
 ]
 
 [package.metadata]
@@ -2594,6 +2596,8 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.4,<3.0.0" },
     { name = "opencv-python-headless", specifier = ">=4.13.0.92,<5.0.0" },
     { name = "pydantic", specifier = ">=2.12.5,<3.0.0" },
+    { name = "torch", specifier = ">=2.6.0" },
+    { name = "torchvision", specifier = ">=0.21.0" },
 ]
 
 [[package]]

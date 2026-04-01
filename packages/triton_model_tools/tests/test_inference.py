@@ -13,7 +13,7 @@ from triton_model_tools.inference import (
     YoloPostprocessor,
     YoloPreprocessor,
 )
-from triton_model_tools.inference.postprocessing import _nms_numpy
+from triton_shared_models.nms import nms
 
 
 class TestYoloPreprocessor:
@@ -328,7 +328,7 @@ class TestYoloPostprocessorStandard:
         assert len(detections) == 0
 
 
-class TestNmsNumpy:
+class TestNms:
     def test_suppresses_overlapping_boxes(self) -> None:
         boxes = np.array(
             [
@@ -340,7 +340,7 @@ class TestNmsNumpy:
         )
         scores = np.array([0.9, 0.8, 0.7], dtype=np.float32)
 
-        keep = _nms_numpy(boxes, scores, iou_threshold=0.5)
+        keep = nms(boxes, scores, iou_threshold=0.5)
 
         assert 0 in keep
         assert 1 not in keep
@@ -356,7 +356,7 @@ class TestNmsNumpy:
         )
         scores = np.array([0.9, 0.8], dtype=np.float32)
 
-        keep = _nms_numpy(boxes, scores, iou_threshold=0.5)
+        keep = nms(boxes, scores, iou_threshold=0.5)
 
         assert keep == [0, 1]
 
@@ -364,7 +364,7 @@ class TestNmsNumpy:
         boxes = np.array([[10, 10, 50, 50]], dtype=np.float32)
         scores = np.array([0.9], dtype=np.float32)
 
-        keep = _nms_numpy(boxes, scores, iou_threshold=0.5)
+        keep = nms(boxes, scores, iou_threshold=0.5)
 
         assert keep == [0]
 
@@ -372,7 +372,7 @@ class TestNmsNumpy:
         boxes = np.zeros((0, 4), dtype=np.float32)
         scores = np.zeros(0, dtype=np.float32)
 
-        keep = _nms_numpy(boxes, scores, iou_threshold=0.5)
+        keep = nms(boxes, scores, iou_threshold=0.5)
 
         assert keep == []
 

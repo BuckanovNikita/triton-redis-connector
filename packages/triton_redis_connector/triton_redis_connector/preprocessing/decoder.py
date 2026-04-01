@@ -56,8 +56,8 @@ class TurboJPEGDecoder:
 
     def _get_decoder(self) -> turbojpeg.TurboJPEG:  # pyright: ignore[reportUnknownVariableType]
         if not hasattr(self._local, "decoder"):
-            self._local.decoder = turbojpeg.TurboJPEG()
-        return self._local.decoder  # pyright: ignore[reportReturnType]
+            self._local.decoder = turbojpeg.TurboJPEG()  # type: ignore[no-untyped-call]
+        return self._local.decoder  # type: ignore[no-any-return]  # pyright: ignore[reportReturnType]
 
     def decode(self, raw: bytes) -> npt.NDArray[np.uint8]:
         """Decode JPEG bytes into a BGR HWC uint8 numpy array.
@@ -72,7 +72,7 @@ class TurboJPEGDecoder:
 
         decoder = self._get_decoder()
         try:
-            image: npt.NDArray[np.uint8] | None = decoder.decode(  # pyright: ignore[reportUnknownMemberType]
+            image: npt.NDArray[np.uint8] | None = decoder.decode(  # type: ignore[no-untyped-call]  # pyright: ignore[reportUnknownMemberType]
                 raw, pixel_format=turbojpeg.TJPF_BGR
             )
         except OSError as exc:
