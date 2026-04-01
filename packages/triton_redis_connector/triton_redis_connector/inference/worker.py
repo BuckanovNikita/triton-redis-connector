@@ -31,14 +31,18 @@ class InferenceWorker:
 
     def __call__(self, event: InferenceInput) -> InferenceOutput | InferenceError | None:
         """Run inference on a single InferenceInput event."""
-        if event.raw_image is None:
-            msg = "InferenceWorker requires raw_image to be set"
-            raise ValueError(msg)
-
         start = time.monotonic()
 
-        input_tensor = grpcclient.InferInput(event.input_name, event.raw_image.shape, "FP32")
-        input_tensor.set_data_from_numpy(event.raw_image)
+        if event.raw_image is not None:
+            input_tensor = grpcclient.InferInput(event.input_name, event.raw_image.shape, "FP32")
+            input_tensor.set_data_from_numpy(event.raw_image)
+        elif event.image_bytes is not None:
+            data = np.frombuffer(event.image_bytes, dtype=np.uint8)
+            input_tensor = grpcclient.InferInput(event.input_name, [len(data)], "UINT8")
+            input_tensor.set_data_from_numpy(data)
+        else:
+            msg = "Neither raw_image nor image_bytes set on InferenceInput"
+            raise ValueError(msg)
         outputs = [grpcclient.InferRequestedOutput(name) for name in event.output_names]
 
         result = self._client.infer(

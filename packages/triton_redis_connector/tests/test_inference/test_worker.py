@@ -20,6 +20,13 @@ def _make_input(model_name: str = "yolo11s") -> InferenceInput:
     )
 
 
+def _make_bytes_input(model_name: str = "yolo11s") -> InferenceInput:
+    return InferenceInput(
+        model_name=model_name,
+        image_bytes=b"\xff\xd8\xff\xe0" + b"\x00" * 100,
+    )
+
+
 class _FakeInferResult:
     def __init__(self, output_names: tuple[str, ...]) -> None:
         self._data = {name: np.zeros((1, 84, 8400), dtype=np.float32) for name in output_names}
@@ -78,12 +85,16 @@ class TestInferenceWorker:
         assert "output0" in result.outputs
         assert result.inference_time_ms > 0
 
-    def test_raises_on_missing_raw_image(self) -> None:
+    def test_image_bytes_inference(self) -> None:
         fake_module = _build_fake_grpc_module()
         with patch(_GRPC_PATCH_TARGET, fake_module):
             worker = InferenceWorker(grpc_url="localhost:8001")
-            with pytest.raises(ValueError, match="raw_image"):
-                worker(InferenceInput(model_name="yolo11s", raw_image=None))
+            result = worker(_make_bytes_input())
+
+        assert isinstance(result, InferenceOutput)
+        assert result.model_name == "yolo11s"
+        assert "output0" in result.outputs
+        assert result.inference_time_ms > 0
 
     def test_raises_on_inference_failure(self) -> None:
         fake_module = _build_fake_grpc_module(fail_count=100)
