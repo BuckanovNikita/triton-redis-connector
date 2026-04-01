@@ -1,12 +1,12 @@
-"""Redis Stream connectors and execution variant wrappers.
+"""Redis Stream connectors and pure Source/Sink implementations.
 
 Implements InputConnectorProtocol and OutputConnectorProtocol for Redis Streams,
-plus ThreadSource and ThreadSink wrappers for the execution variant system.
+plus pure Source and Sink classes for the execution variant system.
+Concurrency wrapping is handled by framework wrappers at assembly time.
 """
 
 from __future__ import annotations
 
-import threading
 import time
 from collections import deque
 from typing import TYPE_CHECKING, cast
@@ -113,10 +113,11 @@ class RedisStreamOutputConnector:
 
 
 class RedisStreamSource:
-    """ThreadSource wrapper around RedisStreamInputConnector.
+    """Pure Source wrapping RedisStreamInputConnector.
 
-    Runs in a dedicated thread, reading from Redis with newest-first
-    recovery and configurable interleave ratio for pending messages.
+    Reads from Redis with newest-first recovery and configurable
+    interleave ratio for pending messages. Concurrency wrapping
+    is handled by DetachedThreadSource at assembly time.
     """
 
     def __init__(  # noqa: D107
@@ -124,7 +125,6 @@ class RedisStreamSource:
         connector: RedisStreamInputConnector,
         config: SourceConfig,
     ) -> None:
-        self.stop = threading.Event()
         self._connector = connector
         self._config = config
         self._pending_buffer: deque[Envelope[bytes]] = deque()
@@ -197,13 +197,13 @@ class RedisStreamSource:
 
 
 class RedisStreamSink:
-    """ThreadSink wrapper around RedisStreamOutputConnector.
+    """Pure Sink wrapping RedisStreamOutputConnector.
 
-    Runs in a dedicated thread, writing processed results to Redis.
+    Writes processed results to Redis. Concurrency wrapping
+    is handled by DetachedThreadSink at assembly time.
     """
 
     def __init__(self, connector: RedisStreamOutputConnector) -> None:  # noqa: D107
-        self.stop = threading.Event()
         self._connector = connector
 
     def __call__(self, event: Envelope[bytes]) -> None:

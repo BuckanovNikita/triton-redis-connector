@@ -1,5 +1,10 @@
 """Optional concrete base classes for parallel execution variant protocols.
 
+.. deprecated::
+    Use ``engine.wrappers`` instead. Write pure processors (no ``stop`` event)
+    and wrap them with ``DetachedThreadProcessor``, ``ThreadedProcessor``, etc.
+    These base classes will be removed in a future version.
+
 These base classes eliminate boilerplate (stop events) while satisfying
 the protocol contracts structurally. Users define only business-related
 __init__ and __call__ logic.

@@ -1,12 +1,11 @@
-"""ThreadPoolProcessor that decodes raw image bytes into BGR numpy arrays.
+"""Pure image decode processor.
 
-Wraps an image decoder for use as a pipeline graph node. Consumes raw bytes
-and produces DecodedImage events for downstream preprocessing.
+Decodes raw image bytes into BGR numpy arrays. No threading primitives —
+concurrency is handled by framework wrappers (ThreadedProcessor).
 """
 
 from __future__ import annotations
 
-import threading
 import time
 
 from loguru import logger
@@ -18,9 +17,8 @@ from triton_redis_connector.preprocessing.decoder import OpenCVDecoder, TurboJPE
 
 
 class ImageDecodeProcessor:
-    """ThreadPoolProcessor wrapping an image decoder.
+    """Processor that decodes raw image bytes into BGR HWC uint8 numpy arrays.
 
-    Decodes raw image bytes into BGR HWC uint8 numpy arrays.
     Returns PreprocessingError on decode failure instead of raising.
     """
 
@@ -29,7 +27,6 @@ class ImageDecodeProcessor:
         decoder: OpenCVDecoder | TurboJPEGDecoder | None = None,
         decoder_type: DecoderType = DecoderType.OPENCV,
     ) -> None:
-        self.stop = threading.Event()
         if decoder is not None:
             self._decoder = decoder
         elif decoder_type == DecoderType.TURBOJPEG:

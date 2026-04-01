@@ -99,6 +99,7 @@ class Application:
         self._stats_errors: int = 0
         self._stats_per_node: dict[str, int] = {}
         self._stats_timer: threading.Timer | None = None
+        self._stats_interval: float = 0.0
 
     def run(self) -> None:
         """Run the main event loop.
@@ -269,17 +270,17 @@ class Application:
 
     def _start_stats_timer(self) -> None:
         """Start a repeating timer that logs stats periodically."""
-        interval = self._config.metrics.stats_log_interval_s
+        self._stats_interval = self._config.metrics.stats_log_interval_s
+        self._stats_timer = threading.Timer(self._stats_interval, self._stats_tick)
+        self._stats_timer.daemon = True
+        self._stats_timer.start()
 
-        def _tick() -> None:
-            if self._shutdown.is_set():
-                return
-            self._log_stats()
-            self._stats_timer = threading.Timer(interval, _tick)
-            self._stats_timer.daemon = True
-            self._stats_timer.start()
-
-        self._stats_timer = threading.Timer(interval, _tick)
+    def _stats_tick(self) -> None:
+        """Execute one stats cycle and schedule the next tick."""
+        if self._shutdown.is_set():
+            return
+        self._log_stats()
+        self._stats_timer = threading.Timer(self._stats_interval, self._stats_tick)
         self._stats_timer.daemon = True
         self._stats_timer.start()
 

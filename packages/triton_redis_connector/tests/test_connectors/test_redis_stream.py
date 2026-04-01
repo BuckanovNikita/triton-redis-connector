@@ -187,15 +187,6 @@ class TestRedisStreamSource:
                 results.append(r.message_id)
         assert "p1" in results
 
-    def test_has_stop_event(
-        self, mock_redis: MagicMock, source_config: SourceConfig, group_manager: ConsumerGroupManager
-    ) -> None:
-        connector = RedisStreamInputConnector(mock_redis, source_config, group_manager)
-        mock_redis.xreadgroup.return_value = None
-        source = RedisStreamSource(connector, source_config)
-        assert hasattr(source, "stop")
-        assert not source.stop.is_set()
-
 
 class TestRedisStreamSink:
     def test_writes_envelope_data(self, mock_redis: MagicMock, sink_config: SinkConfig) -> None:
@@ -209,9 +200,3 @@ class TestRedisStreamSink:
         )
         sink(envelope)
         mock_redis.xadd.assert_called_once()
-
-    def test_has_stop_event(self, mock_redis: MagicMock, sink_config: SinkConfig) -> None:
-        connector = RedisStreamOutputConnector(mock_redis, sink_config)
-        sink = RedisStreamSink(connector)
-        assert hasattr(sink, "stop")
-        assert not sink.stop.is_set()

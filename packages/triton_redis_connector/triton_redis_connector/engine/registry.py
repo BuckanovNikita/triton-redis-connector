@@ -20,6 +20,7 @@ from triton_redis_connector.protocols import (
     ThreadProcessor,
     ThreadSink,
     ThreadSource,
+    WrappedNode,
 )
 
 
@@ -214,17 +215,23 @@ class PipelineRegistry:
         return errors
 
     def _detect_variant(self, node: object) -> ExecutionVariant:
-        """Detect the execution variant of a node using call signature inspection.
+        """Detect the execution variant of a node.
 
-        Uses the number of __call__ parameters (excluding self) to distinguish
-        sources (0 params) from processors/sinks (1 param), and checks for
-        a `stop` attribute to distinguish threaded/process variants.
+        Fast path: if the node implements WrappedNode, use its declared variant.
+        Fallback: uses call signature inspection to infer the variant.
         """
+        if isinstance(node, WrappedNode):
+            return ExecutionVariant(node.variant)
+
         if not callable(node):
             msg = f"Cannot detect execution variant for {type(node).__name__}"
             raise TypeError(msg)
 
-        call_method = node.__call__
+        return self._infer_variant_from_signature(node)
+
+    def _infer_variant_from_signature(self, node: object) -> ExecutionVariant:
+        """Infer execution variant from __call__ parameter count and stop attribute."""
+        call_method = node.__call__  # type: ignore[operator]
         hints = typing.get_type_hints(call_method)
         param_count = len([k for k in hints if k != "return"])
         has_stop = self._has_stop_event(node)

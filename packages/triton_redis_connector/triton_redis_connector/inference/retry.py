@@ -1,5 +1,9 @@
 """Retry handler for async Triton inference with exponential backoff.
 
+.. deprecated::
+    Use ``engine.middleware.RetryMiddleware`` instead. It uses synchronous
+    ``time.sleep()`` instead of ``threading.Timer`` and has no shared state.
+
 Uses threading.Timer to schedule retry attempts. The semaphore is
 acquired by the caller before the first attempt, and released here
 only on final success or final failure (all retries exhausted).

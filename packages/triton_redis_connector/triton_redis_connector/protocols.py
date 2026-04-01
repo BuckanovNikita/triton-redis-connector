@@ -254,6 +254,38 @@ class ObserverProtocol(Protocol[TObserved]):
 
 
 @runtime_checkable
+class Startable(Protocol):
+    """Optional lifecycle hook called before first dispatch."""
+
+    def start(self) -> None:
+        """Initialize resources before processing begins."""
+        ...
+
+
+@runtime_checkable
+class Stoppable(Protocol):
+    """Optional lifecycle hook called during shutdown."""
+
+    def close(self) -> None:
+        """Release resources during shutdown."""
+        ...
+
+
+@runtime_checkable
+class WrappedNode(Protocol):
+    """Framework wrapper that declares its execution variant explicitly.
+
+    Used by PipelineRegistry._detect_variant as a fast path to avoid
+    signature-based inference.
+    """
+
+    @property
+    def variant(self) -> str:
+        """Return the ExecutionVariant value for this wrapper."""
+        ...
+
+
+@runtime_checkable
 class AggregationRuleProtocol(Protocol[TEvent_contra]):
     """Extracts grouping key from events for time-windowed aggregation.
 

@@ -82,10 +82,7 @@ def main() -> None:
     registry.register("preprocessor", PreprocessorNode(model_name=MODEL_NAME))
     registry.register(
         "inference",
-        InferenceWorker(
-            grpc_url=config.inference.grpc_url,
-            max_concurrent=config.inference.max_concurrent_per_worker,
-        ),
+        InferenceWorker(grpc_url=config.inference.grpc_url),
     )
     registry.register("postprocessor", DetectionPostProcessor())
     registry.register("serializer", OutputSerializer())
