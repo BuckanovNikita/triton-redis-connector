@@ -98,6 +98,10 @@ class Application:
         self._stats_in_progress: int = 0
         self._stats_errors: int = 0
         self._stats_per_node: dict[str, int] = {}
+        self._stats_prev_per_node: dict[str, int] = {}
+        self._stats_sink_writes: dict[str, int] = {}
+        self._stats_decode_success: int = 0
+        self._stats_decode_failure: int = 0
         self._stats_timer: threading.Timer | None = None
         self._stats_interval: float = 0.0
 
@@ -198,18 +202,24 @@ class Application:
                 if event_type in node.input_types:
                     envelope.track_state("processing_start")
                     self._stats_in_progress += 1
+                    t0 = time.monotonic()
                     result: object = node.instance(event)  # type: ignore[operator]
+                    elapsed_ms = (time.monotonic() - t0) * 1000.0
                     self._stats_in_progress -= 1
                     self._stats_per_node[node.name] = self._stats_per_node.get(node.name, 0) + 1
+
+                    self._emit_node_processing_metric(node.name, elapsed_ms)
 
                     if node.variant in SINK_VARIANTS:
                         envelope.track_state("output_sent")
                         self._stats_processed += 1
+                        self._stats_sink_writes[node.name] = self._stats_sink_writes.get(node.name, 0) + 1
                         self._emit_transit_metric(envelope)
                         if _is_metric_event(result) and self._metric_buffer is not None:
                             self._metric_buffer.record(result)
 
                     if result is not None and node.variant not in SINK_VARIANTS:
+                        self._track_decode_result(result)
                         self._emit_inference_time_metric(result)
                         child_envelope = envelope.derive(result)
                         self._route_event(result, dispatch_order, envelope=child_envelope)
@@ -244,6 +254,29 @@ class Application:
                     timestamp_ms=int(time.time() * 1000),
                 ),
             )
+
+    def _emit_node_processing_metric(self, node_name: str, elapsed_ms: float) -> None:
+        """Emit per-call node_processing_ms metric for inline nodes."""
+        if self._metric_buffer is None:
+            return
+        self._metric_buffer.record(
+            _make_metric(
+                component_name=self._config.app_name,
+                measure="node_processing_ms",
+                value=elapsed_ms,
+                timestamp_ms=int(time.time() * 1000),
+                tags={"node": node_name},
+            ),
+        )
+
+    def _track_decode_result(self, result: object) -> None:
+        """Track decode success/failure from processor results."""
+        from triton_redis_connector.engine.events import DecodedImage  # noqa: PLC0415
+
+        if isinstance(result, DecodedImage):
+            self._stats_decode_success += 1
+        elif isinstance(result, _ERROR_EVENT_TYPES) and isinstance(result, PreprocessingError):
+            self._stats_decode_failure += 1
 
     def _log_error_event(self, event: object) -> None:
         """Log error events in the main thread and optionally stop on error."""
@@ -291,7 +324,11 @@ class Application:
             self._stats_timer = None
 
     def _log_stats(self) -> None:
-        """Log pipeline stats and emit them as metrics."""
+        """Log pipeline stats and emit them as metrics.
+
+        Emits metrics for ALL registered nodes, including zero-valued
+        metrics when idle, so that monitoring dashboards always have data.
+        """
         per_node_summary = ", ".join(f"{k}={v}" for k, v in sorted(self._stats_per_node.items()))
         logger.info(
             "[STATS] processed={} in_progress={} errors={} | {}",
@@ -301,13 +338,53 @@ class Application:
             per_node_summary,
         )
 
-        if self._metric_buffer is not None:
-            timestamp_ms = int(time.time() * 1000)
-            app_name = self._config.app_name
+        if self._metric_buffer is None:
+            return
+
+        timestamp_ms = int(time.time() * 1000)
+        app_name = self._config.app_name
+
+        for measure, value in [
+            ("stats_processed", float(self._stats_processed)),
+            ("stats_in_progress", float(self._stats_in_progress)),
+            ("stats_errors", float(self._stats_errors)),
+            ("decode_success", float(self._stats_decode_success)),
+            ("decode_failure", float(self._stats_decode_failure)),
+        ]:
+            self._metric_buffer.record(
+                _make_metric(
+                    component_name=app_name,
+                    measure=measure,
+                    value=value,
+                    timestamp_ms=timestamp_ms,
+                ),
+            )
+
+        self._emit_per_node_stats(timestamp_ms, app_name)
+        self._emit_queue_stats(timestamp_ms, app_name)
+
+    def _emit_per_node_stats(self, timestamp_ms: int, app_name: str) -> None:
+        """Emit per-node metrics for ALL registered nodes (zero-value guarantee)."""
+        assert self._metric_buffer is not None  # noqa: S101 — caller checks
+        aggregators = self._registry.aggregators
+
+        for node_name, node in self._registry.nodes.items():
+            aggregator = aggregators.get(node_name)
+            if aggregator is not None:
+                snap = aggregator.snapshot()
+                interval = aggregator.interval_calls()
+                node_total = snap.call_count
+                node_errors = snap.error_count
+            else:
+                node_total = self._stats_per_node.get(node_name, 0)
+                prev = self._stats_prev_per_node.get(node_name, 0)
+                interval = node_total - prev
+                node_errors = 0
+
             for measure, value in [
-                ("stats_processed", float(self._stats_processed)),
-                ("stats_in_progress", float(self._stats_in_progress)),
-                ("stats_errors", float(self._stats_errors)),
+                ("node_events_total", float(node_total)),
+                ("node_events_interval", float(interval)),
+                ("node_errors", float(node_errors)),
             ]:
                 self._metric_buffer.record(
                     _make_metric(
@@ -315,8 +392,65 @@ class Application:
                         measure=measure,
                         value=value,
                         timestamp_ms=timestamp_ms,
+                        tags={"node": node_name},
                     ),
                 )
+
+            if node.variant in SOURCE_VARIANTS and aggregator is not None:
+                snap = aggregator.snapshot()
+                for measure, value in [
+                    ("source_read_total", float(snap.call_count)),
+                    ("source_read_empty", float(snap.empty_count)),
+                ]:
+                    self._metric_buffer.record(
+                        _make_metric(
+                            component_name=app_name,
+                            measure=measure,
+                            value=value,
+                            timestamp_ms=timestamp_ms,
+                            tags={"node": node_name},
+                        ),
+                    )
+
+            if node.variant in SINK_VARIANTS:
+                writes = float(self._stats_sink_writes.get(node_name, 0))
+                self._metric_buffer.record(
+                    _make_metric(
+                        component_name=app_name,
+                        measure="sink_write_total",
+                        value=writes,
+                        timestamp_ms=timestamp_ms,
+                        tags={"node": node_name},
+                    ),
+                )
+
+        self._stats_prev_per_node = dict(self._stats_per_node)
+
+    def _emit_queue_stats(self, timestamp_ms: int, app_name: str) -> None:
+        """Emit queue depth and drop metrics for all managed queues."""
+        assert self._metric_buffer is not None  # noqa: S101 — caller checks
+
+        for queue_name, depth in self._queue_bus.queue_depths().items():
+            self._metric_buffer.record(
+                _make_metric(
+                    component_name=app_name,
+                    measure="queue_depth",
+                    value=float(depth),
+                    timestamp_ms=timestamp_ms,
+                    tags={"queue": queue_name},
+                ),
+            )
+
+        for queue_name, drops in self._queue_bus.drop_counts().items():
+            self._metric_buffer.record(
+                _make_metric(
+                    component_name=app_name,
+                    measure="queue_drops_total",
+                    value=float(drops),
+                    timestamp_ms=timestamp_ms,
+                    tags={"queue": queue_name},
+                ),
+            )
 
     def _wire_parallel_queues(self) -> None:
         """Pre-create input queues for all non-source parallel nodes."""

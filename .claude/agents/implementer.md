@@ -44,6 +44,27 @@ If ruff check reports fixable issues: `uv run ruff check --fix .` then re-run fo
 
 ---
 
+## Metrics Instrumentation
+
+Every new pipeline node must be observable at runtime:
+
+1. **New parallel nodes**: Use `Annotated[YourProcessor, Tracked("name")]` to get automatic
+   throughput/latency/error metrics via `MetricAggregator` in wrappers
+2. **Inline nodes**: Automatically tracked by `app.py` for `node_events_total`,
+   `node_events_interval`, `node_processing_ms`. No extra code needed if registered
+   via `PipelineRegistry.register()`
+3. **New error event types**: Add to `_ERROR_EVENT_TYPES` tuple in `engine/app.py` so
+   `_log_error_event` counts them in `node_errors`
+4. **New preprocessing stages**: If the processor produces `DecodedImage` on success or
+   `PreprocessingError` on failure, `decode_success`/`decode_failure` metrics are auto-tracked
+5. **Custom metrics**: Use `_make_metric()` + `self._metric_buffer.record()` in `engine/app.py`.
+   Never import MetricEvent directly in engine modules — use lazy import via `_make_metric`
+6. **Zero-value rule**: Metrics in `_log_stats` iterate over ALL `self._registry.nodes`,
+   not only active ones. Idle nodes always emit 0-valued metrics
+7. **README sync**: Update metrics table in `README.md` (section "Метрики") when adding new metrics
+
+---
+
 ## Import-Linter Architecture Contracts
 
 The root `pyproject.toml` enforces 5 import-linter contracts. Run `uv run lint-imports`

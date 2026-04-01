@@ -103,3 +103,44 @@ class TestBackpressure:
         assert m2 is not None
         assert m1.queue_name == "test_q"
         assert m2.queue_name == "test_q"
+
+
+class TestQueueMetrics:
+    def test_queue_depths_returns_sizes(self, bus: QueueBus) -> None:
+        bus.put("q1", "a")
+        bus.put("q1", "b")
+        bus.put("q2", "x")
+        depths = bus.queue_depths()
+        assert depths["q1"] == 2
+        assert depths["q2"] == 1
+
+    def test_queue_depths_empty_queues(self, bus: QueueBus) -> None:
+        bus.get_queue("empty_q")
+        depths = bus.queue_depths()
+        assert depths["empty_q"] == 0
+
+    def test_queue_depths_empty_when_no_queues(self, bus: QueueBus) -> None:
+        assert bus.queue_depths() == {}
+
+    def test_drop_counts_zero_initially(self, bus: QueueBus) -> None:
+        bus.get_queue("q")
+        assert bus.drop_counts() == {}
+
+    def test_drop_counts_tracks_overflows(self, bus: QueueBus) -> None:
+        for i in range(3):
+            bus.put("q", str(i))
+        bus.put("q", "drop1")
+        bus.put("q", "drop2")
+        counts = bus.drop_counts()
+        assert counts["q"] == 2
+
+    def test_drop_counts_per_queue(self, bus: QueueBus) -> None:
+        for i in range(3):
+            bus.put("q1", str(i))
+            bus.put("q2", str(i))
+        bus.put("q1", "drop")
+        bus.put("q2", "drop1")
+        bus.put("q2", "drop2")
+        counts = bus.drop_counts()
+        assert counts["q1"] == 1
+        assert counts["q2"] == 2

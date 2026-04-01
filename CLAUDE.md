@@ -86,6 +86,15 @@ All infrastructure runs via the devcontainer compose file.
 - **Imports**: top-level, never lazy — unless the dependency is truly optional (not in pyproject.toml) or it's a CLI subcommand handler in `__main__.py`. All deps listed in pyproject.toml are non-optional and must be imported at module level.
 - **Config file sync**: when moving/renaming files, update ALL config paths: mypy `exclude` in `pyproject.toml`, pyright `exclude` in `pyrightconfig.json`, vulture `paths`/`ignore_names`, and import-linter contracts
 
+## Metrics Policy
+
+- Every pipeline node is automatically instrumented for `node_events_total`, `node_events_interval`, `node_processing_ms`, `node_errors` via `MetricAggregator`
+- Use `Annotated[ProcessorType, Tracked("name")]` when registering parallel nodes to enable per-call metric collection in multi-threaded/multi-process wrappers
+- When adding new error event types: add to `_ERROR_EVENT_TYPES` in `engine/app.py`
+- When adding new metrics: emit in `_log_stats` for ALL registered nodes (zero-value guarantee — idle nodes must emit 0)
+- Custom metrics use `_make_metric()` + `self._metric_buffer.record()` pattern in `engine/app.py`
+- Update metrics table in `README.md` (section "Метрики") when adding new metrics
+
 ## Testing Policy
 
 **Only write tests for real logic and edge cases.** Never write tests for:

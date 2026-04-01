@@ -13,6 +13,7 @@ from enum import StrEnum, auto
 
 from loguru import logger
 
+from triton_redis_connector.engine.metric_aggregator import InstrumentedNode, MetricAggregator
 from triton_redis_connector.protocols import (
     ProcessPoolProcessor,
     ProcessSource,
@@ -78,6 +79,7 @@ class PipelineRegistry:
         self._nodes: dict[str, GraphNode] = {}
         self._type_producers: dict[type, list[str]] = {}
         self._type_consumers: dict[type, list[str]] = {}
+        self._aggregators: dict[str, MetricAggregator] = {}
 
     def register(self, name: str, node: object) -> None:
         """Register a pipeline node by inspecting its __call__ type hints."""
@@ -99,6 +101,10 @@ class PipelineRegistry:
             self._type_producers.setdefault(out_type, []).append(name)
 
         self._nodes[name] = graph_node
+
+        if isinstance(node, InstrumentedNode) and node.aggregator is not None:
+            self._aggregators[name] = node.aggregator
+
         logger.debug(
             "Registered node {} as {} (inputs={}, outputs={})",
             name,
@@ -179,6 +185,11 @@ class PipelineRegistry:
     def type_consumers(self) -> dict[type, list[str]]:
         """Return the type-to-consumer mapping for queue wiring."""
         return dict(self._type_consumers)
+
+    @property
+    def aggregators(self) -> dict[str, MetricAggregator]:
+        """Return the node-name-to-aggregator mapping for metrics collection."""
+        return dict(self._aggregators)
 
     def _check_connectivity(self) -> list[str]:
         """Check that the graph has no disconnected subgraphs.

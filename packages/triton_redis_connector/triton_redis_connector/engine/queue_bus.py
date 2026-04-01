@@ -35,6 +35,7 @@ class QueueBus:
     def __init__(self, config: QueueConfig) -> None:  # noqa: D107
         self._config = config
         self._queues: dict[str, queue.Queue[Any]] = {}
+        self._drop_counts: dict[str, int] = {}
 
     def get_queue(self, name: str, maxsize: int | None = None) -> queue.Queue[Any]:
         """Get or create a named queue.
@@ -59,6 +60,7 @@ class QueueBus:
         try:
             q.put_nowait(item)
         except queue.Full:
+            self._drop_counts[name] = self._drop_counts.get(name, 0) + 1
             logger.warning("Queue {} is full (maxsize={}), dropping item", name, q.maxsize)
             return QueueOverflow(queue_name=name)
         return None
@@ -82,6 +84,14 @@ class QueueBus:
         """
         q = self.get_queue(name)
         return q.get_nowait()
+
+    def queue_depths(self) -> dict[str, int]:
+        """Return approximate current depth of each managed queue."""
+        return {name: q.qsize() for name, q in self._queues.items()}
+
+    def drop_counts(self) -> dict[str, int]:
+        """Return cumulative drop count per queue name."""
+        return dict(self._drop_counts)
 
     @property
     def queue_names(self) -> list[str]:
