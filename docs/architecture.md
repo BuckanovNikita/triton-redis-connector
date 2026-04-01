@@ -76,17 +76,66 @@ Three primitives, each with execution mode variants (9 total). All protocols def
 | `Sink` | `Sink[TIn]` | Inline, runs in main loop |
 | `ThreadSink` | `ThreadSink[TIn]` | Dedicated thread, has `stop: Event` |
 
-User code writes pure business logic classes with `__call__`. The framework wraps them at assembly time using wrappers from `engine/wrappers.py`:
+User code has two options for declaring the execution variant:
 
-- `DetachedThreadSource`, `DetachedProcessSource`
-- `DetachedThreadProcessor`, `ThreadedProcessor`, `MultiProcessProcessor`
-- `DetachedThreadSink`
+1. **Inherit from base classes** (preferred for user processors) -- the variant is declared by the class itself, no wrapping needed. See "Base Classes for User Processors" below.
+2. **Write plain callables** and wrap at assembly time using wrappers from `engine/wrappers.py`: `DetachedThreadSource`, `DetachedProcessSource`, `DetachedThreadProcessor`, `ThreadedProcessor`, `MultiProcessProcessor`, `DetachedThreadSink`. Use this for framework building blocks that should remain variant-agnostic.
 
-See: `engine/wrappers.py`, `engine/registry.py`
+See: `protocols.py` (base classes), `engine/wrappers.py`, `engine/registry.py`
+
+### Base Classes for User Processors
+
+User-defined processors inherit from base classes that declare the execution variant explicitly. Nine base classes in `protocols.py` correspond to the nine execution variants:
+
+| Base Class | Variant | Has `stop` |
+|---|---|---|
+| `BaseSource[TOut]` | Inline source | No |
+| `BaseThreadSource[TOut]` | Threaded source | Yes |
+| `BaseProcessSource[TOut]` | Process source | Yes |
+| `BaseProcessor[TIn, TOut]` | Inline processor | No |
+| `BaseThreadProcessor[TIn, TOut]` | Dedicated thread | Yes |
+| `BaseThreadPoolProcessor[TIn, TOut]` | Thread pool | Yes |
+| `BaseProcessPoolProcessor[TIn, TOut]` | Process pool | Yes |
+| `BaseSink[TIn]` | Inline sink | No |
+| `BaseThreadSink[TIn]` | Threaded sink | Yes |
+
+Base classes satisfy the `WrappedNode` protocol (fast-path variant detection in registry). User code:
+
+```python
+from triton_redis_connector import BaseThreadProcessor
+
+class MyProcessor(BaseThreadProcessor[ImageEvent, Result]):
+    def __init__(self, url: str) -> None:
+        super().__init__()
+        self._url = url
+
+    def __call__(self, event: ImageEvent) -> Result | None:
+        return process(self._url, event)
+
+registry.register("proc", MyProcessor("triton:8001"))
+```
+
+### Config-Driven Node Assembly
+
+Shipped processors and framework building blocks can be assembled from YAML config via `NodeConfig` entries. The variant is a deployment decision in config, not hardcoded in the processor.
+
+Config schema (`config/schema.py`):
+- `NodeVariant` -- StrEnum mirroring `ExecutionVariant` (SOURCE, THREAD_SOURCE, PROCESS_SOURCE, PROCESSOR, THREAD_PROCESSOR, THREAD_POOL_PROCESSOR, PROCESS_POOL_PROCESSOR, SINK, THREAD_SINK)
+- `NodeConfig` -- name, class_path, variant, params, tracked, pool_size
+- `AppConfig.nodes: list[NodeConfig]` replaces the old `processors: list[str]`
+
+Assembly (`engine/assembly.py`):
+- `import_class(class_path)` -- dynamic import from fully-qualified dotted path
+- `resolve_type_params(cls, params)` -- auto-resolve `type[X]` params from string class paths
+- `wrap_with_variant(inner, variant)` -- apply execution variant wrapper (idempotent for base-class nodes that already declare the correct variant)
+- `assemble_all(nodes, registry)` -- assemble and register all config-driven nodes
+
+DI Provider (`providers/node_assembly_provider.py`):
+- `NodeAssemblyProvider` reads `AppConfig.nodes`, assembles, and registers all nodes before `Application` starts
 
 ## Shipped Processors
 
-Six reusable processors provided out of the box. Five live in `triton_redis_connector.engine.shipped_processors`, one in `triton_model_tools.inference.yolo_bridge`.
+Six reusable processors provided out of the box. Five live in `triton_redis_connector.engine.shipped_processors`, one in `triton_model_tools.inference.yolo_bridge`. Shipped processors are variant-agnostic plain callables and can be assembled from YAML config with any execution variant via `NodeConfig` entries (see "Config-Driven Node Assembly" above).
 
 | Processor | Location | Input | Output | Purpose |
 |---|---|---|---|---|

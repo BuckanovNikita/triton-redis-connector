@@ -9,6 +9,8 @@ from triton_redis_connector.config.schema import (
     DecoderType,
     InferenceConfig,
     MetricsConfig,
+    NodeConfig,
+    NodeVariant,
     PreprocessingConfig,
     QueueConfig,
     RedisConnectionConfig,
@@ -150,6 +152,38 @@ class TestMetricsConfig:
         assert restored == cfg
 
 
+class TestNodeConfig:
+    def test_pool_size_rejected_for_non_pool_variant(self) -> None:
+        with pytest.raises(ValidationError, match="pool_size"):
+            NodeConfig(
+                name="proc",
+                class_path="pkg.Proc",
+                variant=NodeVariant.THREAD_PROCESSOR,
+                pool_size=4,
+            )
+
+    def test_pool_size_allowed_for_pool_variant(self) -> None:
+        cfg = NodeConfig(
+            name="proc",
+            class_path="pkg.Proc",
+            variant=NodeVariant.THREAD_POOL_PROCESSOR,
+            pool_size=4,
+        )
+        assert cfg.pool_size == 4
+
+    def test_serialization_roundtrip(self) -> None:
+        cfg = NodeConfig(
+            name="extractor",
+            class_path="pkg.Extractor",
+            variant=NodeVariant.THREAD_PROCESSOR,
+            params={"model_class": "pkg.Model"},
+            tracked=True,
+        )
+        data = cfg.model_dump()
+        restored = NodeConfig.model_validate(data)
+        assert restored == cfg
+
+
 class TestAppConfig:
     def test_full_serialization_roundtrip(self) -> None:
         cfg = AppConfig(
@@ -163,7 +197,13 @@ class TestAppConfig:
                 ),
             ],
             sinks=[SinkConfig(stream_name="output")],
-            processors=["pkg.Proc"],
+            nodes=[
+                NodeConfig(
+                    name="extractor",
+                    class_path="pkg.Extractor",
+                    variant=NodeVariant.THREAD_PROCESSOR,
+                ),
+            ],
             inference=InferenceConfig(grpc_url="triton:8001"),
             preprocessing=PreprocessingConfig(decoder=DecoderType.TURBOJPEG),
             queues=QueueConfig(maxsize=500),

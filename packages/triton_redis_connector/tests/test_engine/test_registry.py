@@ -8,6 +8,24 @@ from typing import Annotated, ClassVar
 import pytest
 from triton_redis_connector.engine.metric_aggregator import Counter, Gauge
 from triton_redis_connector.engine.registry import ExecutionVariant, PipelineRegistry
+from triton_redis_connector.protocols import (
+    BaseProcessor,
+    BaseProcessPoolProcessor,
+    BaseProcessSource,
+    BaseSink,
+    BaseSource,
+    BaseThreadPoolProcessor,
+    BaseThreadProcessor,
+    BaseThreadSink,
+    BaseThreadSource,
+    ProcessPoolProcessor,
+    ProcessSource,
+    ThreadPoolProcessor,
+    ThreadProcessor,
+    ThreadSink,
+    ThreadSource,
+    WrappedNode,
+)
 
 
 class EventA:
@@ -364,3 +382,74 @@ class TestAnnotatedMetricExtraction:
         gauges = extract_field_gauges(EventWithGaugeField)
         assert len(gauges) == 1
         assert gauges[0] == ("latency", Gauge("latency"))
+
+
+_BASE_CLASS_VARIANTS: list[tuple[type, str]] = [
+    (BaseSource, "source"),
+    (BaseThreadSource, "thread_source"),
+    (BaseProcessSource, "process_source"),
+    (BaseProcessor, "processor"),
+    (BaseThreadProcessor, "thread_processor"),
+    (BaseThreadPoolProcessor, "thread_pool_processor"),
+    (BaseProcessPoolProcessor, "process_pool_processor"),
+    (BaseSink, "sink"),
+    (BaseThreadSink, "thread_sink"),
+]
+
+_THREADED_BASE_TO_PROTOCOL: list[tuple[type, type]] = [
+    (BaseThreadSource, ThreadSource),
+    (BaseProcessSource, ProcessSource),
+    (BaseThreadProcessor, ThreadProcessor),
+    (BaseThreadPoolProcessor, ThreadPoolProcessor),
+    (BaseProcessPoolProcessor, ProcessPoolProcessor),
+    (BaseThreadSink, ThreadSink),
+]
+
+
+class TestBaseClassVariantContract:
+    @pytest.mark.parametrize(("base_cls", "expected_variant"), _BASE_CLASS_VARIANTS)
+    def test_variant_is_valid_execution_variant(self, base_cls: type, expected_variant: str) -> None:
+        assert expected_variant == ExecutionVariant(expected_variant).value
+
+    @pytest.mark.parametrize(("base_cls", "expected_variant"), _BASE_CLASS_VARIANTS)
+    def test_satisfies_wrapped_node(self, base_cls: type, expected_variant: str) -> None:
+        instance = base_cls.__new__(base_cls)
+        if hasattr(base_cls.__init__, "__code__") and base_cls.__init__ is not object.__init__:
+            instance.__init__()
+        assert isinstance(instance, WrappedNode)
+        assert instance.variant == expected_variant
+
+    @pytest.mark.parametrize(("base_cls", "protocol_cls"), _THREADED_BASE_TO_PROTOCOL)
+    def test_threaded_base_satisfies_protocol(self, base_cls: type, protocol_cls: type) -> None:
+        instance = base_cls()
+        assert isinstance(instance, protocol_cls)
+
+    def test_registry_detects_base_class_variant(self, registry: PipelineRegistry) -> None:
+        class MyProc(BaseThreadProcessor[EventA, EventB]):
+            def __call__(self, event: EventA) -> EventB | None:
+                return EventB()
+
+        registry.register("proc", MyProc())
+        node = registry.get_node("proc")
+        assert node is not None
+        assert node.variant == ExecutionVariant.THREAD_PROCESSOR
+
+    def test_registry_detects_base_source_variant(self, registry: PipelineRegistry) -> None:
+        class MySrc(BaseSource[EventA]):
+            def __call__(self) -> EventA | None:
+                return EventA()
+
+        registry.register("src", MySrc())
+        node = registry.get_node("src")
+        assert node is not None
+        assert node.variant == ExecutionVariant.SOURCE
+
+    def test_registry_detects_base_sink_variant(self, registry: PipelineRegistry) -> None:
+        class MySink(BaseThreadSink[EventB]):
+            def __call__(self, event: EventB) -> None:
+                return None
+
+        registry.register("sink", MySink())
+        node = registry.get_node("sink")
+        assert node is not None
+        assert node.variant == ExecutionVariant.THREAD_SINK

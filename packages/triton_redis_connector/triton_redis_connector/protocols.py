@@ -10,12 +10,10 @@ graph construction.
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, runtime_checkable
-
-if TYPE_CHECKING:
-    import threading
+from typing import Any, Generic, Protocol, TypeVar, runtime_checkable
 
 
 @dataclass(frozen=True, slots=True)
@@ -350,3 +348,138 @@ class AggregationRuleProtocol(Protocol[TEvent_contra]):
     def aggregate(self, count: int) -> float:
         """Compute the aggregate value from an event count."""
         ...
+
+
+# ---------------------------------------------------------------------------
+# Concrete base classes for user-defined pipeline nodes.
+#
+# Inherit from these to declare the execution variant explicitly.
+# Each satisfies the WrappedNode protocol (fast-path variant detection)
+# and, for parallel variants, the corresponding runtime_checkable Protocol.
+# ---------------------------------------------------------------------------
+
+
+class BaseSource[TOut]:
+    """Inline source. Subclass and override ``__call__``."""
+
+    @property
+    def variant(self) -> str:  # noqa: D102
+        return "source"
+
+    def __call__(self) -> TOut | None:
+        """Produce an event or return None if nothing available."""
+        raise NotImplementedError
+
+
+class BaseThreadSource[TOut]:
+    """Threaded source with dedicated thread. Subclass and override ``__call__``."""
+
+    def __init__(self) -> None:  # noqa: D107
+        self.stop = threading.Event()
+
+    @property
+    def variant(self) -> str:  # noqa: D102
+        return "thread_source"
+
+    def __call__(self) -> TOut | None:
+        """Produce an event or return None if nothing available."""
+        raise NotImplementedError
+
+
+class BaseProcessSource[TOut]:
+    """Process source with dedicated OS process. Subclass and override ``__call__``."""
+
+    def __init__(self) -> None:  # noqa: D107
+        self.stop = threading.Event()
+
+    @property
+    def variant(self) -> str:  # noqa: D102
+        return "process_source"
+
+    def __call__(self) -> TOut | None:
+        """Produce an event or return None if nothing available."""
+        raise NotImplementedError
+
+
+class BaseProcessor[TIn, TOut]:
+    """Inline processor. Subclass and override ``__call__``."""
+
+    @property
+    def variant(self) -> str:  # noqa: D102
+        return "processor"
+
+    def __call__(self, event: TIn) -> TOut | None:
+        """Transform an event or return None to filter it out."""
+        raise NotImplementedError
+
+
+class BaseThreadProcessor[TIn, TOut]:
+    """Dedicated-thread processor. Subclass and override ``__call__``."""
+
+    def __init__(self) -> None:  # noqa: D107
+        self.stop = threading.Event()
+
+    @property
+    def variant(self) -> str:  # noqa: D102
+        return "thread_processor"
+
+    def __call__(self, event: TIn) -> TOut | None:
+        """Transform an event or return None to filter it out."""
+        raise NotImplementedError
+
+
+class BaseThreadPoolProcessor[TIn, TOut]:
+    """Thread-pool processor (N workers, shared queue). Subclass and override ``__call__``."""
+
+    def __init__(self) -> None:  # noqa: D107
+        self.stop = threading.Event()
+
+    @property
+    def variant(self) -> str:  # noqa: D102
+        return "thread_pool_processor"
+
+    def __call__(self, event: TIn) -> TOut | None:
+        """Transform an event or return None to filter it out."""
+        raise NotImplementedError
+
+
+class BaseProcessPoolProcessor[TIn, TOut]:
+    """Process-pool processor (N workers, true OS parallelism). Subclass and override ``__call__``."""
+
+    def __init__(self) -> None:  # noqa: D107
+        self.stop = threading.Event()
+
+    @property
+    def variant(self) -> str:  # noqa: D102
+        return "process_pool_processor"
+
+    def __call__(self, event: TIn) -> TOut | None:
+        """Transform an event or return None to filter it out."""
+        raise NotImplementedError
+
+
+class BaseSink[TIn]:
+    """Inline sink. Subclass and override ``__call__``."""
+
+    @property
+    def variant(self) -> str:  # noqa: D102
+        return "sink"
+
+    def __call__(self, event: TIn) -> Any | None:  # noqa: ANN401
+        """Consume an event and optionally return a metric event."""
+        raise NotImplementedError
+
+
+class BaseThreadSink[TIn]:
+    """Threaded sink with dedicated thread. Subclass and override ``__call__``."""
+
+    def __init__(self) -> None:  # noqa: D107
+        self.stop = threading.Event()
+
+    @property
+    def variant(self) -> str:  # noqa: D102
+        return "thread_sink"
+
+    def __call__(self, event: TIn) -> Any | None:  # noqa: ANN401
+        """Consume an event and optionally return a metric event."""
+        raise NotImplementedError

@@ -12,10 +12,9 @@ tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 
 ## Role
 
-Write production code in both workspace packages. You know the APIs, patterns,
-and gotchas of every library in the stack. Learn WHAT to build from the user's task
-and `docs/final-plan.md`. This file teaches you HOW to write correct code with this
-project's specific tools.
+Write production code in all workspace packages. You know the APIs, patterns,
+and gotchas of every library in the stack. Learn WHAT to build from the user's task.
+This file teaches you HOW to write correct code with this project's specific tools.
 
 ## Triton Model Management
 
@@ -182,9 +181,59 @@ The framework has three primitives, each with execution mode variants:
 - `Sink`: inline, `__call__(self, event) -> Any | None`
 - `ThreadSink`: dedicated thread, has `stop: threading.Event`
 
-### Pure Business Logic Pattern (current approach)
+### Two Processor Authoring Approaches
 
-Write pure processors with NO threading primitives. Framework wraps them:
+There are three ways to declare execution variants for processors, sources, and sinks.
+Approaches A and B are preferred; Approach C exists for backward compatibility and advanced use cases.
+
+### Approach A: Base Class Inheritance (user processors)
+
+User processors inherit from base classes in `protocols.py` to declare their variant.
+The base class provides `variant` property and `stop: threading.Event` for parallel variants.
+No wrapping needed at registration.
+
+Available base classes:
+- `BaseSource[TOut]`, `BaseThreadSource[TOut]`, `BaseProcessSource[TOut]`
+- `BaseProcessor[TIn, TOut]`, `BaseThreadProcessor[TIn, TOut]`, `BaseThreadPoolProcessor[TIn, TOut]`, `BaseProcessPoolProcessor[TIn, TOut]`
+- `BaseSink[TIn]`, `BaseThreadSink[TIn]`
+
+```python
+from __future__ import annotations
+from triton_redis_connector.protocols import BaseThreadProcessor
+
+class MyProcessor(BaseThreadProcessor[InputEvent, OutputEvent]):
+    def __init__(self, param: str) -> None:
+        super().__init__()
+        self._param = param
+
+    def __call__(self, event: InputEvent) -> OutputEvent | None:
+        return process(event)
+
+registry.register("proc", MyProcessor("value"))
+```
+
+### Approach B: Config-Driven Assembly (shipped/framework processors)
+
+`NodeConfig` in YAML config declares shipped processor nodes with variant and params.
+Assembled via `assemble_all(config.nodes, registry)` or `NodeAssemblyProvider` in DI.
+
+```yaml
+nodes:
+  - name: extractor
+    class_path: triton_redis_connector.engine.shipped_processors.EnvelopeExtractor
+    variant: thread_processor
+    params:
+      model_class: myapp.events.InputEvent
+```
+
+`engine/assembly.py` provides `assemble_all(config.nodes, registry)`.
+`providers/node_assembly_provider.py` handles DI wiring.
+
+### Approach C: Manual Wrapping (legacy/advanced)
+
+Write pure processors with NO threading primitives. Framework wraps them at assembly time.
+This approach is retained for backward compatibility and advanced scenarios where fine-grained
+control over wrapping is needed.
 
 ```python
 from __future__ import annotations

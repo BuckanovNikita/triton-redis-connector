@@ -94,6 +94,58 @@ class ImagePreprocessor:
 ```
 
 
+## Subclass-Based Variant Declaration
+
+Instead of writing pure business logic and wrapping at assembly time, user processors can inherit from a base class that declares the variant:
+
+```python
+from triton_redis_connector import BaseThreadProcessor
+
+class ImagePreprocessor(BaseThreadProcessor[RawImageEvent, TensorEvent]):
+    def __init__(self, target_size: tuple[int, int]) -> None:
+        super().__init__()
+        self.target_size = target_size
+
+    def __call__(self, event: RawImageEvent) -> TensorEvent | None:
+        ...
+
+# No wrapping needed -- variant is declared by the base class
+registry.register("preprocessor", ImagePreprocessor(target_size=(640, 640)))
+```
+
+Both approaches (wrapper-based and subclass-based) work and are fully compatible. Use subclasses for user processors (explicit variant, type-safe). Use wrappers for framework building blocks that should remain variant-agnostic.
+
+
+## Config-Driven Variant Selection
+
+For shipped processors and reusable building blocks, the variant is selected in YAML config:
+
+```yaml
+nodes:
+  - name: input_extractor
+    class_path: triton_redis_connector.engine.shipped_processors.EnvelopeExtractor
+    variant: thread_processor
+    params:
+      model_class: myapp.events.InputEvent
+
+  - name: error_sink
+    class_path: triton_redis_connector.engine.shipped_processors.LogErrorSink
+    variant: thread_sink
+```
+
+The `assemble_all()` function imports classes, resolves parameters, wraps with the configured variant, and registers in the pipeline registry. Pool variants support `pool_size` for parallel instances:
+
+```yaml
+nodes:
+  - name: decoder
+    class_path: myapp.processors.ImageDecoder
+    variant: process_pool_processor
+    pool_size: 4
+    params:
+      decoder: turbojpeg
+```
+
+
 ## Wrapping at Assembly Time
 
 Import the wrapper, create the inner instance, wrap it. Optionally attach a

@@ -104,6 +104,20 @@ Six reusable processors for common pipeline patterns:
 
 See: `engine/shipped_processors.py`, `triton_model_tools/inference/yolo_bridge.py`
 
+### Base Classes for User Processors
+
+Nine base classes in `protocols.py` for explicit variant declaration:
+`BaseSource`, `BaseThreadSource`, `BaseProcessSource`, `BaseProcessor`, `BaseThreadProcessor`, `BaseThreadPoolProcessor`, `BaseProcessPoolProcessor`, `BaseSink`, `BaseThreadSink`.
+
+User processors inherit to declare variant. Shipped processors stay variant-agnostic and use config-driven assembly via `NodeConfig` in YAML.
+
+### Config-Driven Node Assembly
+
+- `NodeVariant` + `NodeConfig` in `config/schema.py` -- declare nodes with class_path, variant, params
+- `engine/assembly.py` -- import, resolve, wrap, register
+- `providers/node_assembly_provider.py` -- DI provider assembles config-driven nodes
+- `AppConfig.nodes: list[NodeConfig]` replaces old `processors: list[str]`
+
 ### CLI Commands (triton-model-tools)
 
 Run via `uv run triton-model-tools <command>`:

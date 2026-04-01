@@ -5,7 +5,7 @@ Public API re-exports for the triton-redis-connector package.
 
 from __future__ import annotations
 
-from triton_redis_connector.config.schema import AppConfig
+from triton_redis_connector.config.schema import AppConfig, NodeConfig, NodeVariant
 from triton_redis_connector.engine.app import Application
 from triton_redis_connector.engine.context import EventContext, current_context
 from triton_redis_connector.engine.metric_aggregator import MetricAggregator, Tracked
@@ -39,6 +39,15 @@ from triton_redis_connector.preprocessing.protocols import (
     ImagePreprocessorProtocol,
 )
 from triton_redis_connector.protocols import (
+    BaseProcessor,
+    BaseProcessPoolProcessor,
+    BaseProcessSource,
+    BaseSink,
+    BaseSource,
+    BaseThreadPoolProcessor,
+    BaseThreadProcessor,
+    BaseThreadSink,
+    BaseThreadSource,
     Counter,
     Envelope,
     Gauge,
@@ -64,12 +73,22 @@ from triton_redis_connector.providers import (
     EngineProvider,
     InferenceProvider,
     MetricsProvider,
+    NodeAssemblyProvider,
     PreprocessingProvider,
 )
 
 __all__ = [
     "AppConfig",
     "Application",
+    "BaseProcessPoolProcessor",
+    "BaseProcessSource",
+    "BaseProcessor",
+    "BaseSink",
+    "BaseSource",
+    "BaseThreadPoolProcessor",
+    "BaseThreadProcessor",
+    "BaseThreadSink",
+    "BaseThreadSource",
     "ClientPreprocessor",
     "ConfigProvider",
     "ConnectorProvider",
@@ -99,6 +118,9 @@ __all__ = [
     "MetricRecorder",
     "MetricsProvider",
     "MultiProcessProcessor",
+    "NodeAssemblyProvider",
+    "NodeConfig",
+    "NodeVariant",
     "OpenCVDecoder",
     "PipelineRegistry",
     "PreprocessingProvider",

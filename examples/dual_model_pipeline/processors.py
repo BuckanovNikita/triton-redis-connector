@@ -28,6 +28,7 @@ from triton_redis_connector.errors.models import InferenceError
 from triton_redis_connector.inference.worker import InferenceWorker
 from triton_redis_connector.preprocessing.decoder import TurboJPEGDecoder
 from triton_redis_connector.preprocessing.letterbox import LetterBoxPreprocessor
+from triton_redis_connector.protocols import BaseThreadProcessor
 from triton_shared_models.nms import nms
 
 from examples.dual_model_pipeline.events import (
@@ -46,12 +47,17 @@ DALI_ENSEMBLE_MODEL = "yolo11s_960x608_dali_ensemble"
 YOLO26L_MODEL = "yolo26l"
 
 
-class CameraBranchRouter:
+class CameraBranchRouter(
+    BaseThreadProcessor[SteelInspectionInput, EvenCameraFrame | OddCameraFrame],
+):
     """Routes inspection input to even/odd camera frame events.
 
     Even camera_no -> EvenCameraFrame (metal_type="HK", DALI path)
     Odd camera_no  -> OddCameraFrame  (metal_type="GK", TurboJPEG path)
     """
+
+    def __init__(self) -> None:  # noqa: D107
+        super().__init__()
 
     def __call__(self, event: SteelInspectionInput) -> EvenCameraFrame | OddCameraFrame | None:
         """Read image from filesystem and route based on camera_no parity."""
@@ -85,12 +91,17 @@ class CameraBranchRouter:
         )
 
 
-class DaliPreprocessor:
+class DaliPreprocessor(
+    BaseThreadProcessor[EvenCameraFrame, MetadataInferenceInput],
+):
     """Wraps raw image bytes into an InferenceInput for the DALI ensemble.
 
     The DALI ensemble handles decoding and preprocessing on the Triton side,
     so we pass raw JPEG/PNG bytes as UINT8 input.
     """
+
+    def __init__(self) -> None:  # noqa: D107
+        super().__init__()
 
     def __call__(self, event: EvenCameraFrame) -> MetadataInferenceInput | None:
         """Wrap raw bytes as InferenceInput for DALI ensemble."""
@@ -110,7 +121,9 @@ class DaliPreprocessor:
         )
 
 
-class TurboJpegPreprocessor:
+class TurboJpegPreprocessor(
+    BaseThreadProcessor[OddCameraFrame, MetadataInferenceInput],
+):
     """Decodes image via TurboJPEG and preprocesses with LetterBox for yolo26l.
 
     Standard client-side preprocessing path:
@@ -118,6 +131,7 @@ class TurboJpegPreprocessor:
     """
 
     def __init__(self, target_size: tuple[int, int] = (640, 640)) -> None:  # noqa: D107
+        super().__init__()
         self._decoder = TurboJPEGDecoder()
         self._preprocessor = LetterBoxPreprocessor(target_size=target_size)
 
@@ -148,7 +162,9 @@ class TurboJpegPreprocessor:
         )
 
 
-class MetadataInferenceWorker:
+class MetadataInferenceWorker(
+    BaseThreadProcessor[MetadataInferenceInput, MetadataInferenceOutput | InferenceError],
+):
     """Wraps InferenceWorker to preserve pipeline metadata across inference.
 
     Delegates the actual Triton gRPC call to InferenceWorker, then re-attaches
@@ -156,6 +172,7 @@ class MetadataInferenceWorker:
     """
 
     def __init__(self, grpc_url: str) -> None:  # noqa: D107
+        super().__init__()
         self._worker = InferenceWorker(grpc_url=grpc_url)
 
     def __call__(self, event: MetadataInferenceInput) -> MetadataInferenceOutput | InferenceError | None:
@@ -178,7 +195,9 @@ class MetadataInferenceWorker:
         )
 
 
-class InspectionPostProcessor:
+class InspectionPostProcessor(
+    BaseThreadProcessor[MetadataInferenceOutput, InspectionResult],
+):
     """Parses YOLO output tensors into InspectionResult.
 
     Handles both DALI ensemble (OUTPUT_DETECTIONS) and standard model (output0)
@@ -191,6 +210,7 @@ class InspectionPostProcessor:
         iou_threshold: float = DEFAULT_IOU_THRESHOLD,
     ) -> None:
         """Initialize with confidence and IoU thresholds for NMS filtering."""
+        super().__init__()
         self._conf_threshold = conf_threshold
         self._iou_threshold = iou_threshold
 

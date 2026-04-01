@@ -130,8 +130,16 @@ Verify each component:
 
 - **New code** should be pure business logic with NO `stop` event, NO threading
   primitives, NO retry logic. Framework wraps via `engine/wrappers.py`.
-- **Flag** new processors/sources/sinks that contain `self.stop = threading.Event()` —
-  they should use wrappers instead.
+- **Base class processors**: User processors that inherit from `BaseThreadProcessor`,
+  `BaseThreadSink`, etc. are valid. Do NOT flag `self.stop = threading.Event()` when
+  it comes from `super().__init__()` in a base class.
+- **Config-driven nodes**: Shipped processors assembled from `AppConfig.nodes` via
+  `assemble_all()`. Verify `NodeConfig` entries have valid class paths and variant values.
+- **Flag** manual wrapping (`DetachedThreadProcessor(MyProcessor())`) when the processor
+  already inherits from a base class — double-wrapping is an error.
+- **Flag** new processors/sources/sinks that contain `self.stop = threading.Event()`
+  directly (not via base class `super().__init__()`) — they should use base classes
+  or wrappers instead.
 - **Wrappers** (`DetachedThreadSource`, `DetachedThreadProcessor`, `ThreadedProcessor`,
   `MultiProcessProcessor`, `DetachedThreadSink`) add `stop`, `variant`, and optional
   `MetricAggregator`. Verify wrappers satisfy `WrappedNode` protocol.

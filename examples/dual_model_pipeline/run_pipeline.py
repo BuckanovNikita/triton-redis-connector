@@ -40,16 +40,10 @@ from triton_redis_connector.connectors.redis_stream import (
     RedisStreamSource,
 )
 from triton_redis_connector.engine.app import Application
+from triton_redis_connector.engine.assembly import assemble_all
 from triton_redis_connector.engine.queue_bus import QueueBus
 from triton_redis_connector.engine.registry import PipelineRegistry
-from triton_redis_connector.engine.shipped_processors import (
-    EnvelopeExtractor,
-    EventSerializer,
-    LogErrorSink,
-)
-from triton_redis_connector.engine.wrappers import DetachedThreadProcessor, DetachedThreadSink
 
-from examples.dual_model_pipeline.events import InspectionResult, SteelInspectionInput
 from examples.dual_model_pipeline.processors import (
     CameraBranchRouter,
     DaliPreprocessor,
@@ -83,25 +77,20 @@ def main() -> None:
     output_connector = RedisStreamOutputConnector(redis_client, sink_cfg)
 
     registry = PipelineRegistry()
+
     registry.register("redis_source", RedisStreamSource(input_connector, source_cfg))
-    registry.register(
-        "input_extractor",
-        DetachedThreadProcessor(EnvelopeExtractor(SteelInspectionInput)),
-    )
-    registry.register("branch_router", DetachedThreadProcessor(CameraBranchRouter()))
-    registry.register("even_preprocessor", DetachedThreadProcessor(DaliPreprocessor()))
-    registry.register("odd_preprocessor", DetachedThreadProcessor(TurboJpegPreprocessor()))
+    registry.register("redis_sink", RedisStreamSink(output_connector))
+
+    assemble_all(config.nodes, registry)
+
+    registry.register("branch_router", CameraBranchRouter())
+    registry.register("even_preprocessor", DaliPreprocessor())
+    registry.register("odd_preprocessor", TurboJpegPreprocessor())
     registry.register(
         "inference",
-        DetachedThreadProcessor(MetadataInferenceWorker(grpc_url=config.inference.grpc_url)),
+        MetadataInferenceWorker(grpc_url=config.inference.grpc_url),
     )
-    registry.register("postprocessor", DetachedThreadProcessor(InspectionPostProcessor()))
-    registry.register(
-        "serializer",
-        DetachedThreadProcessor(EventSerializer[InspectionResult]()),
-    )
-    registry.register("error_sink", DetachedThreadSink(LogErrorSink()))
-    registry.register("redis_sink", RedisStreamSink(output_connector))
+    registry.register("postprocessor", InspectionPostProcessor())
 
     app = Application(config=config, registry=registry, queue_bus=QueueBus(config=config.queues))
 

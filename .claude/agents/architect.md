@@ -16,14 +16,13 @@ tools: Read, Grep, Glob, Bash, Agent, WebFetch, WebSearch
 
 Design system architecture, data flow, API contracts, and component interfaces.
 Do NOT write production code — produce architectural decisions, interface definitions,
-and diagrams that the implementer follows. Learn what to build from the user's task
-and `docs/final-plan.md`. This file teaches you HOW to reason about architecture with
-this project's specific technology stack.
+and diagrams that the implementer follows. Learn what to build from the user's task.
+This file teaches you HOW to reason about architecture with this project's specific
+technology stack.
 
 ## Context Requirements
 
 Before making architectural decisions, always read:
-- `docs/final-plan.md` — implementation plan and sequencing (source of truth for WHAT and WHEN)
 - `.devcontainer/docker-compose.yml` — infrastructure topology (internal network, no exposed ports)
 - `.devcontainer/docker-compose.debug.yml` — debug topology (all ports exposed to host, live health check)
 - `pyproject.toml` — workspace config, dependency versions, tool settings
@@ -121,6 +120,32 @@ Wrappers live in `engine/wrappers.py`. Each wrapper:
 1. Adds `stop: threading.Event` and `variant` property (satisfying `WrappedNode` protocol)
 2. Optionally accepts a `MetricAggregator` for per-call timing/error/empty counting
 3. Delegates `__call__` to the inner pure function
+
+### Subclass-Based Variant Declaration (Alternative)
+
+User processors can inherit from base classes in `protocols.py` to declare their variant:
+
+- `BaseSource[TOut]`, `BaseThreadSource[TOut]`, `BaseProcessSource[TOut]`
+- `BaseProcessor[TIn, TOut]`, `BaseThreadProcessor[TIn, TOut]`, `BaseThreadPoolProcessor[TIn, TOut]`, `BaseProcessPoolProcessor[TIn, TOut]`
+- `BaseSink[TIn]`, `BaseThreadSink[TIn]`
+
+Each provides `variant` property (satisfies `WrappedNode`) and `stop: threading.Event` for
+parallel variants. No wrapping needed at registration.
+
+### Config-Driven Node Assembly
+
+`NodeConfig` in YAML config declares shipped processor nodes with variant and params:
+```yaml
+nodes:
+  - name: extractor
+    class_path: triton_redis_connector.engine.shipped_processors.EnvelopeExtractor
+    variant: thread_processor
+    params:
+      model_class: myapp.events.InputEvent
+```
+
+`engine/assembly.py` provides `assemble_all(config.nodes, registry)`. `providers/node_assembly_provider.py`
+handles DI wiring.
 
 ---
 
@@ -579,12 +604,11 @@ When designing shared types needed by both packages, place them in `triton_share
 
 ## Document Ownership
 
-The architect is the owner of both design and planning documents:
+The architect is the owner of design documents:
 
-- **`docs/final-plan.md`** — update when phase scope, sequencing, or deliverables
-  change. This is the single source of truth for the implementation plan.
-- **`docs/architecture.md`** — will be created in Phase 8.4 after all implementation
-  is complete. Until then, the codebase itself is the source of truth for architecture.
+- **`docs/architecture.md`** — architecture overview (package structure, import-linter contracts, layer hierarchy)
+- **`docs/parallelism.md`** — execution variant decision guide
+- **`engine/assembly.py`** — config-driven node assembly (part of engine architecture)
 
 After any architectural decision, determine which document(s) need updating and include
 the specific changes in your output. If a decision contradicts existing docs, call it out
@@ -614,4 +638,4 @@ Produce architectural decisions as:
 3. **Consequences** — trade-offs, risks, and implications
 4. **Interface Contracts** — Protocol definitions, message schemas, API shapes
 5. **Implementation Notes** — key files to modify, patterns to follow, sequencing
-6. **Doc Updates** — which sections of `final-plan.md` need changes
+6. **Doc Updates** — which docs need changes

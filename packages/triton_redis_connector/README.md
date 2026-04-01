@@ -42,6 +42,39 @@
 
 Все протоколы определены в `triton_redis_connector/protocols.py`. Обёртки для параллельных вариантов -- в `triton_redis_connector/engine/wrappers.py`.
 
+### Базовые классы для пользовательских процессоров
+
+Пользовательские процессоры наследуются от базовых классов, которые явно объявляют вариант исполнения:
+
+```python
+from triton_redis_connector import BaseThreadProcessor
+
+class MyProcessor(BaseThreadProcessor[InputEvent, OutputEvent]):
+    def __init__(self, param: str) -> None:
+        super().__init__()
+        self._param = param
+
+    def __call__(self, event: InputEvent) -> OutputEvent | None:
+        return process(event)
+
+registry.register("proc", MyProcessor("value"))
+```
+
+### Сборка из конфигурации
+
+Встроенные процессоры собираются из YAML-конфигурации:
+
+```yaml
+nodes:
+  - name: input_extractor
+    class_path: triton_redis_connector.engine.shipped_processors.EnvelopeExtractor
+    variant: thread_processor
+    params:
+      model_class: myapp.events.InputEvent
+```
+
+Функция `assemble_all()` импортирует классы, подставляет параметры, оборачивает в нужный вариант и регистрирует в пайплайне.
+
 ## Построение графа
 
 Граф строится автоматически по `__call__`-сигнатурам. `PipelineRegistry` инспектирует типовые аннотации каждого узла и создает ребра по совпадению типов:
@@ -200,4 +233,4 @@ triton_redis_connector/
   routers/        -- FieldBasedRouter, BroadcastRouter
 ```
 
-Подробная архитектура будет в `docs/architecture.md` после завершения плана (см. [docs/final-plan.md](../../docs/final-plan.md)).
+Подробная архитектура описана в [docs/architecture.md](../../docs/architecture.md).

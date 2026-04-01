@@ -112,7 +112,7 @@ class PipelineRegistry:
             raise TypeError(msg)
         graph_node = GraphNode(name=name, instance=node, variant=variant)
 
-        hints = typing.get_type_hints(node.__call__, include_extras=True)
+        hints = self._get_call_hints(node)
 
         if variant not in SOURCE_VARIANTS:
             input_type = self._get_input_type(hints)
@@ -263,6 +263,26 @@ class PipelineRegistry:
 
         return errors
 
+    @staticmethod
+    def _get_call_hints(node: object) -> dict[str, type]:
+        """Get type hints from __call__, falling back to inner callable for wrappers.
+
+        PEP 695 generic wrappers with ``from __future__ import annotations``
+        have unresolved TypeVar forward references that cause NameError in
+        ``typing.get_type_hints``. When that happens, inspect ``_inner``
+        attribute (set by framework wrappers) to get concrete type hints.
+        """
+        try:
+            return typing.get_type_hints(node.__call__, include_extras=True)  # type: ignore[operator]
+        except (NameError, AttributeError):
+            inner = getattr(node, "_inner", None)
+            if inner is not None:
+                try:
+                    return typing.get_type_hints(inner.__call__, include_extras=True)
+                except (NameError, AttributeError):
+                    pass
+            return {}
+
     def _detect_variant(self, node: object) -> ExecutionVariant:
         """Detect the execution variant of a node.
 
@@ -280,8 +300,7 @@ class PipelineRegistry:
 
     def _infer_variant_from_signature(self, node: object) -> ExecutionVariant:
         """Infer execution variant from __call__ parameter count and stop attribute."""
-        call_method = node.__call__  # type: ignore[operator]
-        hints = typing.get_type_hints(call_method, include_extras=True)
+        hints = self._get_call_hints(node)
         param_count = len([k for k in hints if k != "return"])
         has_stop = self._has_stop_event(node)
 

@@ -16,7 +16,7 @@ sources: []
 
 sinks: []
 
-processors: []
+nodes: []
 
 queues:
   maxsize: 1000

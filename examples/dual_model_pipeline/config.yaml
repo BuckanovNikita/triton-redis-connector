@@ -32,6 +32,21 @@ preprocessing:
 queues:
   maxsize: 100
 
+nodes:
+  - name: input_extractor
+    class_path: triton_redis_connector.engine.shipped_processors.EnvelopeExtractor
+    variant: thread_processor
+    params:
+      model_class: examples.dual_model_pipeline.events.SteelInspectionInput
+
+  - name: serializer
+    class_path: triton_redis_connector.engine.shipped_processors.EventSerializer
+    variant: thread_processor
+
+  - name: error_sink
+    class_path: triton_redis_connector.engine.shipped_processors.LogErrorSink
+    variant: thread_sink
+
 metrics:
   output_stream: metrics
   triton_poll_interval_s: 10.0

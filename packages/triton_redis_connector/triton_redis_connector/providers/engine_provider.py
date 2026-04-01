@@ -14,6 +14,7 @@ from triton_redis_connector.engine.registry import PipelineRegistry
 from triton_redis_connector.metrics.buffer import MetricBuffer  # noqa: TC001
 from triton_redis_connector.metrics.emitter import MetricEmitter  # noqa: TC001
 from triton_redis_connector.metrics.triton_collector import TritonMetricsCollector  # noqa: TC001
+from triton_redis_connector.providers.node_assembly_provider import NodesAssembled  # noqa: TC001
 from triton_redis_connector.providers.scopes import ConnectorScope
 
 
@@ -39,6 +40,7 @@ class EngineProvider(Provider):
         metric_buffer: MetricBuffer,
         triton_collector: TritonMetricsCollector,
         metric_emitter: MetricEmitter,
+        _nodes_assembled: NodesAssembled,
     ) -> Application:
         return Application(
             config=config,
