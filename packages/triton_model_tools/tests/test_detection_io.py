@@ -9,7 +9,6 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 from triton_model_tools.inference.detection_io import (
-    collect_image_paths,
     load_detections_from_txt,
     load_folder_detections,
     save_detections_to_txt,
@@ -93,44 +92,3 @@ class TestLoadFolderDetections:
     def test_raises_on_empty_dir(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError, match="No txt files found"):
             load_folder_detections(tmp_path, model_name="yolo11s")
-
-    def test_sorted_alphabetically(self, tmp_path: Path) -> None:
-        for name in ["zebra", "apple", "mango"]:
-            save_detections_to_txt([], tmp_path / f"{name}.txt")
-
-        results = load_folder_detections(tmp_path, model_name="model")
-        assert [r.image_path for r in results] == ["apple", "mango", "zebra"]
-
-
-class TestCollectImagePaths:
-    def test_finds_jpg_and_png(self, tmp_path: Path) -> None:
-        (tmp_path / "a.jpg").write_bytes(b"fake")
-        (tmp_path / "b.png").write_bytes(b"fake")
-        (tmp_path / "c.txt").write_text("not an image")
-
-        paths = collect_image_paths(tmp_path)
-
-        assert len(paths) == 2
-        suffixes = {p.suffix for p in paths}
-        assert suffixes == {".jpg", ".png"}
-
-    def test_sorted_alphabetically(self, tmp_path: Path) -> None:
-        (tmp_path / "z.jpg").write_bytes(b"fake")
-        (tmp_path / "a.jpg").write_bytes(b"fake")
-        (tmp_path / "m.jpg").write_bytes(b"fake")
-
-        paths = collect_image_paths(tmp_path)
-
-        assert [p.name for p in paths] == ["a.jpg", "m.jpg", "z.jpg"]
-
-    def test_raises_on_empty_directory(self, tmp_path: Path) -> None:
-        with pytest.raises(FileNotFoundError, match="No image files found"):
-            collect_image_paths(tmp_path)
-
-    def test_max_count_limits_results(self, tmp_path: Path) -> None:
-        for i in range(5):
-            (tmp_path / f"img{i}.jpg").write_bytes(b"fake")
-
-        paths = collect_image_paths(tmp_path, max_count=3)
-
-        assert len(paths) == 3

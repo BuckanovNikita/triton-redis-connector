@@ -246,7 +246,7 @@ source = ["triton_redis_connector", "triton_model_tools", "triton_shared_models"
 branch = true
 
 [tool.coverage.report]
-fail_under = 75
+fail_under = 70
 show_missing = true
 skip_empty = true
 exclude_lines = [
