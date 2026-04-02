@@ -42,6 +42,8 @@ class SourceConfig(BaseModel):
     recovery_interleave_ratio: int = Field(default=4, ge=1)
     pending_ttl_s: float = Field(default=60.0, gt=0.0)
     collector_mode: CollectorMode = CollectorMode.RECOVERY
+    recovery_enabled: bool = True
+    recovery_max_rps: int = Field(default=10, ge=1)
 
 
 class SinkConfig(BaseModel):
