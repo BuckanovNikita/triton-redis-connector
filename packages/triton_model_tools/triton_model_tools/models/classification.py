@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
+from triton_shared_models.classification import ClassificationPrediction
 
-
-class ClassificationPrediction(BaseModel):
-    """Single classification prediction with class ID, name, and probability."""
-
-    model_config = ConfigDict(frozen=True)
-
-    class_id: int = Field(ge=0)
-    class_name: str = ""
-    probability: float = Field(ge=0.0, le=1.0)
+__all__ = [
+    "ClassificationPrediction",
+    "FolderClassificationResult",
+    "ImageClassificationResult",
+]
 
 
 class ImageClassificationResult(BaseModel):
