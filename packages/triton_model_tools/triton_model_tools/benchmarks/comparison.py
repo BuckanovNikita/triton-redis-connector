@@ -1,7 +1,7 @@
-"""Prediction comparison utilities for evaluating detection model outputs.
+"""Prediction comparison utilities for evaluating detection and classification model outputs.
 
 Provides IoU computation, detection matching with greedy algorithm,
-and multi-backend comparison summaries.
+multi-backend comparison summaries, and classification accuracy metrics.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
+    from triton_model_tools.models.classification import ImageClassificationResult
     from triton_model_tools.models.detection import Detection, ImageDetectionResult
 
 
@@ -185,3 +186,105 @@ def compare_backends(
         for key, candidate in results_by_backend.items()
         if key != baseline_key
     }
+
+
+# ---------------------------------------------------------------------------
+# Classification comparison
+# ---------------------------------------------------------------------------
+
+TOP_5_K = 5
+
+
+class ClassificationComparisonMetrics(BaseModel):
+    """Accuracy metrics for comparing classification results."""
+
+    model_config = ConfigDict(frozen=True)
+
+    top1_accuracy: float = Field(ge=0.0, le=1.0)
+    top5_accuracy: float = Field(ge=0.0, le=1.0)
+    class_mismatch_rate: float = Field(ge=0.0, le=1.0)
+    total_images: int = Field(ge=0)
+
+
+class ClassificationComparisonSummary(BaseModel):
+    """Per-image and overall classification comparison."""
+
+    model_config = ConfigDict(frozen=True)
+
+    per_image: list[ClassificationComparisonMetrics]
+    overall: ClassificationComparisonMetrics
+
+
+def _compare_single_image(
+    baseline_result: ImageClassificationResult,
+    candidate_result: ImageClassificationResult,
+) -> ClassificationComparisonMetrics:
+    """Compare classification results for a single image pair."""
+    baseline_top1_id = baseline_result.predictions[0].class_id if baseline_result.predictions else -1
+    candidate_top1_id = candidate_result.predictions[0].class_id if candidate_result.predictions else -2
+
+    top1_match = int(baseline_top1_id == candidate_top1_id)
+
+    candidate_top5_ids = {p.class_id for p in candidate_result.predictions[:TOP_5_K]}
+    top5_match = int(baseline_top1_id in candidate_top5_ids) if baseline_result.predictions else 0
+
+    class_mismatch = 1.0 - float(top1_match)
+
+    return ClassificationComparisonMetrics(
+        top1_accuracy=float(top1_match),
+        top5_accuracy=float(top5_match),
+        class_mismatch_rate=class_mismatch,
+        total_images=1,
+    )
+
+
+def compare_classification(
+    baseline: list[ImageClassificationResult],
+    candidate: list[ImageClassificationResult],
+) -> ClassificationComparisonSummary:
+    """Compare candidate classification results against baseline.
+
+    Matches images by image_path. For each matched pair:
+    - Checks if top-1 prediction class_id matches between baseline and candidate
+    - Checks if baseline top-1 class_id appears in candidate top-5
+    - Computes class mismatch rate (1 - top1_accuracy)
+
+    Images present in only one set are treated as mismatches.
+    """
+    baseline_by_path = {r.image_path: r for r in baseline}
+    candidate_by_path = {r.image_path: r for r in candidate}
+
+    all_paths = sorted(set(baseline_by_path) | set(candidate_by_path))
+
+    per_image: list[ClassificationComparisonMetrics] = []
+    total_top1_matches = 0
+    total_top5_matches = 0
+
+    for path in all_paths:
+        if path in baseline_by_path and path in candidate_by_path:
+            metrics = _compare_single_image(baseline_by_path[path], candidate_by_path[path])
+            per_image.append(metrics)
+            total_top1_matches += int(metrics.top1_accuracy > 0)
+            total_top5_matches += int(metrics.top5_accuracy > 0)
+        else:
+            per_image.append(
+                ClassificationComparisonMetrics(
+                    top1_accuracy=0.0,
+                    top5_accuracy=0.0,
+                    class_mismatch_rate=1.0,
+                    total_images=1,
+                ),
+            )
+
+    total = len(all_paths)
+    overall_top1 = total_top1_matches / total if total > 0 else 1.0
+    overall_top5 = total_top5_matches / total if total > 0 else 1.0
+
+    overall = ClassificationComparisonMetrics(
+        top1_accuracy=overall_top1,
+        top5_accuracy=overall_top5,
+        class_mismatch_rate=1.0 - overall_top1,
+        total_images=total,
+    )
+
+    return ClassificationComparisonSummary(per_image=per_image, overall=overall)
