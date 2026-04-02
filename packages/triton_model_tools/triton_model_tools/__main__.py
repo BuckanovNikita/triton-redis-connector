@@ -9,18 +9,12 @@ from loguru import logger
 
 from triton_model_tools.cli import (
     benchmark,
-    benchmark_all,
     compare_folders,
     compare_visual,
     convert,
     e2e_test,
     infer,
-    local_infer,
-    pipeline_benchmark,
-    pipeline_predict,
-    populate_stream,
     predict,
-    validate,
 )
 
 
@@ -33,18 +27,12 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command")
 
     convert.build_parser(subparsers)
-    infer.build_parser(subparsers)
-    local_infer.build_parser(subparsers)
-    benchmark.build_parser(subparsers)
-    benchmark_all.build_parser(subparsers)
-    e2e_test.build_parser(subparsers)
     predict.build_parser(subparsers)
-    pipeline_predict.build_parser(subparsers)
+    infer.build_parser(subparsers)
     compare_folders.build_parser(subparsers)
     compare_visual.build_parser(subparsers)
-    pipeline_benchmark.build_parser(subparsers)
-    populate_stream.build_parser(subparsers)
-    validate.build_parser(subparsers)
+    benchmark.build_parser(subparsers)
+    e2e_test.build_parser(subparsers)
 
     args = parser.parse_args()
 

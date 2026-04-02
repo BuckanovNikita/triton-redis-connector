@@ -130,6 +130,37 @@ class YoloPostprocessor:
             return self._postprocess_end2end(outputs, scale, pad_offset, conf_threshold)
         return self._postprocess_standard(outputs, scale, pad_offset, conf_threshold, iou_threshold)
 
+    def _postprocess_standard(
+        self,
+        outputs: dict[str, npt.NDArray[np.float32]],
+        scale: float,
+        pad_offset: tuple[int, int],
+        conf_threshold: float,
+        iou_threshold: float,
+    ) -> list[Detection]:
+        if self.end2end:
+            logger.warning("end2end model should use _postprocess_end2end, not _postprocess_standard")
+
+        nms_result = _run_nms_pipeline(outputs, conf_threshold, iou_threshold)
+        if nms_result is None:
+            return []
+
+        pad_left, pad_top = pad_offset
+        detections = [
+            Detection(
+                x1=(float(nms_result.boxes_xyxy[idx, 0]) - pad_left) / scale,
+                y1=(float(nms_result.boxes_xyxy[idx, 1]) - pad_top) / scale,
+                x2=(float(nms_result.boxes_xyxy[idx, 2]) - pad_left) / scale,
+                y2=(float(nms_result.boxes_xyxy[idx, 3]) - pad_top) / scale,
+                confidence=float(nms_result.scores[idx]),
+                class_id=int(nms_result.class_ids[idx]),
+            )
+            for idx in nms_result.keep_indices
+        ]
+
+        logger.debug("Standard postprocess: {} detections after NMS (conf >= {})", len(detections), conf_threshold)
+        return detections
+
     def _postprocess_end2end(
         self,
         outputs: dict[str, npt.NDArray[np.float32]],
@@ -162,34 +193,6 @@ class YoloPostprocessor:
             )
 
         logger.debug("End2end postprocess: {} detections (conf >= {})", len(detections), conf_threshold)
-        return detections
-
-    def _postprocess_standard(
-        self,
-        outputs: dict[str, npt.NDArray[np.float32]],
-        scale: float,
-        pad_offset: tuple[int, int],
-        conf_threshold: float,
-        iou_threshold: float,
-    ) -> list[Detection]:
-        nms_result = _run_nms_pipeline(outputs, conf_threshold, iou_threshold)
-        if nms_result is None:
-            return []
-
-        pad_left, pad_top = pad_offset
-        detections = [
-            Detection(
-                x1=(float(nms_result.boxes_xyxy[idx, 0]) - pad_left) / scale,
-                y1=(float(nms_result.boxes_xyxy[idx, 1]) - pad_top) / scale,
-                x2=(float(nms_result.boxes_xyxy[idx, 2]) - pad_left) / scale,
-                y2=(float(nms_result.boxes_xyxy[idx, 3]) - pad_top) / scale,
-                confidence=float(nms_result.scores[idx]),
-                class_id=int(nms_result.class_ids[idx]),
-            )
-            for idx in nms_result.keep_indices
-        ]
-
-        logger.debug("Standard postprocess: {} detections after NMS (conf >= {})", len(detections), conf_threshold)
         return detections
 
 

@@ -1,4 +1,4 @@
-"""Run YOLO inference on a folder of images via Triton."""
+"""Run YOLO inference on a folder of images via Triton or local ONNX."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def build_parser(subparsers: SubParsers) -> None:
     """Register the ``infer`` subcommand."""
     infer_parser = subparsers.add_parser(
         "infer",
-        help="Run YOLO inference on a folder of images via Triton",
+        help="Run YOLO inference on a folder of images via Triton or local ONNX",
     )
     infer_parser.add_argument(
         "--image-dir",
@@ -32,7 +32,13 @@ def build_parser(subparsers: SubParsers) -> None:
         "--model",
         type=str,
         required=True,
-        help="Triton model name (e.g. yolo11s, yolo26s)",
+        help="Triton model name (e.g. yolo11s) or ONNX model path with --local",
+    )
+    infer_parser.add_argument(
+        "--local",
+        action="store_true",
+        default=False,
+        help="Use local ONNX runtime instead of Triton (--model is path to .onnx file)",
     )
     infer_parser.add_argument(
         "--triton-url",
@@ -79,8 +85,68 @@ def build_parser(subparsers: SubParsers) -> None:
     infer_parser.set_defaults(func=run)
 
 
-def run(args: argparse.Namespace) -> None:
-    """Execute the ``infer`` subcommand."""
+def _run_local(args: argparse.Namespace) -> None:
+    from triton_model_tools.inference.local_folder_inference import run_local_folder_inference  # noqa: PLC0415
+
+    model_path = Path(args.model).resolve()
+    image_dir: Path = args.image_dir.resolve()
+    target_size: int | tuple[int, int] = args.target_size
+    conf_threshold: float = args.conf_threshold
+    iou_threshold: float = args.iou_threshold
+    output_dir: Path | None = args.output_dir
+    force_end2end: bool = args.end2end
+
+    logger.info("ONNX Local Inference")
+    logger.info("Model: {}", model_path)
+    logger.info("Image dir: {}", image_dir)
+    logger.info("Input size: {}", target_size)
+
+    result = run_local_folder_inference(
+        model_path=model_path,
+        image_dir=image_dir,
+        target_size=target_size,
+        conf_threshold=conf_threshold,
+        iou_threshold=iou_threshold,
+        end2end=force_end2end,
+    )
+
+    logger.info("Results: {} images processed", len(result.results))
+    logger.info("Total time: {:.2f}s", result.total_time_s)
+    logger.info("Average time: {:.1f}ms per image", result.avg_time_ms)
+
+    total_detections = sum(len(r.detections) for r in result.results)
+    logger.info("Total detections: {}", total_detections)
+
+    if output_dir is not None:
+        from triton_model_tools.inference.detection_io import save_detections_to_txt  # noqa: PLC0415
+
+        resolved_output_dir = output_dir.resolve()
+        resolved_output_dir.mkdir(parents=True, exist_ok=True)
+        for img_result in result.results:
+            stem = Path(img_result.image_path).stem
+            save_detections_to_txt(img_result.detections, resolved_output_dir / f"{stem}.txt")
+        logger.info("Saved detection txt files to {}", resolved_output_dir)
+
+    for img_result in result.results:
+        logger.info(
+            "  {}: {} detections ({:.1f}ms)",
+            img_result.image_path,
+            len(img_result.detections),
+            img_result.inference_time_ms,
+        )
+        for det in img_result.detections:
+            logger.info(
+                "    class={} conf={:.3f} bbox=({:.0f},{:.0f},{:.0f},{:.0f})",
+                det.class_id,
+                det.confidence,
+                det.x1,
+                det.y1,
+                det.x2,
+                det.y2,
+            )
+
+
+def _run_triton(args: argparse.Namespace) -> None:
     from triton_model_tools.inference.folder_inference import run_folder_inference  # noqa: PLC0415
     from triton_model_tools.models import discover_models  # noqa: PLC0415
 
@@ -149,3 +215,12 @@ def run(args: argparse.Namespace) -> None:
                 det.x2,
                 det.y2,
             )
+
+
+def run(args: argparse.Namespace) -> None:
+    """Execute the ``infer`` subcommand."""
+    local: bool = args.local
+    if local:
+        _run_local(args)
+    else:
+        _run_triton(args)

@@ -19,17 +19,20 @@ class TestMainEntryPoint:
 
     def test_main_handles_value_error(self, tmp_path: Path) -> None:
         with (
-            patch("sys.argv", ["triton-model-tools", "validate", "-r", str(tmp_path)]),
-            patch("triton_model_tools.export.validate.validate_repository", side_effect=ValueError("bad model")),
+            patch("sys.argv", ["triton-model-tools", "infer", "--image-dir", str(tmp_path), "-m", "yolo11s"]),
+            patch(
+                "triton_model_tools.inference.folder_inference.run_folder_inference",
+                side_effect=ValueError("bad model"),
+            ),
             pytest.raises(SystemExit, match="1"),
         ):
             main()
 
     def test_main_handles_keyboard_interrupt(self, tmp_path: Path) -> None:
         with (
-            patch("sys.argv", ["triton-model-tools", "validate", "-r", str(tmp_path)]),
+            patch("sys.argv", ["triton-model-tools", "infer", "--image-dir", str(tmp_path), "-m", "yolo11s"]),
             patch(
-                "triton_model_tools.export.validate.validate_repository",
+                "triton_model_tools.inference.folder_inference.run_folder_inference",
                 side_effect=KeyboardInterrupt,
             ),
             pytest.raises(SystemExit, match="130"),
