@@ -5,6 +5,7 @@ description: >
   strict typing, loguru logging, pydantic models, execution variant patterns.
   Knows tritonclient and redis-py APIs in depth. Use when implementing features,
   fixing bugs, or writing new modules. Always runs linters after writing code.
+model: opus
 tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 ---
 

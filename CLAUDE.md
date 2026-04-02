@@ -38,14 +38,14 @@ uv run vulture                         # dead code detection
 
 ## Triton Version Management
 
-Project supports multiple NVIDIA Triton versions via `.env` file at repo root and uv dependency groups.
+Project supports multiple NVIDIA Triton versions via `.env` file at repo root and uv extras.
 
 ### How it works
 
 1. **`.env`** at repo root sets `TRITON_VERSION` (e.g., `25.03` or `26.02`)
 2. **Docker compose** reads `${TRITON_VERSION}` for container image tags
-3. **Root `pyproject.toml`** has conflicting dependency groups `triton-25-03` and `triton-26-02`
-4. **`dev` group** includes one of them (currently `triton-26-02`)
+3. **Root `pyproject.toml`** has conflicting extras `triton-25-03` and `triton-26-02`
+4. **`uv sync --extra triton-26-02`** selects which version to install
 
 ### Version matrix
 
@@ -68,22 +68,19 @@ Project supports multiple NVIDIA Triton versions via `.env` file at repo root an
 # 1. Edit .env
 echo TRITON_VERSION=25.03 > .env
 
-# 2. Switch dependency group in root pyproject.toml:
-#    Change { include-group = "triton-26-02" } → { include-group = "triton-25-03" }
+# 2. Re-lock and sync with the matching extra
+uv lock && uv sync --all-groups --extra triton-25-03
 
-# 3. Re-lock and sync
-uv lock && uv sync
-
-# 4. Restart containers
+# 3. Restart containers
 docker compose -f .devcontainer/docker-compose.debug.yml down
 docker compose -f .devcontainer/docker-compose.debug.yml up -d
 ```
 
 ### Notes for agents
-- When implementing features, check the active Triton version in `.env` and the `dev` group in `pyproject.toml`
+- When implementing features, check the active Triton version in `.env`
 - Base dependency pins are wide (`tritonclient>=2.55.0,<3.0.0`, `numpy>=1.26.0,<3.0.0`) to support both
-- Dependency groups pin exact version ranges per Triton release
-- RTX 5090 (sm_120) requires torch 2.7+ — only works with triton-26-02 group
+- Extras pin exact version ranges per Triton release
+- RTX 5090 (sm_120) requires torch 2.7+ — only works with triton-26-02 extra
 - tritonclient gRPC API is stable across all supported versions (v2 protocol)
 
 ## Architecture

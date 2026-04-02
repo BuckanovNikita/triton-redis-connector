@@ -39,6 +39,7 @@ model_repository/
 *.onnx
 *.plan
 *.engine
+*.pt
 *.savedmodel/
 
 # Image data
@@ -53,3 +54,5 @@ benchmarks/data/
 !test_fixtures/images/*.jpg
 model_repository_offline/
 test_data/**
+e2e_results/**
+local

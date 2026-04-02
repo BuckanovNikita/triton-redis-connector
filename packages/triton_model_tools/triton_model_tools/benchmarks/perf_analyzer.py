@@ -105,7 +105,7 @@ def _build_perf_analyzer_command(config: PerfAnalyzerConfig) -> list[str]:
         str(config.concurrency),
         "--measurement-interval",
         str(config.measurement_interval_ms),
-        "--measurement-count",
+        "--measurement-request-count",
         str(config.num_measurements),
         "--csv",
     ]
