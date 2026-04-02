@@ -52,6 +52,7 @@ services:
     environment:
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
+      DALI_DISABLE_NVML: 1
     volumes:
       - ../model_repository:/models
     shm_size: 1g
