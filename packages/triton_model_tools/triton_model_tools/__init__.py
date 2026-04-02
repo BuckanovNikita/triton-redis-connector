@@ -5,6 +5,12 @@ Public API re-exports for the triton-model-tools package.
 
 from __future__ import annotations
 
+from triton_model_tools.api import (
+    compare_classification_results,
+    compare_detection_results,
+    run_detection,
+    run_local_detection,
+)
 from triton_model_tools.inference import (
     TritonInferenceClient,
     YoloPostprocessor,
@@ -27,4 +33,8 @@ __all__ = [
     "YoloPostProcessorBridge",
     "YoloPostprocessor",
     "YoloPreprocessor",
+    "compare_classification_results",
+    "compare_detection_results",
+    "run_detection",
+    "run_local_detection",
 ]
