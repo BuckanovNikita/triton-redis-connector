@@ -41,6 +41,8 @@ from triton_redis_connector.engine.shipped_processors import (
     LogErrorSink,
 )
 from triton_redis_connector.inference.worker import InferenceWorker
+from triton_redis_connector.metrics.buffer import MetricBuffer
+from triton_redis_connector.metrics.emitter import MetricEmitter
 from triton_redis_connector.providers.shipped_factories import ConfigurableClientPreprocessor
 
 if TYPE_CHECKING:
@@ -93,6 +95,17 @@ def build_application(  # noqa: PLR0913
         for node_name, node in extra_nodes:
             registry.register(node_name, node)
 
+    if metric_buffer is None or metric_emitter is None:
+        resolved_buffer, resolved_emitter = _build_default_metrics(
+            redis_client,
+            config,
+            registry,
+        )
+        if metric_buffer is None:
+            metric_buffer = resolved_buffer
+        if metric_emitter is None:
+            metric_emitter = resolved_emitter
+
     return Application(
         config=config,
         registry=registry,
@@ -101,6 +114,23 @@ def build_application(  # noqa: PLR0913
         triton_collector=triton_collector,
         metric_emitter=metric_emitter,
     )
+
+
+def _build_default_metrics(
+    redis_client: Redis[bytes],
+    config: AppConfig,
+    registry: PipelineRegistry,
+) -> tuple[MetricBuffer, MetricEmitter]:
+    """Create default MetricBuffer and MetricEmitter from config."""
+    buffer = MetricBuffer()
+    emitter = MetricEmitter(
+        buffer=buffer,
+        client=redis_client,
+        stream=config.metrics.output_stream,
+        interval_s=config.metrics.emit_interval_s,
+        known_metrics=registry.all_counter_names,
+    )
+    return buffer, emitter
 
 
 def _register_redis_connectors(

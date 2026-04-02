@@ -305,6 +305,23 @@ class PipelineRegistry:
 
         return errors
 
+    def compute_routing_table(self) -> dict[str, list[str]]:
+        """Build a producer-name → consumer-names routing table.
+
+        Uses the same subtype logic as validation: exact type match,
+        class hierarchy, and structural protocol matching.
+        """
+        table: dict[str, list[str]] = {}
+        for name, node in self._nodes.items():
+            consumers: list[str] = []
+            for out_type in node.output_types:
+                for consumed_type, consumer_names in self._type_consumers.items():
+                    if out_type == consumed_type or self._is_subtype(out_type, consumed_type):
+                        consumers.extend(consumer_names)
+            if consumers:
+                table[name] = list(dict.fromkeys(consumers))
+        return table
+
     @staticmethod
     def _get_call_hints(node: object) -> dict[str, type]:
         """Get type hints from __call__, falling back to inner callable for wrappers.

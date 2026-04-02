@@ -73,6 +73,7 @@ class Application:
         self._stats_sink_writes: dict[str, int] = {}
         self._stats_timer: threading.Timer | None = None
         self._stats_interval: float = 0.0
+        self._routing_table: dict[str, list[str]] = {}
 
     def run(self) -> None:
         """Run the main event loop.
@@ -96,6 +97,7 @@ class Application:
         logger.info("Pipeline graph:\n```mermaid\n{}\n```", mermaid)
 
         dispatch_order = self._registry.get_dispatch_order()
+        self._build_routing_table()
         self._wire_parallel_queues()
         self._start_parallel_variants()
 
@@ -279,6 +281,32 @@ class Application:
             per_node_summary,
         )
 
+    def _build_routing_table(self) -> None:
+        """Precompute producer -> consumer routing from the validated graph.
+
+        Uses the registry's subtype-aware matching (exact types, class
+        hierarchy, and protocol structural matching).  Then prunes edges
+        that would short-circuit the graph: if a produced type has an
+        exact-match consumer, protocol-only matches for that type are
+        dropped to prevent events from bypassing intended intermediate nodes.
+        """
+        raw_table = self._registry.compute_routing_table()
+        exact_consumers = self._registry.type_consumers
+
+        for name, consumers in raw_table.items():
+            node = self._registry.get_node(name)
+            if node is None:
+                continue
+            pruned: list[str] = []
+            for out_type in node.output_types:
+                exact = exact_consumers.get(out_type, [])
+                if exact:
+                    pruned.extend(exact)
+                else:
+                    pruned.extend(consumers)
+            self._routing_table[name] = list(dict.fromkeys(pruned))
+            logger.debug("Routing table: {} -> {}", name, self._routing_table[name])
+
     def _wire_parallel_queues(self) -> None:
         """Pre-create input queues for all non-source nodes (parallel and inline sinks)."""
         for name, node in self._registry.nodes.items():
@@ -331,29 +359,17 @@ class Application:
                     time.sleep(0.1)
 
     def _route_to_consumers(self, node: GraphNode, result: object) -> None:
-        """Route a result from a parallel node to downstream consumer input queues.
-
-        Uses subtype-aware matching: if a consumer is registered for a
-        supertype or protocol that the result satisfies, the result is routed.
-        Both parallel and inline consumers receive events via their input queues.
-        """
-        routed = False
-        for consumed_type, consumer_names in self._registry.type_consumers.items():
-            if not self._type_matches(result, consumed_type):
-                continue
-            for consumer_name in consumer_names:
-                consumer_node = self._registry.get_node(consumer_name)
-                if consumer_node is not None:
-                    queue_name = f"{consumer_name}:input"
-                    self._queue_bus.put(queue_name, result)
-                    routed = True
-
-        if not routed:
+        """Route a result to downstream consumer input queues via precomputed table."""
+        consumer_names = self._routing_table.get(node.name, [])
+        if not consumer_names:
             logger.debug(
                 "No consumer found for {} from node {}",
                 type(result).__name__,
                 node.name,
             )
+            return
+        for consumer_name in consumer_names:
+            self._queue_bus.put(f"{consumer_name}:input", result)
 
     @staticmethod
     def _type_matches(instance: object, target_type: type) -> bool:

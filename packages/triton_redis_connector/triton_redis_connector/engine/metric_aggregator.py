@@ -185,7 +185,10 @@ def extract_field_value(result: object, field_name: str) -> object | None:
 
 def _get_class_attr(cls: type, name: str) -> list[object]:
     """Safely get a list attribute from a class, returning empty list if absent."""
-    for klass in cls.__mro__:
+    mro = getattr(cls, "__mro__", None)
+    if mro is None:
+        return []
+    for klass in mro:
         if name in klass.__dict__:
             val: object = klass.__dict__[name]
             if isinstance(val, list):
