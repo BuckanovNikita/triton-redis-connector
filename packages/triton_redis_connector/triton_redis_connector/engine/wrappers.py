@@ -17,9 +17,6 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
 from triton_redis_connector.engine.metric_aggregator import (
     MetricAggregator,
     extract_event_counters,
@@ -28,7 +25,11 @@ from triton_redis_connector.engine.metric_aggregator import (
     extract_field_value,
 )
 from triton_redis_connector.engine.registry import ExecutionVariant
-from triton_redis_connector.protocols import MetricRecorder, Processor, Sink, Source  # noqa: TC001 — needed at runtime
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from triton_redis_connector.protocols import MetricRecorder
 
 
 def _make_metric(component_name: str, measure: str, value: float) -> object:
@@ -93,16 +94,16 @@ def _call_with_metrics(
 
 
 class DetachedThreadSource[TOut]:
-    """Wraps an inline Source to run in a dedicated thread."""
+    """Wraps a source callable to run in a dedicated thread."""
 
     def __init__(  # noqa: D107
         self,
-        inner: Source[TOut],
+        inner: Callable[[], TOut | None],
         aggregator: MetricAggregator | None = None,
         metric_recorder: MetricRecorder | None = None,
         component_name: str = "",
     ) -> None:
-        self._inner: Source[TOut] = inner
+        self._inner: Callable[[], TOut | None] = inner
         self.aggregator = aggregator
         self._metric_recorder = metric_recorder
         self._component_name = component_name
@@ -119,16 +120,16 @@ class DetachedThreadSource[TOut]:
 
 
 class DetachedProcessSource[TOut]:
-    """Wraps an inline Source to run in a dedicated OS process."""
+    """Wraps a source callable to run in a dedicated OS process."""
 
     def __init__(  # noqa: D107
         self,
-        inner: Source[TOut],
+        inner: Callable[[], TOut | None],
         aggregator: MetricAggregator | None = None,
         metric_recorder: MetricRecorder | None = None,
         component_name: str = "",
     ) -> None:
-        self._inner: Source[TOut] = inner
+        self._inner: Callable[[], TOut | None] = inner
         self.aggregator = aggregator
         self._metric_recorder = metric_recorder
         self._component_name = component_name
@@ -145,16 +146,16 @@ class DetachedProcessSource[TOut]:
 
 
 class DetachedThreadProcessor[TIn, TOut]:
-    """Wraps an inline Processor to run in a dedicated thread."""
+    """Wraps a processor callable to run in a dedicated thread."""
 
     def __init__(  # noqa: D107
         self,
-        inner: Processor[TIn, TOut],
+        inner: Callable[[TIn], TOut | None],
         aggregator: MetricAggregator | None = None,
         metric_recorder: MetricRecorder | None = None,
         component_name: str = "",
     ) -> None:
-        self._inner: Processor[TIn, TOut] = inner
+        self._inner: Callable[[TIn], TOut | None] = inner
         self.aggregator = aggregator
         self._metric_recorder = metric_recorder
         self._component_name = component_name
@@ -171,7 +172,7 @@ class DetachedThreadProcessor[TIn, TOut]:
 
 
 class ThreadedProcessor[TIn, TOut]:
-    """Wraps a single Processor instance for thread-pool execution.
+    """Wraps a single processor callable for thread-pool execution.
 
     The framework creates N ``ThreadedProcessor`` instances (one per worker)
     by calling the user-supplied factory N times and wrapping each result.
@@ -180,12 +181,12 @@ class ThreadedProcessor[TIn, TOut]:
 
     def __init__(  # noqa: D107
         self,
-        inner: Processor[TIn, TOut],
+        inner: Callable[[TIn], TOut | None],
         aggregator: MetricAggregator | None = None,
         metric_recorder: MetricRecorder | None = None,
         component_name: str = "",
     ) -> None:
-        self._inner: Processor[TIn, TOut] = inner
+        self._inner: Callable[[TIn], TOut | None] = inner
         self.aggregator = aggregator
         self._metric_recorder = metric_recorder
         self._component_name = component_name
@@ -202,7 +203,7 @@ class ThreadedProcessor[TIn, TOut]:
 
 
 class MultiProcessProcessor[TIn, TOut]:
-    """Wraps a single Processor instance for process-pool execution.
+    """Wraps a single processor callable for process-pool execution.
 
     Same pattern as ``ThreadedProcessor``: the framework creates N instances
     via a factory, each living in its own OS process with isolated state.
@@ -210,12 +211,12 @@ class MultiProcessProcessor[TIn, TOut]:
 
     def __init__(  # noqa: D107
         self,
-        inner: Processor[TIn, TOut],
+        inner: Callable[[TIn], TOut | None],
         aggregator: MetricAggregator | None = None,
         metric_recorder: MetricRecorder | None = None,
         component_name: str = "",
     ) -> None:
-        self._inner: Processor[TIn, TOut] = inner
+        self._inner: Callable[[TIn], TOut | None] = inner
         self.aggregator = aggregator
         self._metric_recorder = metric_recorder
         self._component_name = component_name
@@ -232,16 +233,16 @@ class MultiProcessProcessor[TIn, TOut]:
 
 
 class DetachedThreadSink[TIn]:
-    """Wraps an inline Sink to run in a dedicated thread."""
+    """Wraps a sink callable to run in a dedicated thread."""
 
     def __init__(  # noqa: D107
         self,
-        inner: Sink[TIn],
+        inner: Callable[[TIn], Any | None],
         aggregator: MetricAggregator | None = None,
         metric_recorder: MetricRecorder | None = None,
         component_name: str = "",
     ) -> None:
-        self._inner: Sink[TIn] = inner
+        self._inner: Callable[[TIn], Any | None] = inner
         self.aggregator = aggregator
         self._metric_recorder = metric_recorder
         self._component_name = component_name

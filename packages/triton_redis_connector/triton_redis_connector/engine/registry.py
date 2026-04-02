@@ -12,7 +12,7 @@ import sys
 import types
 import typing
 from enum import StrEnum, auto
-from typing import TYPE_CHECKING, Any, TypeVar, overload
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -25,11 +25,8 @@ from triton_redis_connector.engine.metric_aggregator import (
     extract_event_counters,
 )
 from triton_redis_connector.protocols import (
-    Processor,
     ProcessPoolProcessor,
     ProcessSource,
-    Sink,
-    Source,
     ThreadPoolProcessor,
     ThreadProcessor,
     ThreadSink,
@@ -37,39 +34,25 @@ from triton_redis_connector.protocols import (
     WrappedNode,
 )
 
-_TIn = TypeVar("_TIn")
-_TOut = TypeVar("_TOut")
-
 
 class ExecutionVariant(StrEnum):
-    """Execution mode for a pipeline node."""
+    """Execution mode for a pipeline node (parallel variants only)."""
 
-    SOURCE = auto()
     THREAD_SOURCE = auto()
     PROCESS_SOURCE = auto()
-    PROCESSOR = auto()
     THREAD_PROCESSOR = auto()
     THREAD_POOL_PROCESSOR = auto()
     PROCESS_POOL_PROCESSOR = auto()
-    SINK = auto()
     THREAD_SINK = auto()
 
 
 SOURCE_VARIANTS = {
-    ExecutionVariant.SOURCE,
     ExecutionVariant.THREAD_SOURCE,
     ExecutionVariant.PROCESS_SOURCE,
 }
 
 SINK_VARIANTS = {
-    ExecutionVariant.SINK,
     ExecutionVariant.THREAD_SINK,
-}
-
-INLINE_VARIANTS = {
-    ExecutionVariant.SOURCE,
-    ExecutionVariant.PROCESSOR,
-    ExecutionVariant.SINK,
 }
 
 
@@ -97,16 +80,7 @@ class PipelineRegistry:
         self._type_consumers: dict[type, list[str]] = {}
         self._aggregators: dict[str, MetricAggregator] = {}
 
-    @overload
-    def register(self, name: str, node: Source[_TOut]) -> None: ...
-    @overload
-    def register(self, name: str, node: Processor[_TIn, _TOut]) -> None: ...
-    @overload
-    def register(self, name: str, node: Sink[_TIn]) -> None: ...
-    @overload
-    def register(self, name: str, node: object) -> None: ...
-
-    def register(self, name: str, node: Source[Any] | Processor[Any, Any] | Sink[Any] | object) -> None:
+    def register(self, name: str, node: object) -> None:
         """Register a pipeline node by inspecting its __call__ type hints."""
         variant = self._detect_variant(node)
         if not callable(node):
@@ -206,39 +180,6 @@ class PipelineRegistry:
     def _any_consumer_matches(cls, produced_type: type, consumed_types: set[type]) -> bool:
         """Check if any consumed type is a supertype of produced_type."""
         return any(produced_type == consumed or cls._is_subtype(produced_type, consumed) for consumed in consumed_types)
-
-    def get_dispatch_order(self) -> list[GraphNode]:
-        """Return inline nodes in topological order for main-loop dispatch.
-
-        Only returns nodes with inline execution variants (Source, Processor, Sink).
-        """
-        inline_nodes = {name: node for name, node in self._nodes.items() if node.variant in INLINE_VARIANTS}
-        if not inline_nodes:
-            return []
-
-        in_degree: dict[str, int] = dict.fromkeys(inline_nodes, 0)
-        adjacency: dict[str, list[str]] = {name: [] for name in inline_nodes}
-
-        for name, node in inline_nodes.items():
-            for out_type in node.output_types:
-                for consumer_name in self._type_consumers.get(out_type, []):
-                    if consumer_name in inline_nodes:
-                        adjacency[name].append(consumer_name)
-                        in_degree[consumer_name] = in_degree.get(consumer_name, 0) + 1
-
-        result: list[GraphNode] = []
-        zero_in: list[str] = sorted([name for name, degree in in_degree.items() if degree == 0])
-
-        while zero_in:
-            current = zero_in.pop(0)
-            result.append(inline_nodes[current])
-            for neighbor in sorted(adjacency.get(current, [])):
-                in_degree[neighbor] -= 1
-                if in_degree[neighbor] == 0:
-                    zero_in.append(neighbor)
-                    zero_in.sort()
-
-        return result
 
     def get_node(self, name: str) -> GraphNode | None:
         """Return a registered node by name, or None if not found."""
@@ -376,49 +317,40 @@ class PipelineRegistry:
         except (NameError, AttributeError):
             return {}
 
+    _PROTOCOL_TO_VARIANT: typing.ClassVar[list[tuple[type, ExecutionVariant]]] = [
+        (ProcessSource, ExecutionVariant.PROCESS_SOURCE),
+        (ThreadSource, ExecutionVariant.THREAD_SOURCE),
+        (ProcessPoolProcessor, ExecutionVariant.PROCESS_POOL_PROCESSOR),
+        (ThreadPoolProcessor, ExecutionVariant.THREAD_POOL_PROCESSOR),
+        (ThreadProcessor, ExecutionVariant.THREAD_PROCESSOR),
+        (ThreadSink, ExecutionVariant.THREAD_SINK),
+    ]
+
     def _detect_variant(self, node: object) -> ExecutionVariant:
         """Detect the execution variant of a node.
 
-        Fast path: if the node implements WrappedNode, use its declared variant.
-        Fallback: uses call signature inspection to infer the variant.
+        If the node implements WrappedNode, use its declared variant.
+        Otherwise checks protocol conformance for parallel variants.
+        Raises TypeError if no variant can be determined.
         """
         if isinstance(node, WrappedNode):
             return ExecutionVariant(node.variant)
 
         if not callable(node):
-            msg = f"Cannot detect execution variant for {type(node).__name__}"
+            msg = f"Cannot detect execution variant for {type(node).__name__}: not callable"
             raise TypeError(msg)
 
-        return self._infer_variant_from_signature(node)
+        for protocol_cls, variant in self._PROTOCOL_TO_VARIANT:
+            if isinstance(node, protocol_cls):
+                return variant
 
-    def _infer_variant_from_signature(self, node: object) -> ExecutionVariant:
-        """Infer execution variant from __call__ parameter count and stop attribute."""
-        hints = self._get_call_hints(node)
-        param_count = len([k for k in hints if k != "return"])
-        has_stop = self._has_stop_event(node)
-
-        if param_count == 0:
-            if has_stop:
-                return ExecutionVariant.THREAD_SOURCE
-            return ExecutionVariant.SOURCE
-
-        return_type = self._unwrap_annotated(hints["return"]) if "return" in hints else None
-        returns_none = return_type is type(None)
-
-        if has_stop and returns_none:
-            return ExecutionVariant.THREAD_SINK
-        if has_stop:
-            return ExecutionVariant.THREAD_PROCESSOR
-        if returns_none:
-            return ExecutionVariant.SINK
-        return ExecutionVariant.PROCESSOR
-
-    def _has_stop_event(self, node: object) -> bool:
-        """Check if a node has a threading.Event stop attribute via protocol checks."""
-        return isinstance(
-            node,
-            (ThreadSource, ProcessSource, ThreadProcessor, ThreadPoolProcessor, ProcessPoolProcessor, ThreadSink),
+        msg = (
+            f"Cannot detect execution variant for {type(node).__name__}: "
+            f"node must implement WrappedNode or a parallel protocol "
+            f"(ThreadSource, ProcessSource, ThreadProcessor, ThreadPoolProcessor, "
+            f"ProcessPoolProcessor, ThreadSink)"
         )
+        raise TypeError(msg)
 
     def _extract_union_types(
         self,

@@ -1,7 +1,7 @@
 """Reusable shipped processors for common pipeline patterns.
 
-Provides ready-made building blocks: envelope extraction, DALI input
-wrapping, client-side preprocessing, event serialization, and error logging.
+Provides ready-made building blocks: DALI input wrapping, client-side
+preprocessing, event serialization, and error logging.
 
 All preprocessors support metadata bypass: if the input event carries a
 ``metadata`` dict, it is copied through to the ``TritonRequest`` without
@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from loguru import logger
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from triton_redis_connector.engine.context import current_context
 from triton_redis_connector.engine.events import TritonRequest
@@ -61,43 +61,6 @@ def _extract_metadata(event: object) -> dict[str, Any]:
     if isinstance(event, _MetadataCarrier):
         return dict(event.metadata)
     return {}
-
-
-class EnvelopeExtractor[T: BaseModel]:
-    """Extracts a typed pydantic payload from an Envelope[bytes].
-
-    Deserializes the envelope's bytes payload into a pydantic model
-    of type T using model_validate_json.
-    """
-
-    def __init__(self, model_class: type[T]) -> None:  # noqa: D107
-        self._model_class = model_class
-        self.__call_hints__: dict[str, type] = {
-            "event": Envelope[bytes],
-            "return": model_class | None,  # type: ignore[dict-item]
-        }
-
-    def __call__(self, event: Envelope[bytes]) -> T | None:
-        """Deserialize envelope payload or original_fields into a pydantic model.
-
-        Tries JSON payload first. When payload is empty (Redis streams without
-        a ``data`` field), falls back to constructing the model from
-        ``original_fields`` key-value pairs.
-        """
-        try:
-            if event.payload:
-                return self._model_class.model_validate_json(event.payload)
-            return self._model_class.model_validate(
-                event.original_fields,
-                strict=False,
-            )
-        except ValidationError:
-            logger.exception(
-                "Failed to deserialize {} from envelope {}",
-                self._model_class.__name__,
-                event.message_id,
-            )
-            return None
 
 
 class DaliTritonRequestBuilder:

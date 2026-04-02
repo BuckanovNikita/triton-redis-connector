@@ -1,4 +1,4 @@
-"""Tests for Application lifecycle — startup, shutdown, inline dispatch."""
+"""Tests for Application lifecycle — startup, shutdown, parallel dispatch."""
 
 from __future__ import annotations
 
@@ -13,7 +13,14 @@ from triton_redis_connector.engine.metric_aggregator import MetricAggregator
 from triton_redis_connector.engine.queue_bus import QueueBus
 from triton_redis_connector.engine.registry import PipelineRegistry
 from triton_redis_connector.metrics.buffer import MetricBuffer
-from triton_redis_connector.protocols import Counter, Gauge, GroupBy
+from triton_redis_connector.protocols import (
+    BaseThreadProcessor,
+    BaseThreadSink,
+    BaseThreadSource,
+    Counter,
+    Gauge,
+    GroupBy,
+)
 
 
 class EventA:
@@ -42,8 +49,9 @@ class EventWithGroupBy:
         self.camera_no = camera_no
 
 
-class SimpleSource:
+class SimpleSource(BaseThreadSource[EventA]):
     def __init__(self) -> None:
+        super().__init__()
         self._events: list[EventA] = []
 
     def add_event(self, event: EventA) -> None:
@@ -55,8 +63,9 @@ class SimpleSource:
         return None
 
 
-class SimpleProcessor:
+class SimpleProcessor(BaseThreadProcessor[EventA, EventB]):
     def __init__(self) -> None:
+        super().__init__()
         self.received: list[EventA] = []
 
     def __call__(self, event: EventA) -> EventB | None:
@@ -64,8 +73,9 @@ class SimpleProcessor:
         return EventB()
 
 
-class SimpleSink:
+class SimpleSink(BaseThreadSink[EventB]):
     def __init__(self) -> None:
+        super().__init__()
         self.received: list[EventB] = []
 
     def __call__(self, event: EventB) -> None:
@@ -112,34 +122,6 @@ class TestApplicationStartup:
         app.shutdown()
         run_thread.join(timeout=2.0)
         assert not run_thread.is_alive()
-
-
-class TestInlineDispatch:
-    def test_dispatches_events_through_pipeline(
-        self, config: AppConfig, registry: PipelineRegistry, queue_bus: QueueBus
-    ) -> None:
-        source = SimpleSource()
-        proc = SimpleProcessor()
-        sink = SimpleSink()
-
-        event_a = EventA()
-        source.add_event(event_a)
-
-        registry.register("src", source)
-        registry.register("proc", proc)
-        registry.register("sink", sink)
-
-        app = Application(config=config, registry=registry, queue_bus=queue_bus)
-
-        run_thread = threading.Thread(target=app.run, daemon=True)
-        run_thread.start()
-        time.sleep(0.1)
-        app.shutdown()
-        run_thread.join(timeout=2.0)
-
-        assert len(proc.received) == 1
-        assert proc.received[0] is event_a
-        assert len(sink.received) == 1
 
 
 class TestShutdown:

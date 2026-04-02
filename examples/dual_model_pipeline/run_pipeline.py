@@ -1,8 +1,7 @@
 """Dual-model steel inspection pipeline: Redis Stream -> Branch -> Triton -> Redis Stream.
 
 Pipeline graph:
-  RedisStreamSource -> EnvelopeExtractor[SteelInspectionInput]
-    -> CameraBranchRouter
+  RedisStreamSource -> CameraBranchRouter
       -> [even] ClientPreprocessor --+-> InferenceWorker
       -> [odd]  ClientPreprocessor --+     -> YoloPostProcessorBridge
                                                 -> ModelResultRouter
@@ -30,7 +29,6 @@ from triton_model_tools.inference.yolo_bridge import YoloPostProcessorBridge
 from triton_redis_connector.config.hydra_app import load_config
 from triton_redis_connector.providers.app_factory import build_application
 
-from examples.dual_model_pipeline.events import SteelInspectionInput
 from examples.dual_model_pipeline.processors import (
     CameraBranchRouter,
     EvenModelSink,
@@ -58,7 +56,6 @@ def main() -> None:
 
     app = build_application(
         config,
-        event_model=SteelInspectionInput,
         postprocessor=YoloPostProcessorBridge(
             conf_threshold=config.pipeline.postprocessor.conf_threshold,
             iou_threshold=config.pipeline.postprocessor.iou_threshold,

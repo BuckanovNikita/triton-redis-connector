@@ -37,21 +37,12 @@ if TYPE_CHECKING:
     from triton_redis_connector.protocols import MetricRecorder
 
 _VARIANT_MAP: dict[NodeVariant, ExecutionVariant] = {
-    NodeVariant.SOURCE: ExecutionVariant.SOURCE,
     NodeVariant.THREAD_SOURCE: ExecutionVariant.THREAD_SOURCE,
     NodeVariant.PROCESS_SOURCE: ExecutionVariant.PROCESS_SOURCE,
-    NodeVariant.PROCESSOR: ExecutionVariant.PROCESSOR,
     NodeVariant.THREAD_PROCESSOR: ExecutionVariant.THREAD_PROCESSOR,
     NodeVariant.THREAD_POOL_PROCESSOR: ExecutionVariant.THREAD_POOL_PROCESSOR,
     NodeVariant.PROCESS_POOL_PROCESSOR: ExecutionVariant.PROCESS_POOL_PROCESSOR,
-    NodeVariant.SINK: ExecutionVariant.SINK,
     NodeVariant.THREAD_SINK: ExecutionVariant.THREAD_SINK,
-}
-
-_INLINE_VARIANTS = {
-    NodeVariant.SOURCE,
-    NodeVariant.PROCESSOR,
-    NodeVariant.SINK,
 }
 
 
@@ -98,17 +89,14 @@ def wrap_with_variant(
     """Wrap a callable node with the appropriate execution variant wrapper.
 
     If *inner* already satisfies ``WrappedNode`` and declares the correct
-    variant, it is returned as-is (idempotent). Inline variants (source,
-    processor, sink) are also returned unwrapped since they need no wrapper.
+    variant, it is returned as-is (idempotent). Otherwise wraps with the
+    framework wrapper for the target parallel variant.
     """
     if isinstance(inner, WrappedNode):
         declared = ExecutionVariant(inner.variant)
         expected = _VARIANT_MAP[target_variant]
         if declared == expected:
             return inner
-
-    if target_variant in _INLINE_VARIANTS:
-        return inner
 
     wrapper_cls = _get_wrapper_class(target_variant)
     return wrapper_cls(inner, aggregator=aggregator, metric_recorder=metric_recorder, component_name=component_name)

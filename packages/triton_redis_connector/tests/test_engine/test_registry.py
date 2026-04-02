@@ -1,19 +1,15 @@
-"""Tests for PipelineRegistry — DAG construction, validation, dispatch order, and metric extraction."""
+"""Tests for PipelineRegistry — DAG construction, validation, and metric extraction."""
 
 from __future__ import annotations
 
-import threading
 from typing import Annotated, ClassVar
 
 import pytest
 from triton_redis_connector.engine.metric_aggregator import Counter, Gauge
 from triton_redis_connector.engine.registry import ExecutionVariant, PipelineRegistry
 from triton_redis_connector.protocols import (
-    BaseProcessor,
     BaseProcessPoolProcessor,
     BaseProcessSource,
-    BaseSink,
-    BaseSource,
     BaseThreadPoolProcessor,
     BaseThreadProcessor,
     BaseThreadSink,
@@ -40,51 +36,37 @@ class EventC:
     pass
 
 
-class SimpleSource:
+class SimpleSource(BaseThreadSource[EventA]):
     def __call__(self) -> EventA | None:
         return EventA()
 
 
-class ThreadedSource:
-    stop = threading.Event()
-
-    def __call__(self) -> EventA | None:
-        return EventA()
-
-
-class UnionSource:
+class UnionSource(BaseThreadSource[EventA | EventB]):
     def __call__(self) -> EventA | EventB | None:
         return EventA()
 
 
-class SimpleProcessor:
+class SimpleProcessor(BaseThreadProcessor[EventA, EventB]):
     def __call__(self, event: EventA) -> EventB | None:
         return EventB()
 
 
-class MultiOutputProcessor:
+class MultiOutputProcessor(BaseThreadProcessor[EventA, EventB | EventC]):
     def __call__(self, event: EventA) -> EventB | EventC | None:
         return EventB()
 
 
-class SimpleSink:
+class SimpleSink(BaseThreadSink[EventB]):
     def __call__(self, event: EventB) -> None:
         return None
 
 
-class ThreadedSink:
-    stop = threading.Event()
-
-    def __call__(self, event: EventB) -> None:
-        return None
-
-
-class ChainProcessor:
+class ChainProcessor(BaseThreadProcessor[EventB, EventC]):
     def __call__(self, event: EventB) -> EventC | None:
         return EventC()
 
 
-class EventCSink:
+class EventCSink(BaseThreadSink[EventC]):
     def __call__(self, event: EventC) -> None:
         return None
 
@@ -95,39 +77,35 @@ def registry() -> PipelineRegistry:
 
 
 class TestVariantDetection:
-    def test_detects_inline_source(self, registry: PipelineRegistry) -> None:
+    def test_detects_thread_source_via_base_class(self, registry: PipelineRegistry) -> None:
         registry.register("src", SimpleSource())
-        node = registry.get_node("src")
-        assert node is not None
-        assert node.variant == ExecutionVariant.SOURCE
-
-    def test_detects_thread_source(self, registry: PipelineRegistry) -> None:
-        registry.register("src", ThreadedSource())
         node = registry.get_node("src")
         assert node is not None
         assert node.variant == ExecutionVariant.THREAD_SOURCE
 
-    def test_detects_inline_processor(self, registry: PipelineRegistry) -> None:
+    def test_detects_thread_processor_via_base_class(self, registry: PipelineRegistry) -> None:
         registry.register("proc", SimpleProcessor())
         node = registry.get_node("proc")
         assert node is not None
-        assert node.variant == ExecutionVariant.PROCESSOR
+        assert node.variant == ExecutionVariant.THREAD_PROCESSOR
 
-    def test_detects_inline_sink(self, registry: PipelineRegistry) -> None:
+    def test_detects_thread_sink_via_base_class(self, registry: PipelineRegistry) -> None:
         registry.register("sink", SimpleSink())
-        node = registry.get_node("sink")
-        assert node is not None
-        assert node.variant == ExecutionVariant.SINK
-
-    def test_detects_thread_sink(self, registry: PipelineRegistry) -> None:
-        registry.register("sink", ThreadedSink())
         node = registry.get_node("sink")
         assert node is not None
         assert node.variant == ExecutionVariant.THREAD_SINK
 
-    def test_raises_on_invalid_node(self, registry: PipelineRegistry) -> None:
-        with pytest.raises(TypeError, match="Cannot detect execution variant"):
+    def test_raises_on_non_callable(self, registry: PipelineRegistry) -> None:
+        with pytest.raises(TypeError, match="not callable"):
             registry.register("bad", object())
+
+    def test_raises_on_plain_callable_without_stop(self, registry: PipelineRegistry) -> None:
+        class PlainCallable:
+            def __call__(self) -> None:
+                pass
+
+        with pytest.raises(TypeError, match="must implement WrappedNode or a parallel protocol"):
+            registry.register("bad", PlainCallable())
 
 
 class TestTypeExtraction:
@@ -202,11 +180,11 @@ class TestValidation:
     def test_union_output_all_consumed_valid(self, registry: PipelineRegistry) -> None:
         registry.register("src", UnionSource())
 
-        class SinkA:
+        class SinkA(BaseThreadSink[EventA]):
             def __call__(self, event: EventA) -> None:
                 return None
 
-        class SinkB:
+        class SinkB(BaseThreadSink[EventB]):
             def __call__(self, event: EventB) -> None:
                 return None
 
@@ -222,41 +200,6 @@ class TestValidation:
         registry.register("sink", EventCSink())
         errors = registry.validate()
         assert errors == []
-
-
-class TestDispatchOrder:
-    def test_returns_inline_nodes_only(self, registry: PipelineRegistry) -> None:
-        registry.register("src", SimpleSource())
-        registry.register("proc", SimpleProcessor())
-        registry.register("sink", SimpleSink())
-        registry.register("thread_src", ThreadedSource())
-        order = registry.get_dispatch_order()
-        names = [n.name for n in order]
-        assert "thread_src" not in names
-        assert "src" in names
-
-    def test_topological_order_source_before_processor(self, registry: PipelineRegistry) -> None:
-        registry.register("proc", SimpleProcessor())
-        registry.register("src", SimpleSource())
-        registry.register("sink", SimpleSink())
-        order = registry.get_dispatch_order()
-        names = [n.name for n in order]
-        assert names.index("src") < names.index("proc")
-        assert names.index("proc") < names.index("sink")
-
-    def test_empty_registry_returns_empty(self, registry: PipelineRegistry) -> None:
-        assert registry.get_dispatch_order() == []
-
-    def test_chain_ordering(self, registry: PipelineRegistry) -> None:
-        registry.register("src", SimpleSource())
-        registry.register("proc1", SimpleProcessor())
-        registry.register("proc2", ChainProcessor())
-        registry.register("sink", EventCSink())
-        order = registry.get_dispatch_order()
-        names = [n.name for n in order]
-        assert names.index("src") < names.index("proc1")
-        assert names.index("proc1") < names.index("proc2")
-        assert names.index("proc2") < names.index("sink")
 
 
 class TestNodeAccess:
@@ -303,11 +246,11 @@ class EventWithGaugeField:
 
 class TestAnnotatedMetricExtraction:
     def test_counter_from_event_class(self, registry: PipelineRegistry) -> None:
-        class Proc:
+        class Proc(BaseThreadProcessor[EventA, EventWithCounter]):
             def __call__(self, event: EventA) -> EventWithCounter | None:
                 return EventWithCounter()
 
-        class CounterSink:
+        class CounterSink(BaseThreadSink[EventWithCounter]):
             def __call__(self, event: EventWithCounter) -> None:
                 pass
 
@@ -317,15 +260,15 @@ class TestAnnotatedMetricExtraction:
         assert "success" in registry.all_counter_names
 
     def test_multiple_counters_from_event_types(self, registry: PipelineRegistry) -> None:
-        class ProcOk:
+        class ProcOk(BaseThreadProcessor[EventA, EventWithCounter | EventWithFailCounter]):
             def __call__(self, event: EventA) -> EventWithCounter | EventWithFailCounter | None:
                 return EventWithCounter()
 
-        class CounterSink:
+        class CounterSink(BaseThreadSink[EventWithCounter]):
             def __call__(self, event: EventWithCounter) -> None:
                 pass
 
-        class FailSink:
+        class FailSink(BaseThreadSink[EventWithFailCounter]):
             def __call__(self, event: EventWithFailCounter) -> None:
                 pass
 
@@ -337,7 +280,7 @@ class TestAnnotatedMetricExtraction:
         assert "fail" in registry.all_counter_names
 
     def test_annotated_does_not_break_output_types(self, registry: PipelineRegistry) -> None:
-        class AnnotatedProc:
+        class AnnotatedProc(BaseThreadProcessor[EventA, EventB]):
             def __call__(self, event: EventA) -> Annotated[EventB, Counter("x")] | None:
                 return EventB()
 
@@ -347,19 +290,19 @@ class TestAnnotatedMetricExtraction:
         assert EventB in node.output_types
 
     def test_all_counter_names(self, registry: PipelineRegistry) -> None:
-        class Proc1:
+        class Proc1(BaseThreadProcessor[EventA, EventWithAlpha]):
             def __call__(self, event: EventA) -> EventWithAlpha | None:
                 return EventWithAlpha()
 
-        class Proc2:
+        class Proc2(BaseThreadProcessor[EventWithAlpha, EventWithBeta]):
             def __call__(self, event: EventWithAlpha) -> EventWithBeta | None:
                 return EventWithBeta()
 
-        class AlphaSink:
+        class AlphaSink(BaseThreadSink[EventWithAlpha]):
             def __call__(self, event: EventWithAlpha) -> None:
                 pass
 
-        class BetaSink:
+        class BetaSink(BaseThreadSink[EventWithBeta]):
             def __call__(self, event: EventWithBeta) -> None:
                 pass
 
@@ -385,14 +328,11 @@ class TestAnnotatedMetricExtraction:
 
 
 _BASE_CLASS_VARIANTS: list[tuple[type, str]] = [
-    (BaseSource, "source"),
     (BaseThreadSource, "thread_source"),
     (BaseProcessSource, "process_source"),
-    (BaseProcessor, "processor"),
     (BaseThreadProcessor, "thread_processor"),
     (BaseThreadPoolProcessor, "thread_pool_processor"),
     (BaseProcessPoolProcessor, "process_pool_processor"),
-    (BaseSink, "sink"),
     (BaseThreadSink, "thread_sink"),
 ]
 
@@ -413,9 +353,7 @@ class TestBaseClassVariantContract:
 
     @pytest.mark.parametrize(("base_cls", "expected_variant"), _BASE_CLASS_VARIANTS)
     def test_satisfies_wrapped_node(self, base_cls: type, expected_variant: str) -> None:
-        instance = base_cls.__new__(base_cls)
-        if hasattr(base_cls.__init__, "__code__") and base_cls.__init__ is not object.__init__:
-            instance.__init__()
+        instance = base_cls()
         assert isinstance(instance, WrappedNode)
         assert instance.variant == expected_variant
 
@@ -435,14 +373,14 @@ class TestBaseClassVariantContract:
         assert node.variant == ExecutionVariant.THREAD_PROCESSOR
 
     def test_registry_detects_base_source_variant(self, registry: PipelineRegistry) -> None:
-        class MySrc(BaseSource[EventA]):
+        class MySrc(BaseThreadSource[EventA]):
             def __call__(self) -> EventA | None:
                 return EventA()
 
         registry.register("src", MySrc())
         node = registry.get_node("src")
         assert node is not None
-        assert node.variant == ExecutionVariant.SOURCE
+        assert node.variant == ExecutionVariant.THREAD_SOURCE
 
     def test_registry_detects_base_sink_variant(self, registry: PipelineRegistry) -> None:
         class MySink(BaseThreadSink[EventB]):

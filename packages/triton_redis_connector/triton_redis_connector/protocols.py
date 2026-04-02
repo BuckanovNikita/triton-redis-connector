@@ -1,4 +1,4 @@
-"""Protocol definitions, Envelope wrapper, and all 9 execution variants.
+"""Protocol definitions, Envelope wrapper, and all 6 parallel execution variants.
 
 This is the leaf layer in the import-linter hierarchy. Every other module
 in this package may import from protocols.py, but protocols.py has zero
@@ -117,19 +117,6 @@ class Envelope(Generic[T]):  # noqa: UP046
 
 
 @runtime_checkable
-class Source(Protocol[TOut_co]):
-    """Inline source. Runs in main loop, polled by framework.
-
-    Framework calls __call__() repeatedly. Return an event when one is
-    ready, None when nothing available. Must not block.
-    """
-
-    def __call__(self) -> TOut_co | None:
-        """Produce an event or return None if nothing available."""
-        ...
-
-
-@runtime_checkable
 class ThreadSource(Protocol[TOut_co]):
     """Threaded source. Runs in a dedicated thread, may block internally.
 
@@ -156,18 +143,6 @@ class ProcessSource(Protocol[TOut_co]):
 
     def __call__(self) -> TOut_co | None:
         """Produce an event or return None if nothing available."""
-        ...
-
-
-@runtime_checkable
-class Processor(Protocol[TIn_contra, TOut_co]):
-    """Inline processor. Runs in main loop, framework dispatches events.
-
-    Return None to filter (drop this event).
-    """
-
-    def __call__(self, event: TIn_contra) -> TOut_co | None:
-        """Transform an event or return None to filter it out."""
         ...
 
 
@@ -210,18 +185,6 @@ class ProcessPoolProcessor(Protocol[TIn_contra, TOut_co]):
 
     def __call__(self, event: TIn_contra) -> TOut_co | None:
         """Transform an event or return None to filter it out."""
-        ...
-
-
-@runtime_checkable
-class Sink(Protocol[TIn_contra]):
-    """Inline sink. Runs in main loop.
-
-    Terminal node with side effects. Can optionally return metric events.
-    """
-
-    def __call__(self, event: TIn_contra) -> Any | None:  # noqa: ANN401
-        """Consume an event and optionally return a metric event."""
         ...
 
 
@@ -359,18 +322,6 @@ class AggregationRuleProtocol(Protocol[TEvent_contra]):
 # ---------------------------------------------------------------------------
 
 
-class BaseSource[TOut]:
-    """Inline source. Subclass and override ``__call__``."""
-
-    @property
-    def variant(self) -> str:  # noqa: D102
-        return "source"
-
-    def __call__(self) -> TOut | None:
-        """Produce an event or return None if nothing available."""
-        raise NotImplementedError
-
-
 class BaseThreadSource[TOut]:
     """Threaded source with dedicated thread. Subclass and override ``__call__``."""
 
@@ -398,18 +349,6 @@ class BaseProcessSource[TOut]:
 
     def __call__(self) -> TOut | None:
         """Produce an event or return None if nothing available."""
-        raise NotImplementedError
-
-
-class BaseProcessor[TIn, TOut]:
-    """Inline processor. Subclass and override ``__call__``."""
-
-    @property
-    def variant(self) -> str:  # noqa: D102
-        return "processor"
-
-    def __call__(self, event: TIn) -> TOut | None:
-        """Transform an event or return None to filter it out."""
         raise NotImplementedError
 
 
@@ -455,18 +394,6 @@ class BaseProcessPoolProcessor[TIn, TOut]:
 
     def __call__(self, event: TIn) -> TOut | None:
         """Transform an event or return None to filter it out."""
-        raise NotImplementedError
-
-
-class BaseSink[TIn]:
-    """Inline sink. Subclass and override ``__call__``."""
-
-    @property
-    def variant(self) -> str:  # noqa: D102
-        return "sink"
-
-    def __call__(self, event: TIn) -> Any | None:  # noqa: ANN401
-        """Consume an event and optionally return a metric event."""
         raise NotImplementedError
 
 

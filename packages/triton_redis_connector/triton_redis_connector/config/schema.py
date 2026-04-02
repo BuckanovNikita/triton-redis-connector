@@ -152,20 +152,17 @@ class OutputRoutingConfig(BaseModel):
 
 
 class NodeVariant(StrEnum):
-    """Execution variant for config-driven pipeline nodes.
+    """Execution variant for config-driven pipeline nodes (parallel only).
 
     Values match ``ExecutionVariant`` in ``engine.registry`` so the assembly
     layer can convert between them with a simple ``ExecutionVariant(value)``.
     """
 
-    SOURCE = auto()
     THREAD_SOURCE = auto()
     PROCESS_SOURCE = auto()
-    PROCESSOR = auto()
     THREAD_PROCESSOR = auto()
     THREAD_POOL_PROCESSOR = auto()
     PROCESS_POOL_PROCESSOR = auto()
-    SINK = auto()
     THREAD_SINK = auto()
 
 
