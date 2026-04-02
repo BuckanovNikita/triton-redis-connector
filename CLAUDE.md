@@ -85,6 +85,13 @@ docker compose -f .devcontainer/docker-compose.debug.yml up -d
 
 ## Architecture
 
+- perf_analyzer orchestration via bash scripts in `scripts/`, not Python wrappers
+- No memory-limiting code in versioned repo — local PC restrictions belong in local scripts
+- No `model_repository_offline` — use explicit model control mode with single `model_repository`
+- Tool output defaults to `e2e_results/` (gitignored), never `/tmp`
+- Dynamic batching enabled by default on model export, with `preferred_batch_size` auto-set
+- Use tqdm for progress bars in iteration loops (benchmarks, inference, image processing)
+
 ### Workspace Structure
 
 ```
@@ -256,6 +263,9 @@ Debug compose uses `/v2/health/live` (not `/v2/health/ready`) so Triton passes h
 - **Avoid short functions**: inline functions under 4 lines if used fewer than 4 times
 - **Imports**: top-level, never lazy — unless the dependency is truly optional (not in pyproject.toml) or it's a CLI subcommand handler in `__main__.py`. All deps listed in pyproject.toml are non-optional and must be imported at module level.
 - **Config file sync**: when moving/renaming files, update ALL config paths: mypy `exclude` in `pyproject.toml`, pyright `exclude` in `pyrightconfig.json`, vulture `paths`/`ignore_names`, and import-linter contracts
+- **No custom IoU/NMS**: use `torchvision.ops.box_iou` / `torchvision.ops.nms` (torchvision is allowed)
+- **No re-export modules**: import from source package directly, never create proxy modules that only re-export
+- **Explicit protocol inheritance**: processors/decoders must explicitly inherit protocol classes, not rely on structural typing
 
 ## Metrics Policy
 
@@ -279,6 +289,14 @@ Debug compose uses `/v2/health/live` (not `/v2/health/ready`) so Triton passes h
 - **Protocol isinstance checks**: static type checkers (mypy/pyright strict) already verify protocol conformance
 - **Constant counts/values**: `assert len(REGISTRY) == 3` breaks when items are added and tests nothing
 - **Generated file content**: never assert on pbtxt strings, generated scripts, or config file content — only integration tests running Triton on the output can verify correctness
+
+- **Pydantic/framework validation**: field constraints, enum values, frozen models — these are library guarantees
+- **Download/network tools**: one-time use utilities, not worth unit testing
+- **Simple file I/O**: collect paths, save txt — cover by e2e tests only
+
+E2E means real infrastructure (Triton, Redis), not mocks of infrastructure.
+
+Coverage target: 70% minimum. Exclude simple utility modules from coverage.
 
 **Good tests verify**: validation logic, algorithms, error paths, serialization roundtrips, edge cases, and integration behavior (deploy to Triton + run inference).
 

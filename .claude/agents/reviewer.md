@@ -461,3 +461,16 @@ Tests run with `pytest-xdist -n auto`. Verify:
 - Database/Redis fixtures use unique key prefixes or are properly isolated
 - conftest.py fixtures have correct scope (function > module > session)
 - No tests depend on execution order
+
+---
+
+## Antipattern Checklist
+
+Flag these patterns during review:
+
+- **Pydantic-only tests**: tests that only verify pydantic validation (field constraints, enum values, frozen models) — these are library guarantees, not project logic
+- **Re-export modules**: files that only import and re-export from another package — import from source directly
+- **Unfinished wiring**: docstring says "wrapped with X" but code doesn't actually wrap — either wire it or fix the docstring
+- **Custom math**: custom IoU, NMS, or other mathematical implementations when `torch`/`torchvision` equivalents exist (`torchvision.ops.box_iou`, `torchvision.ops.nms`)
+- **Overly broad `Any`**: `Any` type annotations that could be narrowed to proper types (keep `Any` only for third-party libs without stubs like tritonclient)
+- **Lazy imports outside CLI**: `PLC0415` lazy imports outside of CLI subcommand files in `__main__.py` — all deps in pyproject.toml must be imported at top level
