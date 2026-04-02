@@ -12,13 +12,12 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from triton_model_tools.inference.detection_io import collect_image_paths
+from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
 from triton_model_tools.models.detection import (
     Detection,
     FolderInferenceResult,
     ImageDetectionResult,
 )
-
-MILLISECONDS_PER_SECOND = 1000.0
 
 if TYPE_CHECKING:
     from pathlib import Path

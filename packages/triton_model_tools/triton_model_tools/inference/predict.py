@@ -10,14 +10,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from ultralytics import YOLO  # type: ignore[attr-defined]
 
 from triton_model_tools.inference.detection_io import collect_image_paths, save_detections_to_txt
+from triton_model_tools.inference.postprocessing import DEFAULT_CONFIDENCE_THRESHOLD, DEFAULT_IOU_THRESHOLD
+from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
 from triton_model_tools.models.detection import Detection, FolderInferenceResult, ImageDetectionResult
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-MILLISECONDS_PER_SECOND = 1000.0
-DEFAULT_CONFIDENCE_THRESHOLD = 0.25
-DEFAULT_IOU_THRESHOLD = 0.45
 
 
 class PredictConfig(BaseModel):

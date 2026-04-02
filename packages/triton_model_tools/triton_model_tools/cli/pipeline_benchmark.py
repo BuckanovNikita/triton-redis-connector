@@ -93,7 +93,60 @@ def build_parser(subparsers: SubParsers) -> None:
         default=None,
         help="Preprocess modes for matrix mode (default: dali cv2)",
     )
+    pb_parser.add_argument(
+        "--models",
+        type=str,
+        action="append",
+        default=None,
+        help="Additional model names for matrix mode (repeatable)",
+    )
+    pb_parser.add_argument(
+        "--all",
+        action="store_true",
+        default=False,
+        dest="all_models",
+        help="Discover all models from --repository-root for matrix mode",
+    )
+    pb_parser.add_argument(
+        "--repository-root",
+        type=Path,
+        default=None,
+        help="Triton model repository root (required with --all)",
+    )
     pb_parser.set_defaults(func=run)
+
+
+def _collect_matrix_models(args: argparse.Namespace) -> list[str]:
+    from triton_model_tools.models import discover_models  # noqa: PLC0415
+
+    model_names: list[str] = [args.model]
+
+    extra_models: list[str] | None = args.models
+    if extra_models:
+        model_names.extend(extra_models)
+
+    all_models: bool = args.all_models
+    repository_root: Path | None = args.repository_root
+
+    if all_models:
+        if repository_root is None:
+            msg = "--repository-root is required when using --all"
+            raise ValueError(msg)
+        discovered = discover_models(repository_root.resolve())
+        discovered_names = [m.name for m in discovered]
+        model_names.extend(n for n in discovered_names if n not in model_names)
+
+    return model_names
+
+
+def _save_results_json(results: object, output_path: Path) -> None:
+    import json  # noqa: PLC0415
+
+    resolved_output = output_path.resolve()
+    resolved_output.parent.mkdir(parents=True, exist_ok=True)
+    with resolved_output.open("w") as f:
+        json.dump(results, f, indent=2)
+    logger.info("Pipeline benchmark results saved to {}", resolved_output)
 
 
 def run(args: argparse.Namespace) -> None:
@@ -117,15 +170,17 @@ def run(args: argparse.Namespace) -> None:
     full_matrix: bool = args.full_matrix
     backends: list[str] | None = args.backend
     preprocess_modes: list[str] | None = args.preprocess_mode
+    all_models: bool = args.all_models
 
     logger.info("Pipeline E2E Benchmark")
     logger.info("Image dir: {}", image_dir)
     logger.info("Model: {}", model_name)
     logger.info("Redis: {}", redis_url)
 
-    if full_matrix:
+    if full_matrix or all_models:
+        matrix_models = _collect_matrix_models(args) if all_models else [model_name]
         configs = build_pipeline_matrix(
-            models=[model_name],
+            models=matrix_models,
             backends=backends,
             preprocess_modes=preprocess_modes,
             redis_url=redis_url,
@@ -147,13 +202,7 @@ def run(args: argparse.Namespace) -> None:
             )
 
         if output_path is not None:
-            import json  # noqa: PLC0415
-
-            resolved_output = output_path.resolve()
-            resolved_output.parent.mkdir(parents=True, exist_ok=True)
-            with resolved_output.open("w") as f:
-                json.dump([r.model_dump() for r in results], f, indent=2)
-            logger.info("Pipeline benchmark matrix results saved to {}", resolved_output)
+            _save_results_json([r.model_dump() for r in results], output_path)
         return
 
     config = PipelineBenchmarkConfig(
@@ -182,10 +231,4 @@ def run(args: argparse.Namespace) -> None:
     )
 
     if output_path is not None:
-        import json  # noqa: PLC0415
-
-        resolved_output = output_path.resolve()
-        resolved_output.parent.mkdir(parents=True, exist_ok=True)
-        with resolved_output.open("w") as f:
-            json.dump(result.model_dump(), f, indent=2)
-        logger.info("Benchmark results saved to {}", resolved_output)
+        _save_results_json(result.model_dump(), output_path)

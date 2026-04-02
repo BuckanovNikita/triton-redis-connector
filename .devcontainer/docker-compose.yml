@@ -47,7 +47,7 @@ services:
       RI_REDIS_ALIAS_default: Local Redis
 
   triton:
-    image: nvcr.io/nvidia/tritonserver:26.02-py3
+    image: nvcr.io/nvidia/tritonserver:${TRITON_VERSION:-25.03}-py3
     volumes:
       - ../model_repository:/models
     shm_size: 1g
@@ -78,7 +78,7 @@ services:
               capabilities: [gpu, utility]
 
   triton-sdk:
-    image: nvcr.io/nvidia/tritonserver:26.02-py3-sdk
+    image: nvcr.io/nvidia/tritonserver:${TRITON_VERSION:-25.03}-py3-sdk
     volumes:
       - ..:/workspace:cached
       - ../model_repository:/models

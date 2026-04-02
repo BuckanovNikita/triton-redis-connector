@@ -21,8 +21,6 @@ from typing import Any, Protocol, runtime_checkable
 
 from triton_redis_connector.protocols import Counter, Gauge, GroupBy
 
-__all__ = ["Counter", "Gauge", "GroupBy"]
-
 
 @dataclass(frozen=True, slots=True)
 class Tracked:
@@ -63,7 +61,7 @@ class MetricAggregator:
         "_total_ms",
     )
 
-    def __init__(self) -> None:
+    def __init__(self) -> None:  # noqa: D107
         self._lock = threading.Lock()
         self._call_count: int = 0
         self._error_count: int = 0
@@ -167,19 +165,14 @@ def extract_field_group_bys(event_type: type) -> list[tuple[str, GroupBy]]:
 
 
 def extract_field_value(result: object, field_name: str) -> object | None:
-    """Extract a field value from a result object by name.
+    """Extract a field value from a pydantic BaseModel result object by name.
 
-    Supports pydantic BaseModel (via model_dump) and plain objects (via vars).
     Returns None if the field is missing.
     """
     try:
         dump_method = result.model_dump  # type: ignore[attr-defined]
         return dump_method().get(field_name)  # type: ignore[no-any-return]
     except AttributeError:
-        pass
-    try:
-        return vars(result).get(field_name)
-    except TypeError:
         return None
 
 

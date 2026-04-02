@@ -48,9 +48,13 @@ class TestAvgByRule:
         event = _make_event(measure="latency_ms")
         assert rule.extract_key(event) == "latency_ms"
 
-    def test_aggregate_returns_count_as_float(self) -> None:
+    def test_aggregate_returns_average(self) -> None:
         rule = AvgByRule(metric_name="avg_latency", window_seconds=60)
-        assert rule.aggregate(5) == 5.0
+        assert rule.aggregate(5, 25.0) == pytest.approx(5.0)
+
+    def test_aggregate_returns_zero_for_empty(self) -> None:
+        rule = AvgByRule(metric_name="avg_latency", window_seconds=60)
+        assert rule.aggregate(0, 0.0) == 0.0
 
 
 class TestTimeWindowAggregator:

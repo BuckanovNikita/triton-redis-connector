@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Annotated, ClassVar
 
 import pytest
-from triton_redis_connector.engine.metric_aggregator import Counter, Gauge
 from triton_redis_connector.engine.registry import ExecutionVariant, PipelineRegistry
 from triton_redis_connector.protocols import (
     BaseProcessPoolProcessor,
@@ -14,6 +13,8 @@ from triton_redis_connector.protocols import (
     BaseThreadProcessor,
     BaseThreadSink,
     BaseThreadSource,
+    Counter,
+    Gauge,
     ProcessPoolProcessor,
     ProcessSource,
     ThreadPoolProcessor,

@@ -51,7 +51,7 @@ services:
       RI_REDIS_ALIAS_default: Local Redis
 
   triton:
-    image: nvcr.io/nvidia/tritonserver:26.02-py3
+    image: nvcr.io/nvidia/tritonserver:${TRITON_VERSION:-25.03}-py3
     ports:
       - 8000:8000
       - 8001:8001
@@ -86,7 +86,7 @@ services:
               capabilities: [gpu, utility]
 
   triton-sdk:
-    image: nvcr.io/nvidia/tritonserver:26.02-py3-sdk
+    image: nvcr.io/nvidia/tritonserver:${TRITON_VERSION:-25.03}-py3-sdk
     ports:
       - 8010:8000
     volumes:

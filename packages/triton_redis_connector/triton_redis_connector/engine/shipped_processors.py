@@ -128,28 +128,27 @@ class InferenceNode[TCtx: Event, TReq: TritonRequest, TOut: InferenceOutput](
         super().__init__()
         import tritonclient.grpc as grpcclient  # noqa: PLC0415
 
+        self._grpcclient = grpcclient
         self._client: grpcclient.InferenceServerClient = grpcclient.InferenceServerClient(url=grpc_url)
 
     def __call__(self, event: PipelineEvent[TCtx, TReq]) -> PipelineEvent[TCtx, TOut] | InferenceError | None:
         """Run inference and wrap output in PipelineEvent or return InferenceError."""
-        import tritonclient.grpc as grpcclient  # noqa: PLC0415
-
         req = event.payload
         start = time.monotonic()
 
         if req.raw_image is not None:
-            input_tensor = grpcclient.InferInput(req.input_name, req.raw_image.shape, "FP32")
+            input_tensor = self._grpcclient.InferInput(req.input_name, req.raw_image.shape, "FP32")
             input_tensor.set_data_from_numpy(req.raw_image)
         elif req.image_bytes is not None:
             import numpy as np  # noqa: PLC0415
 
             data = np.frombuffer(req.image_bytes, dtype=np.uint8)
-            input_tensor = grpcclient.InferInput(req.input_name, [len(data)], "UINT8")
+            input_tensor = self._grpcclient.InferInput(req.input_name, [len(data)], "UINT8")
             input_tensor.set_data_from_numpy(data)
         else:
             return None
 
-        outputs = [grpcclient.InferRequestedOutput(name) for name in req.output_names]
+        outputs = [self._grpcclient.InferRequestedOutput(name) for name in req.output_names]
 
         try:
             result = self._client.infer(

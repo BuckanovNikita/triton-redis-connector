@@ -10,8 +10,9 @@ import redis as redis_lib
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
-from triton_model_tools.benchmarks.stats import MILLISECONDS_PER_SECOND, compute_statistics
+from triton_model_tools.benchmarks.stats import compute_statistics
 from triton_model_tools.inference.detection_io import collect_image_paths
+from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
 from triton_model_tools.testing.e2e_test import CONSUMER_NAME, POLL_INTERVAL_S, ensure_consumer_group
 
 if TYPE_CHECKING:

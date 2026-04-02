@@ -44,7 +44,7 @@ class CountByRule:
     def extract_key(self, event: MetricEvent) -> str:  # noqa: D102
         return event.measure
 
-    def aggregate(self, count: int) -> float:  # noqa: D102
+    def aggregate(self, count: int, value_sum: float) -> float:  # noqa: ARG002, D102
         return float(count)
 
 
@@ -70,16 +70,12 @@ class SumByRule:
     def extract_key(self, event: MetricEvent) -> str:  # noqa: D102
         return event.measure
 
-    def aggregate(self, count: int) -> float:  # noqa: D102
-        return float(count)
+    def aggregate(self, count: int, value_sum: float) -> float:  # noqa: ARG002, D102
+        return value_sum
 
 
 class AvgByRule:
-    """Averages a numeric field (MetricEvent.value) grouped by measure name.
-
-    The aggregate method receives event count; actual average is computed
-    by TimeWindowAggregator using stored sum / count.
-    """
+    """Averages a numeric field (MetricEvent.value) grouped by measure name."""
 
     def __init__(  # noqa: D107
         self,
@@ -100,8 +96,8 @@ class AvgByRule:
     def extract_key(self, event: MetricEvent) -> str:  # noqa: D102
         return event.measure
 
-    def aggregate(self, count: int) -> float:  # noqa: D102
-        return float(count)
+    def aggregate(self, count: int, value_sum: float) -> float:  # noqa: D102
+        return value_sum / count if count > 0 else 0.0
 
 
 class _WindowBucket:
@@ -182,14 +178,7 @@ class TimeWindowAggregator:
 
         for key, count in bucket.counts.items():
             value_sum = bucket.sums.get(key, 0.0)
-            aggregate_value: float
-
-            if isinstance(rule, AvgByRule) and count > 0:
-                aggregate_value = value_sum / count
-            elif isinstance(rule, SumByRule):
-                aggregate_value = value_sum
-            else:
-                aggregate_value = rule.aggregate(count)
+            aggregate_value = rule.aggregate(count, value_sum)
 
             self._buffer.record(
                 MetricEvent(

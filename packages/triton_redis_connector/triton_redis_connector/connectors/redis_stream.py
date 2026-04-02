@@ -132,6 +132,13 @@ class RedisStreamSource:
         connector: RedisStreamInputConnector,
         config: SourceConfig,
     ) -> None:
+        import warnings  # noqa: PLC0415
+
+        warnings.warn(
+            "RedisStreamSource is deprecated. Use LiveRedisStreamSource or RecoveryRedisStreamSource.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._connector = connector
         self._config = config
         self._pending_buffer: deque[Envelope[bytes]] = deque()

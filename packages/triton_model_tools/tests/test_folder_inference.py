@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 class TestRunFolderInference:
-    @patch("triton_model_tools.inference.folder_inference.load_image")
+    @patch("triton_model_tools.inference._folder_inference_common.load_image")
     @patch("triton_model_tools.inference.folder_inference.TritonInferenceClient")
     def test_processes_all_images(
         self,
@@ -48,7 +48,7 @@ class TestRunFolderInference:
         assert result.avg_time_ms > 0
         assert mock_client.infer_raw.call_count == 2
 
-    @patch("triton_model_tools.inference.folder_inference.load_image")
+    @patch("triton_model_tools.inference._folder_inference_common.load_image")
     @patch("triton_model_tools.inference.folder_inference.TritonInferenceClient")
     def test_end2end_mode(
         self,
@@ -80,7 +80,7 @@ class TestRunFolderInference:
         assert len(result.results[0].detections) == 1
         assert result.results[0].detections[0].confidence == pytest.approx(0.9)
 
-    @patch("triton_model_tools.inference.folder_inference.load_image")
+    @patch("triton_model_tools.inference._folder_inference_common.load_image")
     @patch("triton_model_tools.inference.folder_inference.TritonInferenceClient")
     def test_custom_output_names(
         self,

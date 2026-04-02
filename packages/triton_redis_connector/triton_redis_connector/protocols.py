@@ -308,8 +308,8 @@ class AggregationRuleProtocol(Protocol[TEvent_contra]):
         """Extract the grouping key from an event."""
         ...
 
-    def aggregate(self, count: int) -> float:
-        """Compute the aggregate value from an event count."""
+    def aggregate(self, count: int, value_sum: float) -> float:
+        """Compute the aggregate value from event count and accumulated sum."""
         ...
 
 

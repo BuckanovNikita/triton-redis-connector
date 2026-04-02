@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-MILLISECONDS_PER_SECOND = 1000.0
+from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
+
 PERCENTILE_50 = 50
 PERCENTILE_95 = 95
 PERCENTILE_99 = 99

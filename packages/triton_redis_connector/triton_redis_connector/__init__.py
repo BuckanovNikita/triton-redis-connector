@@ -45,7 +45,6 @@ from triton_redis_connector.protocols import (
     BaseThreadSink,
     BaseThreadSource,
     Counter,
-    Envelope,
     Gauge,
     GroupBy,
     LifecycleService,
@@ -61,7 +60,6 @@ from triton_redis_connector.protocols import (
 )
 from triton_redis_connector.providers import (
     ConfigProvider,
-    ConnectorProvider,
     ConnectorScope,
     InferenceProvider,
     MetricsProvider,
@@ -80,11 +78,9 @@ __all__ = [
     "ClassificationResult",
     "ClientPreprocessorNode",
     "ConfigProvider",
-    "ConnectorProvider",
     "ConnectorScope",
     "Counter",
     "DetectionResult",
-    "Envelope",
     "Event",
     "ExecutionVariant",
     "FrameworkMeta",

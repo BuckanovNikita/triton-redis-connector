@@ -17,6 +17,7 @@ import threading
 from typing import TYPE_CHECKING
 
 from loguru import logger
+from redis import exceptions as redis_exceptions
 
 from triton_redis_connector.metrics.collector import MetricEvent
 
@@ -140,7 +141,7 @@ class MetricEmitter:
                 maxlen=10_000,
                 approximate=True,
             )
-        except ConnectionError:
+        except redis_exceptions.ConnectionError:
             logger.error(
                 "Failed to XADD metric to stream {}: measure={}",
                 self._stream,

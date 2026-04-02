@@ -4,6 +4,14 @@ version = "0.0.0"
 description = "Workspace root for triton-redis-connector and triton-model-tools"
 requires-python = ">=3.12"
 
+[tool.uv]
+conflicts = [
+    [
+        { group = "triton-25-03" },
+        { group = "triton-26-02" },
+    ],
+]
+
 [tool.uv.workspace]
 members = ["packages/*"]
 
@@ -22,12 +30,25 @@ test = [
     "pytest-cov>=7.1.0,<8.0.0",
     "pytest-asyncio>=1.1.0,<2.0.0",
 ]
+triton-25-03 = [
+    "tritonclient[grpc]>=2.55.0,<2.56.0",
+    "numpy>=1.26.0,<2.0.0",
+    "torch>=2.6.0,<2.7.0",
+    "torchvision>=0.21.0,<0.22.0",
+]
+triton-26-02 = [
+    "tritonclient[grpc]>=2.66.0,<2.67.0",
+    "numpy>=2.4.0,<3.0.0",
+    "torch>=2.11.0",
+    "torchvision>=0.22.0",
+]
 dev = [
     "triton-redis-connector",
     "triton-model-tools",
     "triton-shared-models",
     "pre-commit>=4.5.1,<5.0.0",
     "nvitop>=1.6.2",
+    { include-group = "triton-26-02" },
     { include-group = "lint" },
     { include-group = "test" },
 ]

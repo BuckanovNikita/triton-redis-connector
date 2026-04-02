@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -15,6 +16,73 @@ if TYPE_CHECKING:
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.25
 DEFAULT_IOU_THRESHOLD = 0.45
+
+
+@dataclass(frozen=True, slots=True)
+class _NmsResult:
+    """Intermediate NMS pipeline output shared between standard and detailed postprocessors."""
+
+    boxes_xyxy: npt.NDArray[np.float32]
+    scores: npt.NDArray[np.float32]
+    class_ids: npt.NDArray[np.intp]
+    class_scores: npt.NDArray[np.float32]
+    keep_indices: list[int]
+
+
+def _run_nms_pipeline(
+    outputs: dict[str, npt.NDArray[np.float32]],
+    conf_threshold: float,
+    iou_threshold: float,
+) -> _NmsResult | None:
+    """Run the shared NMS pipeline: parse raw output, filter, xywh->xyxy, NMS.
+
+    Returns None when no detections survive the confidence threshold.
+    """
+    output_key = next(iter(outputs))
+    raw = outputs[output_key]
+
+    if raw.ndim == 3:
+        raw = raw[0]
+
+    if raw.shape[0] < raw.shape[1]:
+        raw = raw.T
+
+    boxes_xywh = raw[:, :4]
+    class_scores = raw[:, 4:]
+
+    max_class_scores = class_scores.max(axis=1)
+    class_ids = class_scores.argmax(axis=1)
+
+    mask = max_class_scores >= conf_threshold
+    filtered_boxes_xywh = boxes_xywh[mask]
+    filtered_scores = max_class_scores[mask]
+    filtered_class_ids = class_ids[mask]
+    filtered_class_scores = class_scores[mask]
+
+    if len(filtered_scores) == 0:
+        return None
+
+    boxes_xyxy = _xywh_to_xyxy(filtered_boxes_xywh)
+    keep = nms(boxes_xyxy, filtered_scores, iou_threshold)
+
+    return _NmsResult(
+        boxes_xyxy=boxes_xyxy,
+        scores=filtered_scores,
+        class_ids=filtered_class_ids,
+        class_scores=filtered_class_scores,
+        keep_indices=keep,
+    )
+
+
+def _xywh_to_xyxy(boxes: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
+    result = np.empty_like(boxes)
+    half_w = boxes[:, 2] / 2.0
+    half_h = boxes[:, 3] / 2.0
+    result[:, 0] = boxes[:, 0] - half_w
+    result[:, 1] = boxes[:, 1] - half_h
+    result[:, 2] = boxes[:, 0] + half_w
+    result[:, 3] = boxes[:, 1] + half_h
+    return result
 
 
 class YoloPostprocessor:
@@ -104,59 +172,25 @@ class YoloPostprocessor:
         conf_threshold: float,
         iou_threshold: float,
     ) -> list[Detection]:
-        output_key = next(iter(outputs))
-        raw = outputs[output_key]
-
-        if raw.ndim == 3:
-            raw = raw[0]
-
-        if raw.shape[0] < raw.shape[1]:
-            raw = raw.T
-
-        boxes_xywh = raw[:, :4]
-        class_scores = raw[:, 4:]
-
-        max_class_scores = class_scores.max(axis=1)
-        class_ids = class_scores.argmax(axis=1)
-
-        mask = max_class_scores >= conf_threshold
-        filtered_boxes_xywh = boxes_xywh[mask]
-        filtered_scores = max_class_scores[mask]
-        filtered_class_ids = class_ids[mask]
-
-        if len(filtered_scores) == 0:
+        nms_result = _run_nms_pipeline(outputs, conf_threshold, iou_threshold)
+        if nms_result is None:
             return []
-
-        boxes_xyxy = self._xywh_to_xyxy(filtered_boxes_xywh)
-
-        keep = nms(boxes_xyxy, filtered_scores, iou_threshold)
 
         pad_left, pad_top = pad_offset
         detections = [
             Detection(
-                x1=(float(boxes_xyxy[idx, 0]) - pad_left) / scale,
-                y1=(float(boxes_xyxy[idx, 1]) - pad_top) / scale,
-                x2=(float(boxes_xyxy[idx, 2]) - pad_left) / scale,
-                y2=(float(boxes_xyxy[idx, 3]) - pad_top) / scale,
-                confidence=float(filtered_scores[idx]),
-                class_id=int(filtered_class_ids[idx]),
+                x1=(float(nms_result.boxes_xyxy[idx, 0]) - pad_left) / scale,
+                y1=(float(nms_result.boxes_xyxy[idx, 1]) - pad_top) / scale,
+                x2=(float(nms_result.boxes_xyxy[idx, 2]) - pad_left) / scale,
+                y2=(float(nms_result.boxes_xyxy[idx, 3]) - pad_top) / scale,
+                confidence=float(nms_result.scores[idx]),
+                class_id=int(nms_result.class_ids[idx]),
             )
-            for idx in keep
+            for idx in nms_result.keep_indices
         ]
 
         logger.debug("Standard postprocess: {} detections after NMS (conf >= {})", len(detections), conf_threshold)
         return detections
-
-    @staticmethod
-    def _xywh_to_xyxy(boxes: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
-        result = np.empty_like(boxes)
-        half_w = boxes[:, 2] / 2.0
-        half_h = boxes[:, 3] / 2.0
-        result[:, 0] = boxes[:, 0] - half_w
-        result[:, 1] = boxes[:, 1] - half_h
-        result[:, 2] = boxes[:, 0] + half_w
-        result[:, 3] = boxes[:, 1] + half_h
-        return result
 
 
 class YoloDetailedPostprocessor(YoloPostprocessor):
@@ -181,46 +215,22 @@ class YoloDetailedPostprocessor(YoloPostprocessor):
         conf_threshold: float,
         iou_threshold: float,
     ) -> list[Detection]:
-        output_key = next(iter(outputs))
-        raw = outputs[output_key]
-
-        if raw.ndim == 3:
-            raw = raw[0]
-
-        if raw.shape[0] < raw.shape[1]:
-            raw = raw.T
-
-        boxes_xywh = raw[:, :4]
-        class_scores = raw[:, 4:]
-
-        max_class_scores = class_scores.max(axis=1)
-        class_ids = class_scores.argmax(axis=1)
-
-        mask = max_class_scores >= conf_threshold
-        filtered_boxes_xywh = boxes_xywh[mask]
-        filtered_scores = max_class_scores[mask]
-        filtered_class_ids = class_ids[mask]
-        filtered_class_scores = class_scores[mask]
-
-        if len(filtered_scores) == 0:
+        nms_result = _run_nms_pipeline(outputs, conf_threshold, iou_threshold)
+        if nms_result is None:
             return []
-
-        boxes_xyxy = self._xywh_to_xyxy(filtered_boxes_xywh)
-
-        keep = nms(boxes_xyxy, filtered_scores, iou_threshold)
 
         pad_left, pad_top = pad_offset
         detections = [
             Detection(
-                x1=(float(boxes_xyxy[idx, 0]) - pad_left) / scale,
-                y1=(float(boxes_xyxy[idx, 1]) - pad_top) / scale,
-                x2=(float(boxes_xyxy[idx, 2]) - pad_left) / scale,
-                y2=(float(boxes_xyxy[idx, 3]) - pad_top) / scale,
-                confidence=float(filtered_scores[idx]),
-                class_id=int(filtered_class_ids[idx]),
-                all_class_scores=tuple(float(s) for s in filtered_class_scores[idx]),
+                x1=(float(nms_result.boxes_xyxy[idx, 0]) - pad_left) / scale,
+                y1=(float(nms_result.boxes_xyxy[idx, 1]) - pad_top) / scale,
+                x2=(float(nms_result.boxes_xyxy[idx, 2]) - pad_left) / scale,
+                y2=(float(nms_result.boxes_xyxy[idx, 3]) - pad_top) / scale,
+                confidence=float(nms_result.scores[idx]),
+                class_id=int(nms_result.class_ids[idx]),
+                all_class_scores=tuple(float(s) for s in nms_result.class_scores[idx]),
             )
-            for idx in keep
+            for idx in nms_result.keep_indices
         ]
 
         logger.debug(

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from triton_model_tools.inference.detection_io import collect_image_paths, load_image
+from triton_model_tools.inference._folder_inference_common import run_image_loop
+from triton_model_tools.inference.detection_io import collect_image_paths
 from triton_model_tools.inference.onnx_inference import OnnxInferenceClient
 from triton_model_tools.inference.postprocessing import (
     DEFAULT_CONFIDENCE_THRESHOLD,
@@ -15,12 +15,11 @@ from triton_model_tools.inference.postprocessing import (
     YoloPostprocessor,
 )
 from triton_model_tools.inference.preprocessing import YoloPreprocessor
-from triton_model_tools.models.detection import FolderInferenceResult, ImageDetectionResult
-
-MILLISECONDS_PER_SECOND = 1000.0
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from triton_model_tools.models.detection import FolderInferenceResult
 
 
 def run_local_folder_inference(  # noqa: PLR0913
@@ -61,57 +60,13 @@ def run_local_folder_inference(  # noqa: PLR0913
     postprocessor = YoloPostprocessor(end2end=is_end2end)
     image_paths = collect_image_paths(image_dir)
 
-    model_name = model_path.stem
-
-    results: list[ImageDetectionResult] = []
-    total_start = time.perf_counter()
-
-    for image_path in image_paths:
-        logger.info("Processing {}", image_path.name)
-        image = load_image(image_path)
-
-        img_start = time.perf_counter()
-
-        tensor, scale, pad_offset = preprocessor.preprocess(image)
-        outputs = client.infer(tensor)
-        detections = postprocessor.postprocess(
-            outputs,
-            scale,
-            pad_offset,
-            conf_threshold=conf_threshold,
-            iou_threshold=iou_threshold,
-        )
-
-        img_time_ms = (time.perf_counter() - img_start) * MILLISECONDS_PER_SECOND
-
-        results.append(
-            ImageDetectionResult(
-                image_path=str(image_path),
-                model_name=model_name,
-                detections=detections,
-                inference_time_ms=img_time_ms,
-            ),
-        )
-        logger.info(
-            "{}: {} detections in {:.1f}ms",
-            image_path.name,
-            len(detections),
-            img_time_ms,
-        )
-
-    total_time_s = time.perf_counter() - total_start
-    avg_time_ms = (total_time_s * MILLISECONDS_PER_SECOND / len(results)) if results else 0.0
-
-    logger.info(
-        "Local ONNX inference complete: {} images, {:.2f}s total, {:.1f}ms avg",
-        len(results),
-        total_time_s,
-        avg_time_ms,
-    )
-
-    return FolderInferenceResult(
-        model_name=model_name,
-        results=results,
-        total_time_s=total_time_s,
-        avg_time_ms=avg_time_ms,
+    return run_image_loop(
+        image_paths=image_paths,
+        model_name=model_path.stem,
+        preprocessor=preprocessor,
+        postprocessor=postprocessor,
+        infer_fn=client.infer,
+        conf_threshold=conf_threshold,
+        iou_threshold=iou_threshold,
+        log_label="Local ONNX inference",
     )

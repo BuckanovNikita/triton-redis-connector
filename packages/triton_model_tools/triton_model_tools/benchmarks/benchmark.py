@@ -13,7 +13,7 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
 from triton_model_tools.benchmarks.memory import MemoryMonitor
-from triton_model_tools.benchmarks.stats import MILLISECONDS_PER_SECOND, compute_statistics
+from triton_model_tools.benchmarks.stats import compute_statistics
 from triton_model_tools.export.exporter import TENSORRT_NAME_SUFFIX
 from triton_model_tools.inference.client import TritonInferenceClient
 from triton_model_tools.inference.detection_io import collect_image_paths, load_image
@@ -23,6 +23,7 @@ from triton_model_tools.inference.postprocessing import (
     YoloPostprocessor,
 )
 from triton_model_tools.inference.preprocessing import YoloPreprocessor
+from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
 
 if TYPE_CHECKING:
     from pathlib import Path
