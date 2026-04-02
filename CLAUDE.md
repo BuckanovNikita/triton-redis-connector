@@ -89,13 +89,24 @@ __main__ (CLI) -> cli -> benchmarks -> testing -> inference | export -> models (
 
 Modules within a `|` group are siblings at the same layer and must NOT cross-import.
 
+### Domain Event Model
+
+All domain events inherit from `Event` (in `engine/events.py`), which carries `fw: FrameworkMeta` for source_stream and message_id. The `fw` field is set by `RedisStreamSource` and stripped by `RedisStreamSink` before writing to output.
+
+`PipelineEvent[TCtx, TPayload]` is a typed composition of user context (an `Event` subclass) and a processing payload. Framework routes by exact generic match. This allows the original user event to travel alongside processing stages (preprocessing, inference, postprocessing) without being lost.
+
+`ImagePayload` carries `image_path` or `image_bytes` for preprocessor consumption.
+
+`TritonRequest` carries preprocessed tensor or raw bytes for Triton inference.
+
 ### Shipped Processors
 
-Six reusable processors for common pipeline patterns. All preprocessors support **metadata bypass** — if the input event carries a `metadata: dict[str, Any]`, it is copied through `TritonRequest` → `InferenceOutput` → `DetectionResult` without interpretation.
+Two generations of shipped processors coexist. Legacy processors are plain callables wrapped at assembly time. New Node classes inherit from Base* classes and use the `PipelineEvent` composition pattern.
+
+**Legacy shipped processors** (backward compatible, variant-agnostic):
 
 | Processor | Package | Purpose |
 |---|---|---|
-| `EnvelopeExtractor[T]` | connector | Deserialize envelope bytes into typed pydantic model |
 | `DaliTritonRequestBuilder` | connector | Wrap image bytes/path for DALI ensemble inference |
 | `ClientPreprocessor` | connector | Read file, decode, letterbox, wrap as TritonRequest |
 | `ConfigurableClientPreprocessor` | connector (providers) | Config-friendly ClientPreprocessor (takes decoder_type string) |
@@ -103,14 +114,31 @@ Six reusable processors for common pipeline patterns. All preprocessors support 
 | `LogErrorSink` | connector | Log error events at error level via loguru |
 | `YoloPostProcessorBridge` | model_tools | YOLO postprocessing (NMS + confidence filter) into DetectionResult |
 
+**New Node classes** (PipelineEvent-aware, inherit Base* for variant declaration):
+
+| Node | Package | Purpose |
+|---|---|---|
+| `ClientPreprocessorNode[TCtx, TPayload]` | connector | Decode + letterbox from ImagePayload, returns PipelineEvent[TCtx, TritonRequest] or PreprocessingError |
+| `InferenceNode[TCtx, TReq, TOut]` | connector | Send TritonRequest to Triton, returns PipelineEvent[TCtx, InferenceOutput] or InferenceError |
+| `PostProcessorNode[TCtx, TIn, TResult]` | connector | Delegate to user postprocessor, wraps result back into PipelineEvent |
+| `LogErrorSinkNode` | connector | Logs InferenceError, ConnectorError, PreprocessingError on a dedicated thread |
+
 See: `engine/shipped_processors.py`, `providers/shipped_factories.py`, `triton_model_tools/inference/yolo_bridge.py`
+
+### ModelBundle
+
+`ModelBundle` (in `engine/bundle.py`) groups the four core processors for one model (preprocessor, inference, postprocessor, sink). `expand_bundle(bundle)` returns them as a flat list suitable for `Application.build(processors=[...])`.
+
+### Application.build() Classmethod
+
+`Application.build(config, processors, *, triton_collector)` is a classmethod that creates a fully wired Application from an explicit processor list. Each processor is registered using its `name` attribute (if present) or its class name. Auto-creates MetricBuffer, MetricEmitter, QueueBus, and PipelineRegistry from config. Runs graph validation before returning.
 
 ### build_application Factory
 
-`providers/app_factory.py` provides `build_application(config, *, event_model, postprocessor, extra_nodes)`:
-- Creates Redis client, connectors, source/sink from config — automatically
+`providers/app_factory.py` provides `build_application(config, *, postprocessor, extra_nodes)` for config-driven wiring:
+- Creates Redis client, connectors, source/sink from config automatically
 - Registers shipped processors from config fields (decoder type, model name, grpc_url)
-- Event model class and postprocessor come from **code** (not config)
+- Postprocessor comes from **code** (not config)
 - User processors passed via `extra_nodes` parameter
 
 Config contains only infrastructure params (thresholds, model names, URLs). No class paths in config.
@@ -124,10 +152,10 @@ Config contains only infrastructure params (thresholds, model names, URLs). No c
 
 ### Base Classes for User Processors
 
-Nine base classes in `protocols.py` for explicit variant declaration:
-`BaseSource`, `BaseThreadSource`, `BaseProcessSource`, `BaseProcessor`, `BaseThreadProcessor`, `BaseThreadPoolProcessor`, `BaseProcessPoolProcessor`, `BaseSink`, `BaseThreadSink`.
+Six base classes in `protocols.py` for explicit variant declaration (parallel variants only):
+`BaseThreadSource`, `BaseProcessSource`, `BaseThreadProcessor`, `BaseThreadPoolProcessor`, `BaseProcessPoolProcessor`, `BaseThreadSink`.
 
-User processors inherit to declare variant. Shipped processors stay variant-agnostic and are wrapped at registration time.
+All nodes run in dedicated threads. There are no inline variants. User processors inherit from base classes to declare variant. Shipped processors are either wrapped at registration time (legacy) or inherit from base classes (new Node classes).
 
 ### Config-Driven Node Assembly
 

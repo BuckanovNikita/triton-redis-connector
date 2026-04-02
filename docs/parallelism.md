@@ -2,20 +2,20 @@
 
 How to choose the right execution variant for each pipeline node.
 
+All nodes run in dedicated threads managed by the Application main loop. There are no inline variants.
+
 ## Decision Tree
 
 ```
 Is this node a SOURCE (produces events)?
   |
   +-- Does it block (e.g., Redis XREADGROUP with block timeout)?
-  |     YES --> DetachedThreadSource
-  |     NO  --> Inline Source (polled in main loop)
+  |     YES --> DetachedThreadSource (dedicated thread)
+  |     NO  --> DetachedThreadSource (still runs in own thread)
   |
 Is this node a SINK (consumes events, terminal)?
   |
-  +-- Does it block (e.g., Redis XADD, HTTP POST)?
-  |     YES --> DetachedThreadSink
-  |     NO  --> Inline Sink
+  +-- Always uses DetachedThreadSink (dedicated thread)
   |
 Is this node a PROCESSOR (transforms events)?
   |
@@ -30,47 +30,41 @@ Is this node a PROCESSOR (transforms events)?
   |                   |     --> DetachedThreadProcessor (dedicated thread)
   |                   |
   |                   +-- Many concurrent I/O calls (fan-out)?
-  |                   |     --> ThreadedProcessor (thread pool, N workers)
-  |                   |
-  |                   +-- Neither CPU nor I/O bound?
-  |                         --> Inline Processor (cheapest, no overhead)
+  |                         --> ThreadedProcessor (thread pool, N workers)
 ```
 
-**Default to inline.** Only escalate to threaded/process variants when the node
-would block the main loop or when throughput requires parallelism.
+**Default to DetachedThreadProcessor.** Escalate to pool variants when throughput
+requires parallelism or work is CPU-bound.
 
 
 ## Execution Variants Reference
 
 ### Sources
 
-| Variant | Wrapper Class | When to Use |
+| Variant | Wrapper/Base Class | When to Use |
 |---|---|---|
-| Inline Source | (none) | Non-blocking poll. Main loop calls `__call__()` repeatedly. |
-| DetachedThreadSource | `DetachedThreadSource[TOut]` | Blocking reads. Runs in its own thread, framework wires output queue. |
-| DetachedProcessSource | `DetachedProcessSource[TOut]` | Blocking reads in a separate OS process (rare). |
+| DetachedThreadSource | `DetachedThreadSource[TOut]` / `BaseThreadSource[TOut]` | Blocking reads. Runs in its own thread, framework wires output queue. |
+| DetachedProcessSource | `DetachedProcessSource[TOut]` / `BaseProcessSource[TOut]` | Blocking reads in a separate OS process (rare). |
 
 ### Processors
 
-| Variant | Wrapper Class | When to Use |
+| Variant | Wrapper/Base Class | When to Use |
 |---|---|---|
-| Inline Processor | (none) | Fast transforms (field mapping, filtering, validation). |
-| DetachedThreadProcessor | `DetachedThreadProcessor[TIn, TOut]` | Single blocking I/O call per event (gRPC infer, HTTP request). |
-| ThreadedProcessor | `ThreadedProcessor[TIn, TOut]` | Concurrent I/O with shared resources. N threads, one shared input queue. |
-| MultiProcessProcessor | `MultiProcessProcessor[TIn, TOut]` | CPU-bound work (image decode, numpy ops, tensor preprocessing). N processes. |
+| DetachedThreadProcessor | `DetachedThreadProcessor[TIn, TOut]` / `BaseThreadProcessor[TIn, TOut]` | Single blocking I/O call per event (gRPC infer, HTTP request). |
+| ThreadedProcessor | `ThreadedProcessor[TIn, TOut]` / `BaseThreadPoolProcessor[TIn, TOut]` | Concurrent I/O with shared resources. N threads, one shared input queue. |
+| MultiProcessProcessor | `MultiProcessProcessor[TIn, TOut]` / `BaseProcessPoolProcessor[TIn, TOut]` | CPU-bound work (image decode, numpy ops, tensor preprocessing). N processes. |
 
 ### Sinks
 
-| Variant | Wrapper Class | When to Use |
+| Variant | Wrapper/Base Class | When to Use |
 |---|---|---|
-| Inline Sink | (none) | Non-blocking side effects (in-memory aggregation, metric recording). |
-| DetachedThreadSink | `DetachedThreadSink[TIn]` | Blocking writes (Redis XADD, file I/O, network calls). |
+| DetachedThreadSink | `DetachedThreadSink[TIn]` / `BaseThreadSink[TIn]` | Blocking writes (Redis XADD, file I/O, network calls). |
 
 
-## Writing Pure Business Logic
+## Writing Pure Business Logic (legacy approach)
 
 Write processors as plain classes with `__call__`. No threading primitives, no
-queues, no `stop` events. The framework wraps them at assembly time.
+queues, no `stop` events. The framework wraps them at assembly time using wrappers from `engine/wrappers.py`.
 
 ```python
 from __future__ import annotations
@@ -94,9 +88,9 @@ class ImagePreprocessor:
 ```
 
 
-## Subclass-Based Variant Declaration
+## Subclass-Based Variant Declaration (preferred)
 
-Instead of writing pure business logic and wrapping at assembly time, user processors can inherit from a base class that declares the variant:
+User processors inherit from a base class that declares the variant. Six base classes are available in `protocols.py`:
 
 ```python
 from triton_redis_connector import BaseThreadProcessor
@@ -116,19 +110,30 @@ registry.register("preprocessor", ImagePreprocessor(target_size=(640, 640)))
 Both approaches (wrapper-based and subclass-based) work and are fully compatible. Use subclasses for user processors (explicit variant, type-safe). Use wrappers for framework building blocks that should remain variant-agnostic.
 
 
-## Config-Driven Variant Selection
+## Pipeline Construction
 
-### Preferred: build_application (shipped processors from config)
+### Preferred: Application.build() with explicit processor list
+
+```python
+from triton_redis_connector import Application
+
+app = Application.build(
+    config,
+    processors=[source, preprocessor, inference, postprocessor, sink],
+)
+app.run()
+```
+
+### Config-driven: build_application()
 
 Shipped processors are registered automatically by `build_application()` from config fields.
-No class paths in config — variants are determined by the factory:
+No class paths in config -- variants are determined by the factory:
 
 ```python
 from triton_redis_connector.providers.app_factory import build_application
 
 app = build_application(
     config,
-    event_model=MyInputEvent,
     postprocessor=MyPostProcessor(),
     extra_nodes=[("my_processor", MyProcessor())],
 )
@@ -310,15 +315,15 @@ from stalling the entire pipeline.
 
 | Use Case | Variant | Why |
 |---|---|---|
-| Triton gRPC inference | `DetachedThreadProcessor` | Single blocking gRPC call per event. Thread releases GIL during I/O wait. |
-| Triton gRPC inference (high throughput) | `ThreadedProcessor` (pool) | Multiple concurrent gRPC calls. Each thread holds its own client. |
-| Image decoding (JPEG/PNG) | `MultiProcessProcessor` | CPU-bound. OpenCV/TurboJPEG hold the GIL during decode. Process pool bypasses it. |
-| Tensor preprocessing (resize, normalize) | `MultiProcessProcessor` | CPU-bound numpy operations. |
-| Redis XREADGROUP | `DetachedThreadSource` | Blocks on `block_ms` timeout waiting for new messages. |
-| Redis XADD results | `DetachedThreadSink` | Network I/O to write results back. |
-| Field validation / filtering | Inline Processor | Fast, no I/O, no heavy computation. |
-| Metric aggregation | Inline Sink | In-memory counter updates, no blocking. |
-| Lightweight event routing | Inline Processor | Type-based routing with no external calls. |
+| Triton gRPC inference | `DetachedThreadProcessor` / `BaseThreadProcessor` | Single blocking gRPC call per event. Thread releases GIL during I/O wait. |
+| Triton gRPC inference (high throughput) | `ThreadedProcessor` / `BaseThreadPoolProcessor` (pool) | Multiple concurrent gRPC calls. Each thread holds its own client. |
+| Image decoding (JPEG/PNG) | `MultiProcessProcessor` / `BaseProcessPoolProcessor` | CPU-bound. OpenCV/TurboJPEG hold the GIL during decode. Process pool bypasses it. |
+| Tensor preprocessing (resize, normalize) | `MultiProcessProcessor` / `BaseProcessPoolProcessor` | CPU-bound numpy operations. |
+| Redis XREADGROUP | `DetachedThreadSource` / `BaseThreadSource` | Blocks on `block_ms` timeout waiting for new messages. |
+| Redis XADD results | `DetachedThreadSink` / `BaseThreadSink` | Network I/O to write results back. |
+| Field validation / filtering | `DetachedThreadProcessor` / `BaseThreadProcessor` | Fast transforms, runs in dedicated thread. |
+| Metric aggregation | `DetachedThreadSink` / `BaseThreadSink` | Counter updates on dedicated thread. |
+| Error logging | `BaseThreadSink` (e.g., `LogErrorSinkNode`) | Logs errors on dedicated thread. |
 
 
 ## Process Safety Reminders
