@@ -14,9 +14,7 @@ sources:
     batch_size: 1
     block_ms: 2000
 
-sinks:
-  - stream_name: ${oc.env:OUTPUT_STREAM,steel:inspection_results}
-    maxlen: 10000
+sinks: []
 
 pipeline:
   model_name: yolo26l
@@ -40,4 +38,5 @@ queues:
 
 metrics:
   output_stream: metrics
+  emit_interval_s: 5.0
   triton_poll_interval_s: 10.0

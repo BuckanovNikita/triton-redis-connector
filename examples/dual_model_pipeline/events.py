@@ -3,7 +3,8 @@
 Events flow through the pipeline graph:
   SteelInspectionInput -> EvenCameraFrame | OddCameraFrame
     -> (shipped preprocessors) -> InferenceWorker -> YoloPostProcessorBridge
-    -> DetectionResult (framework event with metadata)
+    -> DetectionResult -> ModelResultRouter -> EvenModelResult | OddModelResult
+    -> EventSerializer -> RedisStreamSink (per-model output streams)
 """
 
 from __future__ import annotations
@@ -13,6 +14,9 @@ from typing import Annotated, Any, ClassVar
 from pydantic import BaseModel, ConfigDict, Field
 from triton_redis_connector.engine.events import Event
 from triton_redis_connector.protocols import Counter, GroupBy
+
+EVEN_MODEL = "yolo11s_960x608"
+ODD_MODEL = "yolo26l"
 
 
 class SteelInspectionInput(Event):
@@ -48,4 +52,28 @@ class OddCameraFrame(BaseModel):
 
     image_path: str
     camera_no: Annotated[int, GroupBy("camera_no_per_minute", window_s=60)]
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EvenModelResult(BaseModel):
+    """Detection result from the even-camera model (yolo11s_960x608)."""
+
+    _metrics_: ClassVar[list[Counter]] = [Counter("even_model_result")]
+
+    detections_json: str
+    model_name: str
+    inference_time_ms: float
+    num_detections: int
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class OddModelResult(BaseModel):
+    """Detection result from the odd-camera model (yolo26l)."""
+
+    _metrics_: ClassVar[list[Counter]] = [Counter("odd_model_result")]
+
+    detections_json: str
+    model_name: str
+    inference_time_ms: float
+    num_detections: int
     metadata: dict[str, Any] = Field(default_factory=dict)

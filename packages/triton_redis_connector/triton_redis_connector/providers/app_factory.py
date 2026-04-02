@@ -57,8 +57,10 @@ def _register_shipped(
     name: str,
     instance: object,
     variant: NodeVariant,
+    *,
+    metric_recorder: MetricRecorder | None = None,
 ) -> None:
-    wrapped = wrap_with_variant(instance, variant)
+    wrapped = wrap_with_variant(instance, variant, metric_recorder=metric_recorder, component_name=name)
     registry.register(name, wrapped)
 
 
@@ -82,11 +84,20 @@ def build_application(  # noqa: PLR0913
     redis_client.ping()
     logger.info("Connected to Redis at {}:{}", config.redis.host, config.redis.port)
 
+    if metric_buffer is None:
+        metric_buffer = MetricBuffer()
+
     group_manager = ConsumerGroupManager()
     registry = PipelineRegistry()
 
     _register_redis_connectors(registry, redis_client, config, group_manager)
-    _register_shipped_processors(registry, config, event_model=event_model, postprocessor=postprocessor)
+    _register_shipped_processors(
+        registry,
+        config,
+        event_model=event_model,
+        postprocessor=postprocessor,
+        metric_recorder=metric_buffer,
+    )
 
     if config.nodes:
         assemble_all(config.nodes, registry, metric_recorder=metric_buffer)
@@ -95,16 +106,14 @@ def build_application(  # noqa: PLR0913
         for node_name, node in extra_nodes:
             registry.register(node_name, node)
 
-    if metric_buffer is None or metric_emitter is None:
-        resolved_buffer, resolved_emitter = _build_default_metrics(
-            redis_client,
-            config,
-            registry,
+    if metric_emitter is None:
+        metric_emitter = MetricEmitter(
+            buffer=metric_buffer,  # type: ignore[arg-type]
+            client=redis_client,
+            stream=config.metrics.output_stream,
+            interval_s=config.metrics.emit_interval_s,
+            known_metrics=registry.all_counter_names,
         )
-        if metric_buffer is None:
-            metric_buffer = resolved_buffer
-        if metric_emitter is None:
-            metric_emitter = resolved_emitter
 
     return Application(
         config=config,
@@ -114,23 +123,6 @@ def build_application(  # noqa: PLR0913
         triton_collector=triton_collector,
         metric_emitter=metric_emitter,
     )
-
-
-def _build_default_metrics(
-    redis_client: Redis[bytes],
-    config: AppConfig,
-    registry: PipelineRegistry,
-) -> tuple[MetricBuffer, MetricEmitter]:
-    """Create default MetricBuffer and MetricEmitter from config."""
-    buffer = MetricBuffer()
-    emitter = MetricEmitter(
-        buffer=buffer,
-        client=redis_client,
-        stream=config.metrics.output_stream,
-        interval_s=config.metrics.emit_interval_s,
-        known_metrics=registry.all_counter_names,
-    )
-    return buffer, emitter
 
 
 def _register_redis_connectors(
@@ -160,29 +152,42 @@ def _register_shipped_processors(
     *,
     event_model: type[BaseModel] | None = None,
     postprocessor: object | None = None,
+    metric_recorder: MetricRecorder | None = None,
 ) -> None:
     pipeline = config.pipeline
+    mr = metric_recorder
 
     if event_model is not None:
-        _register_shipped(registry, "extractor", EnvelopeExtractor(event_model), NodeVariant.THREAD_PROCESSOR)
+        _register_shipped(
+            registry, "extractor", EnvelopeExtractor(event_model), NodeVariant.THREAD_PROCESSOR, metric_recorder=mr
+        )
 
     if pipeline.model_name:
         preprocessor = _build_preprocessor(config)
-        _register_shipped(registry, "preprocessor", preprocessor, NodeVariant.THREAD_PROCESSOR)
+        _register_shipped(registry, "preprocessor", preprocessor, NodeVariant.THREAD_PROCESSOR, metric_recorder=mr)
 
     _register_shipped(
         registry,
         "inference",
         InferenceWorker(grpc_url=config.inference.grpc_url),
         NodeVariant.THREAD_PROCESSOR,
+        metric_recorder=mr,
     )
 
     if postprocessor is not None:
-        _register_shipped(registry, "postprocessor", postprocessor, NodeVariant.THREAD_PROCESSOR)
+        _register_shipped(registry, "postprocessor", postprocessor, NodeVariant.THREAD_PROCESSOR, metric_recorder=mr)
 
-    serializer_event_type = _extract_return_type(postprocessor) if postprocessor is not None else None
-    _register_shipped(registry, "serializer", EventSerializer(serializer_event_type), NodeVariant.THREAD_PROCESSOR)
-    _register_shipped(registry, "error_sink", LogErrorSink(), NodeVariant.THREAD_SINK)
+    if config.sinks:
+        serializer_event_type = _extract_return_type(postprocessor) if postprocessor is not None else None
+        _register_shipped(
+            registry,
+            "serializer",
+            EventSerializer(serializer_event_type),
+            NodeVariant.THREAD_PROCESSOR,
+            metric_recorder=mr,
+        )
+
+    _register_shipped(registry, "error_sink", LogErrorSink(), NodeVariant.THREAD_SINK, metric_recorder=mr)
 
 
 def _extract_return_type(node: object) -> type[Any] | None:

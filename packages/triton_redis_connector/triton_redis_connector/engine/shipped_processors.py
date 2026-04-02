@@ -204,18 +204,34 @@ class EventSerializer[T: BaseModel]:
             }
 
     def __call__(self, event: T) -> Envelope[bytes]:
-        """Serialize event to JSON bytes and wrap in an Envelope."""
+        """Serialize event to JSON bytes and wrap in an Envelope.
+
+        Populates ``original_fields`` from the event's metadata dict (if
+        present) so downstream Redis sinks write them as top-level hash
+        fields.  Falls back to EventContext when available, or empty fields
+        when running in a parallel thread without context.
+        """
         payload = event.model_dump_json().encode()
+        metadata = _extract_metadata(event)
+        original_fields = {k: str(v) for k, v in metadata.items()}
+        source_stream = original_fields.pop("source_stream", "")
+        message_id = original_fields.pop("message_id", "")
+
         try:
             ctx = current_context()
-            return Envelope(
-                payload=payload,
-                source_stream=ctx.source_stream,
-                message_id=ctx.message_id,
-                original_fields=dict(ctx.original_fields),
-            )
+            source_stream = source_stream or ctx.source_stream
+            message_id = message_id or ctx.message_id
+            if not original_fields:
+                original_fields = dict(ctx.original_fields)
         except LookupError:
-            return Envelope(payload=payload)
+            pass
+
+        return Envelope(
+            payload=payload,
+            source_stream=source_stream,
+            message_id=message_id,
+            original_fields=original_fields,
+        )
 
 
 class LogErrorSink:

@@ -3,15 +3,12 @@
 Pipeline graph:
   RedisStreamSource -> EnvelopeExtractor[SteelInspectionInput]
     -> CameraBranchRouter
-      -> [even] DaliInferenceInputBuilder --+
-      -> [odd]  ClientPreprocessor ---------+-> InferenceWorker
-                                                 -> YoloPostProcessorBridge
-                                                     -> EventSerializer -> RedisStreamSink
-                                                 -> LogErrorSink (InferenceError)
-
-Shipped processors (extractor, preprocessor, inference, postprocessor,
-serializer, error_sink) are resolved automatically from config.
-User processors (CameraBranchRouter) are passed via extra_nodes.
+      -> [even] ClientPreprocessor --+-> InferenceWorker
+      -> [odd]  ClientPreprocessor --+     -> YoloPostProcessorBridge
+                                                -> ModelResultRouter
+                                                  -> [even] EvenModelSink -> steel:even_results
+                                                  -> [odd]  OddModelSink  -> steel:odd_results
+                                           -> LogErrorSink (InferenceError)
 
 Usage:
     uv run python examples/dual_model_pipeline/run_pipeline.py
@@ -28,20 +25,36 @@ if TYPE_CHECKING:
     import types
 
 from loguru import logger
+from redis import Redis
 from triton_model_tools.inference.yolo_bridge import YoloPostProcessorBridge
 from triton_redis_connector.config.hydra_app import load_config
 from triton_redis_connector.providers.app_factory import build_application
 
 from examples.dual_model_pipeline.events import SteelInspectionInput
-from examples.dual_model_pipeline.processors import CameraBranchRouter
+from examples.dual_model_pipeline.processors import (
+    CameraBranchRouter,
+    EvenModelSink,
+    ModelResultRouter,
+    OddModelSink,
+)
 
 CONFIG_DIR = Path(__file__).resolve().parent
+
+EVEN_STREAM = "steel:even_results"
+ODD_STREAM = "steel:odd_results"
 
 
 def main() -> None:
     """Load config, build pipeline, run."""
     config = load_config(config_name="config", config_dir=CONFIG_DIR)
     logger.info("Starting {}", config.app_name)
+
+    redis_client: Redis[bytes] = Redis(
+        host=config.redis.host,
+        port=config.redis.port,
+        db=config.redis.db,
+        decode_responses=False,
+    )
 
     app = build_application(
         config,
@@ -53,6 +66,9 @@ def main() -> None:
         ),
         extra_nodes=[
             ("branch_router", CameraBranchRouter()),
+            ("result_router", ModelResultRouter()),
+            ("even_sink", EvenModelSink(redis_client, EVEN_STREAM)),
+            ("odd_sink", OddModelSink(redis_client, ODD_STREAM)),
         ],
     )
 
