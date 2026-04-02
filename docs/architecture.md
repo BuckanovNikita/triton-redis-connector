@@ -24,7 +24,7 @@ Internal layer hierarchy of `triton_redis_connector`:
 
 ```
 providers                                                             <- top: DI
-connectors | inference | preprocessing | metrics | routers            <- domain siblings
+connectors | inference | preprocessing | metrics                       <- domain siblings
 engine                                                                <- orchestration
 config | errors                                                       <- shared
 protocols                                                             <- leaf
@@ -232,16 +232,6 @@ When `decoder: dali`, `build_application` sends raw image bytes to Triton for se
 
 Configured via `PreprocessingConfig.decoder` (default: `OPENCV`).
 
-## Per-Model Output Routing
-
-`OutputStreamRouter` (`connectors/output_router.py`) maps model names to output Redis streams.
-
-Configuration via `OutputRoutingConfig`:
-- `model_streams: dict[str, str]` -- explicit model-to-stream mapping
-- `default_stream: str | None` -- fallback for unmapped models
-
-The router lazily creates `RedisStreamOutputConnector` instances per stream. `validate_routing()` checks at startup that all known models are routable.
-
 ## TensorRT Acceleration
 
 The `convert` CLI command exports YOLO models to ONNX format. Triton's `onnxruntime` backend can optionally use TensorRT as an execution provider for GPU acceleration. The `ExportFormat` enum in `triton_shared_models` supports both `ONNX` and `TENSORRT` targets. TRT plan files use the `tensorrt_plan` platform in Triton config.
@@ -277,7 +267,7 @@ Three-scope hierarchy defined in `providers/scopes.py`:
 Providers (`providers/` directory):
 - `ConfigProvider` -- config models from Hydra YAML
 - `EngineProvider` -- PipelineRegistry, QueueBus, Application
-- `ConnectorProvider` -- Redis connectors, ConsumerGroupManager, OutputStreamRouter
+- `ConnectorProvider` -- Redis connectors, ConsumerGroupManager
 - `InferenceProvider` -- InferenceWorker, InferenceWorkerFactory
 - `PreprocessingProvider` -- decoders, LetterBoxPreprocessor
 - `MetricsProvider` -- MetricBuffer, MetricEmitter, TritonMetricsCollector

@@ -125,33 +125,6 @@ class DebugConfig(BaseModel):
     mermaid_path: str = ""
 
 
-class RouterConfig(BaseModel):
-    """Configuration for event routing to inference models."""
-
-    model_config = ConfigDict(frozen=True)
-
-    router_class: str = "triton_redis_connector.routers.default.FieldBasedRouter"
-    default_model: str = ""
-    model_field: str = "model_name"
-
-
-class OutputRoutingConfig(BaseModel):
-    """Maps model names to output Redis streams."""
-
-    model_config = ConfigDict(frozen=True)
-
-    default_stream: str | None = "detection_results"
-    model_streams: dict[str, str] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def require_at_least_one_routing_target(self) -> Self:
-        """Ensure at least default_stream or model_streams is configured."""
-        if not self.default_stream and not self.model_streams:
-            msg = "OutputRoutingConfig requires at least one of 'default_stream' or 'model_streams' to be set"
-            raise ValueError(msg)
-        return self
-
-
 class NodeVariant(StrEnum):
     """Execution variant for config-driven pipeline nodes (parallel only).
 
@@ -237,5 +210,3 @@ class AppConfig(BaseModel):
     queues: QueueConfig = QueueConfig()
     metrics: MetricsConfig = MetricsConfig()
     debug: DebugConfig = DebugConfig()
-    router: RouterConfig = RouterConfig()
-    output_routing: OutputRoutingConfig = OutputRoutingConfig()

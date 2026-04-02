@@ -7,7 +7,6 @@
 - **9 вариантов исполнения** -- inline, threaded, process для каждого примитива
 - **Автоматическая маршрутизация** -- граф строится по типовым аннотациям `__call__`
 - **Конфигурация** -- Hydra YAML + Pydantic-валидация
-- **Маршрутизаторы** -- `FieldBasedRouter`, `BroadcastRouter` для мульти-модельных пайплайнов
 - **Метрики** -- transit time, inference time, Triton-метрики, оконная агрегация
 - **Debug-режим** -- `single_thread`, `stop_on_error`
 - **Mermaid-диаграмма** -- генерируется при старте для визуализации графа
@@ -185,33 +184,9 @@ metrics:
 debug:
   stop_on_error: false
   single_thread: false
-
-router:
-  router_class: triton_redis_connector.routers.default.FieldBasedRouter
-  default_model: yolo11s
-  model_field: model_name
-
-output_routing:
-  default_stream: detection_results
-  model_streams: {}
 ```
 
 Переменные окружения подставляются через Hydra OmegaConf-resolver `${oc.env:VAR,default}`.
-
-## Маршрутизаторы
-
-### FieldBasedRouter
-
-Маршрутизирует по полю события (по умолчанию `model_name`). Если поле отсутствует -- fallback на `default_model`.
-
-### BroadcastRouter
-
-Отправляет каждое событие на все сконфигурированные модели:
-
-```yaml
-router:
-  router_class: triton_redis_connector.routers.multi_model.BroadcastRouter
-```
 
 ## Метрики и наблюдаемость
 
@@ -233,17 +208,16 @@ debug:
 ## Точки расширения
 
 1. **Новый Source/Processor/Sink** -- реализуйте протокол из `protocols.py` и оберните через `engine/wrappers.py`
-2. **Новый Router** -- реализуйте метод `route(event) -> list[RoutingTarget]`
-3. **Новый декодер** -- реализуйте `ImageDecoder` протокол (`preprocessing/protocols.py`)
-4. **Кастомные метрики** -- реализуйте `AggregationRuleProtocol`
-5. **DI-провайдеры** -- добавьте Dishka-провайдер для своих зависимостей
+2. **Новый декодер** -- реализуйте `ImageDecoder` протокол (`preprocessing/protocols.py`)
+3. **Кастомные метрики** -- реализуйте `AggregationRuleProtocol`
+4. **DI-провайдеры** -- добавьте Dishka-провайдер для своих зависимостей
 
 ## Структура модулей
 
 ```
 triton_redis_connector/
   config/         -- Hydra + Pydantic конфигурация
-  connectors/     -- Redis Stream I/O, consumer groups, output router
+  connectors/     -- Redis Stream I/O, consumer groups
   engine/         -- Application, PipelineRegistry, QueueBus, diagram
   errors/         -- типизированные ошибки (ConnectorError, InferenceError, ...)
   inference/      -- InferenceWorker, model registry
@@ -251,7 +225,6 @@ triton_redis_connector/
   preprocessing/  -- декодеры (OpenCV, TurboJPEG), letterbox
   protocols/      -- все 9 вариантов, Envelope, фабрики
   providers/      -- Dishka DI-провайдеры, build_application, ConfigurableClientPreprocessor
-  routers/        -- FieldBasedRouter, BroadcastRouter
 ```
 
 Подробная архитектура описана в [docs/architecture.md](../../docs/architecture.md).
