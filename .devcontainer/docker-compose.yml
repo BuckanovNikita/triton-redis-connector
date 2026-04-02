@@ -49,6 +49,9 @@ services:
   triton:
     image: nvcr.io/nvidia/tritonserver:${TRITON_VERSION:-25.03}-py3
     runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
     volumes:
       - ../model_repository:/models
     shm_size: 1g
@@ -60,8 +63,7 @@ services:
     command: >
       tritonserver
         --model-repository=/models
-        --model-control-mode=poll
-        --repository-poll-secs=10
+        --model-control-mode=explicit
         --exit-on-error=false
         --strict-model-config=true
     healthcheck:
