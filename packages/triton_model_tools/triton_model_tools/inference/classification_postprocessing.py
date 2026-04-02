@@ -86,7 +86,7 @@ class DetailedClassificationPostprocessor(ClassificationPostprocessor):
     """Extended classification postprocessor carrying the full probability vector.
 
     Returns DetailedClassificationPrediction objects where each prediction
-    includes ``all_probabilities`` -- the complete probability distribution
+    includes ``all_probabilities`` — the complete probability distribution
     over all classes, allowing downstream consumers to inspect beyond top-K.
     """
 

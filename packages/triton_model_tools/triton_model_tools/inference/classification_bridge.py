@@ -51,7 +51,7 @@ class DetailedClassificationPostProcessorBridge:
     """Bridges DetailedClassificationPostprocessor with full probability vectors.
 
     Returns ClassificationResult where each prediction carries
-    ``all_probabilities`` -- the complete probability distribution over all classes.
+    ``all_probabilities`` — the complete probability distribution over all classes.
     """
 
     def __init__(  # noqa: D107

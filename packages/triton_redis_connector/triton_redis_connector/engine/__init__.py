@@ -1,1 +1,1 @@
-"""Pipeline engine: Envelope, EventContext, and base event types."""
+"""Pipeline engine: Application, PipelineRegistry, QueueBus, and base event types."""

@@ -89,32 +89,7 @@ app = Application.build(
 app.run()
 ```
 
-#### build_application() -- конфигурационный подход
-
-```python
-from triton_redis_connector.providers.app_factory import build_application
-
-app = build_application(
-    config,
-    postprocessor=MyPostProcessor(),
-)
-app.run()
-```
-
-Shipped-процессоры (preprocessor, InferenceWorker, EventSerializer, LogErrorSink) регистрируются автоматически на основе полей конфигурации.
-
-#### NodeConfig -- пользовательские узлы из YAML
-
-```yaml
-nodes:
-  - name: decoder
-    class_path: myapp.processors.ImageDecoder
-    variant: thread_processor
-    params:
-      target_size: [640, 640]
-```
-
-Функция `assemble_all()` импортирует классы, подставляет параметры, оборачивает в нужный вариант и регистрирует в пайплайне.
+Shipped-процессоры (ClientPreprocessorNode, InferenceNode, PostProcessorNode, LogErrorSinkNode) регистрируются через `Application.build()` или передаются явным списком.
 
 ## Построение графа
 
@@ -273,8 +248,7 @@ triton_redis_connector/
   metrics/        -- MetricBuffer, MetricEmitter, TritonCollector, агрегация
   preprocessing/  -- декодеры (OpenCV, TurboJPEG), letterbox
   protocols/      -- 6 параллельных вариантов, базовые классы, Envelope, фабрики
-  providers/      -- Dishka DI-провайдеры, build_application, ConfigurableClientPreprocessor
-  routers/        -- FieldBasedRouter, BroadcastRouter
+  providers/      -- Dishka DI-провайдеры (ConfigProvider, ConnectorProvider, InferenceProvider, MetricsProvider)
 ```
 
 Подробная архитектура описана в [docs/architecture.md](../../docs/architecture.md).

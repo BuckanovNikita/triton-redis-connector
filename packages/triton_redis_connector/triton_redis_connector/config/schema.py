@@ -147,7 +147,7 @@ class NodeConfig(BaseModel):
     """Configuration for a single pipeline node assembled from config.
 
     Used only for user-defined processors that need ``class_path``.
-    Shipped processors are registered automatically by ``build_application``.
+    Shipped processors are registered via ``Application.build()``.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -180,7 +180,7 @@ class PostprocessorConfig(BaseModel):
 
 
 class PipelineConfig(BaseModel):
-    """Shipped processor configuration resolved by build_application.
+    """Shipped processor configuration resolved by Application.build().
 
     Infrastructure params for shipped processors. All class references
     (event model, user processors) come from code, not config.

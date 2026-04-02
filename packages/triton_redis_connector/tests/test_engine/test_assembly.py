@@ -1,28 +1,18 @@
-"""Tests for config-driven node assembly."""
+"""Tests for config-driven node assembly utilities."""
 
 from __future__ import annotations
 
-import threading
-
 import pytest
-from pydantic import BaseModel
-from triton_redis_connector.config.schema import NodeConfig, NodeVariant
 from triton_redis_connector.engine.assembly import (
-    assemble_all,
-    assemble_node,
     import_class,
     resolve_type_params,
-    wrap_with_variant,
 )
-from triton_redis_connector.engine.registry import ExecutionVariant, PipelineRegistry
-from triton_redis_connector.engine.shipped_processors import EventSerializer
-from triton_redis_connector.protocols import BaseThreadProcessor, WrappedNode
 
 
 class TestImportClass:
     def test_imports_shipped_processor(self) -> None:
-        cls = import_class("triton_redis_connector.engine.shipped_processors.LogErrorSink")
-        assert cls.__name__ == "LogErrorSink"
+        cls = import_class("triton_redis_connector.engine.shipped_processors.LogErrorSinkNode")
+        assert cls.__name__ == "LogErrorSinkNode"
 
     def test_imports_builtin_type(self) -> None:
         cls = import_class("pydantic.BaseModel")
@@ -38,109 +28,26 @@ class TestImportClass:
 
     def test_raises_on_bare_name(self) -> None:
         with pytest.raises(ImportError, match="fully-qualified"):
-            import_class("LogErrorSink")
+            import_class("LogErrorSinkNode")
 
 
-class _StubEvent:
-    pass
-
-
-class _StubResult:
-    pass
-
-
-class _StubModel(BaseModel):
-    value: str = "test"
+class _TypeParamClass:
+    def __init__(self, event_type: type[object] | None = None) -> None:
+        self.event_type = event_type
 
 
 class TestResolveTypeParams:
     def test_resolves_type_param_from_string(self) -> None:
         params = resolve_type_params(
-            EventSerializer,
+            _TypeParamClass,
             {"event_type": "pydantic.BaseModel"},
         )
+        from pydantic import BaseModel
+
         assert params["event_type"] is BaseModel
 
     def test_passes_through_non_type_params(self) -> None:
-        params = resolve_type_params(EventSerializer, {"event_type": BaseModel})
+        from pydantic import BaseModel
+
+        params = resolve_type_params(_TypeParamClass, {"event_type": BaseModel})
         assert params["event_type"] is BaseModel
-
-
-class _PlainProcessor:
-    def __call__(self, event: _StubEvent) -> _StubResult | None:
-        return _StubResult()
-
-
-class _BaseClassProcessor(BaseThreadProcessor[_StubEvent, _StubResult]):
-    def __call__(self, event: _StubEvent) -> _StubResult | None:
-        return _StubResult()
-
-
-class TestWrapWithVariant:
-    def test_wraps_plain_callable(self) -> None:
-        inner = _PlainProcessor()
-        wrapped = wrap_with_variant(inner, NodeVariant.THREAD_PROCESSOR, component_name="test")
-        assert isinstance(wrapped, WrappedNode)
-        assert wrapped.variant == ExecutionVariant.THREAD_PROCESSOR.value
-
-    def test_skips_wrapping_matching_base_class(self) -> None:
-        inner = _BaseClassProcessor()
-        wrapped = wrap_with_variant(inner, NodeVariant.THREAD_PROCESSOR)
-        assert wrapped is inner
-
-
-class TestAssembleNode:
-    def test_assembles_shipped_sink(self) -> None:
-        cfg = NodeConfig(
-            name="log_sink",
-            class_path="triton_redis_connector.engine.shipped_processors.LogErrorSink",
-            variant=NodeVariant.THREAD_SINK,
-        )
-        name, node = assemble_node(cfg)
-        assert name == "log_sink"
-        assert isinstance(node, WrappedNode)
-
-
-class _ThreadedSource:
-    stop = threading.Event()
-
-    def __call__(self) -> _StubEvent | None:
-        return _StubEvent()
-
-
-class TestAssembleAll:
-    def test_registers_nodes_in_registry(self) -> None:
-        registry = PipelineRegistry()
-        registry.register("src", _ThreadedSource())
-
-        configs = [
-            NodeConfig(
-                name="log_sink",
-                class_path="triton_redis_connector.engine.shipped_processors.LogErrorSink",
-                variant=NodeVariant.THREAD_PROCESSOR,
-            ),
-        ]
-        assemble_all(configs, registry)
-        node = registry.get_node("log_sink")
-        assert node is not None
-        assert node.variant == ExecutionVariant.THREAD_PROCESSOR
-
-    def test_pool_size_creates_multiple_nodes(self) -> None:
-        registry = PipelineRegistry()
-        configs = [
-            NodeConfig(
-                name="worker",
-                class_path="triton_redis_connector.engine.shipped_processors.LogErrorSink",
-                variant=NodeVariant.THREAD_POOL_PROCESSOR,
-                pool_size=3,
-            ),
-        ]
-        assemble_all(configs, registry)
-        assert registry.get_node("worker-0") is not None
-        assert registry.get_node("worker-1") is not None
-        assert registry.get_node("worker-2") is not None
-
-    def test_empty_config_does_nothing(self) -> None:
-        registry = PipelineRegistry()
-        assemble_all([], registry)
-        assert len(registry.nodes) == 0

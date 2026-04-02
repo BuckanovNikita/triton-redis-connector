@@ -1,29 +1,21 @@
 """Application entry point with Hydra configuration composition.
 
-Composes the AppConfig from Hydra YAML files, builds a dishka container
-with all providers, resolves the Application, and runs the pipeline.
+Composes the AppConfig from Hydra YAML files, builds a PipelineRegistry
+and QueueBus, creates an Application, and runs the pipeline.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from dishka import make_container
 from hydra import main as hydra_main
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
 from triton_redis_connector.config.schema import AppConfig
 from triton_redis_connector.engine.app import Application
-from triton_redis_connector.providers import (
-    ConfigProvider,
-    ConnectorProvider,
-    ConnectorScope,
-    EngineProvider,
-    InferenceProvider,
-    MetricsProvider,
-    PreprocessingProvider,
-)
+from triton_redis_connector.engine.queue_bus import QueueBus
+from triton_redis_connector.engine.registry import PipelineRegistry
 
 
 def _run_app(cfg: DictConfig) -> None:
@@ -31,21 +23,10 @@ def _run_app(cfg: DictConfig) -> None:
     app_config = AppConfig.model_validate(raw)
     logger.info("Starting {} with config: {}", app_config.app_name, app_config)
 
-    container = make_container(
-        ConfigProvider(app_config),
-        EngineProvider(),
-        ConnectorProvider(),
-        InferenceProvider(),
-        PreprocessingProvider(),
-        MetricsProvider(),
-        scopes=ConnectorScope,
-    )
-
-    try:
-        app: Application = container.get(Application)
-        app.run()
-    finally:
-        container.close()
+    registry = PipelineRegistry()
+    queue_bus = QueueBus(config=app_config.queues)
+    app = Application(config=app_config, registry=registry, queue_bus=queue_bus)
+    app.run()
 
 
 @hydra_main(version_base=None, config_path="conf", config_name="config")
