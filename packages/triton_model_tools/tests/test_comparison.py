@@ -6,7 +6,6 @@ import pytest
 from triton_model_tools.benchmarks.comparison import (
     compare_backends,
     compare_inference,
-    compute_iou,
     match_detections,
 )
 from triton_model_tools.models.detection import Detection, ImageDetectionResult
@@ -33,43 +32,6 @@ def _img_result(
         detections=detections or [],
         inference_time_ms=10.0,
     )
-
-
-class TestComputeIou:
-    def test_full_overlap(self) -> None:
-        box = _det(0, 0, 100, 100)
-        assert compute_iou(box, box) == pytest.approx(1.0)
-
-    def test_no_overlap(self) -> None:
-        a = _det(0, 0, 50, 50)
-        b = _det(60, 60, 100, 100)
-        assert compute_iou(a, b) == pytest.approx(0.0)
-
-    def test_partial_overlap(self) -> None:
-        a = _det(0, 0, 100, 100)
-        b = _det(50, 50, 150, 150)
-        intersection = 50 * 50
-        union = 2 * 100 * 100 - intersection
-        expected = intersection / union
-        assert compute_iou(a, b) == pytest.approx(expected)
-
-    def test_one_inside_other(self) -> None:
-        outer = _det(0, 0, 100, 100)
-        inner = _det(25, 25, 75, 75)
-        intersection = 50 * 50
-        union = 100 * 100
-        expected = intersection / union
-        assert compute_iou(outer, inner) == pytest.approx(expected)
-
-    def test_zero_area_boxes(self) -> None:
-        a = _det(0, 0, 0, 0)
-        b = _det(10, 10, 10, 10)
-        assert compute_iou(a, b) == pytest.approx(0.0)
-
-    def test_touching_edges(self) -> None:
-        a = _det(0, 0, 50, 50)
-        b = _det(50, 0, 100, 50)
-        assert compute_iou(a, b) == pytest.approx(0.0)
 
 
 class TestMatchDetections:

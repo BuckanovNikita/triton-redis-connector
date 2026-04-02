@@ -4782,10 +4782,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-benchmarks = [
-    { name = "nvidia-ml-py" },
-    { name = "psutil" },
-]
 dali = [
     { name = "nvidia-dali-cuda120" },
 ]
@@ -4796,12 +4792,10 @@ requires-dist = [
     { name = "loguru", specifier = ">=0.7.3,<1.0.0" },
     { name = "numpy", specifier = ">=1.26.0,<3.0.0" },
     { name = "nvidia-dali-cuda120", marker = "extra == 'dali'", specifier = ">=1.35.0" },
-    { name = "nvidia-ml-py", marker = "extra == 'benchmarks'", specifier = ">=12.0.0" },
     { name = "onnx", specifier = ">=1.17.0,<2.0.0" },
     { name = "onnxruntime", specifier = ">=1.19.0,<2.0.0" },
     { name = "opencv-python-headless", specifier = ">=4.10.0,<5.0.0" },
     { name = "pillow", specifier = ">=10.4.0,<13.0.0" },
-    { name = "psutil", marker = "extra == 'benchmarks'", specifier = ">=6.0.0" },
     { name = "pydantic", specifier = ">=2.12.5,<3.0.0" },
     { name = "redis", specifier = ">=5.2.0,<6.0.0" },
     { name = "triton-redis-connector", editable = "packages/triton_redis_connector" },
@@ -4809,7 +4803,7 @@ requires-dist = [
     { name = "tritonclient", extras = ["grpc"], specifier = ">=2.55.0,<3.0.0" },
     { name = "ultralytics", specifier = ">=8.4.32,<9.0.0" },
 ]
-provides-extras = ["dali", "benchmarks"]
+provides-extras = ["dali"]
 
 [[package]]
 name = "triton-redis-connector"

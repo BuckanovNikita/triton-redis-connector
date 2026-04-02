@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from loguru import logger
+from triton_shared_models.preprocessing import LetterBoxPreprocessor as YoloPreprocessor
 
 from triton_model_tools.inference._folder_inference_common import run_image_loop
 from triton_model_tools.inference.detection_io import collect_image_paths
@@ -14,7 +15,6 @@ from triton_model_tools.inference.postprocessing import (
     DEFAULT_IOU_THRESHOLD,
     YoloPostprocessor,
 )
-from triton_model_tools.inference.preprocessing import YoloPreprocessor
 
 if TYPE_CHECKING:
     from pathlib import Path

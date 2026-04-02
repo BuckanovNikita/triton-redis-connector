@@ -1,6 +1,6 @@
 """Prediction comparison utilities for evaluating detection and classification model outputs.
 
-Provides IoU computation, detection matching with greedy algorithm,
+Provides detection matching with greedy algorithm,
 multi-backend comparison summaries, and classification accuracy metrics.
 """
 
@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import torch
+import torchvision.ops
 from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
@@ -37,24 +39,11 @@ class ComparisonSummary(BaseModel):
     overall: ComparisonMetrics
 
 
-def compute_iou(box_a: Detection, box_b: Detection) -> float:
-    """Compute Intersection over Union between two detection bounding boxes."""
-    inter_x1 = max(box_a.x1, box_b.x1)
-    inter_y1 = max(box_a.y1, box_b.y1)
-    inter_x2 = min(box_a.x2, box_b.x2)
-    inter_y2 = min(box_a.y2, box_b.y2)
-
-    inter_w = max(0.0, inter_x2 - inter_x1)
-    inter_h = max(0.0, inter_y2 - inter_y1)
-    intersection = inter_w * inter_h
-
-    area_a = max(0.0, box_a.x2 - box_a.x1) * max(0.0, box_a.y2 - box_a.y1)
-    area_b = max(0.0, box_b.x2 - box_b.x1) * max(0.0, box_b.y2 - box_b.y1)
-    union = area_a + area_b - intersection
-
-    if union <= 0.0:
-        return 0.0
-    return intersection / union
+def _detections_to_tensor(detections: list[Detection]) -> torch.Tensor:
+    return torch.tensor(
+        [[d.x1, d.y1, d.x2, d.y2] for d in detections],
+        dtype=torch.float32,
+    )
 
 
 def match_detections(
@@ -78,20 +67,24 @@ def match_detections(
     if not ground_truth:
         return [], list(predictions), []
 
-    iou_matrix: list[tuple[float, int, int]] = []
-    for p_idx, pred in enumerate(predictions):
-        for g_idx, gt in enumerate(ground_truth):
-            iou = compute_iou(pred, gt)
-            if iou >= iou_threshold:
-                iou_matrix.append((iou, p_idx, g_idx))
+    pred_boxes = _detections_to_tensor(predictions)
+    gt_boxes = _detections_to_tensor(ground_truth)
+    iou_matrix_tensor = torchvision.ops.box_iou(pred_boxes, gt_boxes)
 
-    iou_matrix.sort(key=lambda x: x[0], reverse=True)
+    candidates: list[tuple[float, int, int]] = []
+    for p_idx in range(len(predictions)):
+        for g_idx in range(len(ground_truth)):
+            iou_val = float(iou_matrix_tensor[p_idx, g_idx])
+            if iou_val >= iou_threshold:
+                candidates.append((iou_val, p_idx, g_idx))
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
 
     matched_pred_indices: set[int] = set()
     matched_gt_indices: set[int] = set()
     matched_pairs: list[tuple[Detection, Detection]] = []
 
-    for _iou_val, p_idx, g_idx in iou_matrix:
+    for _iou_val, p_idx, g_idx in candidates:
         if p_idx in matched_pred_indices or g_idx in matched_gt_indices:
             continue
         matched_pairs.append((predictions[p_idx], ground_truth[g_idx]))
@@ -102,6 +95,12 @@ def match_detections(
     missed_detections = [g for i, g in enumerate(ground_truth) if i not in matched_gt_indices]
 
     return matched_pairs, false_positives, missed_detections
+
+
+def _compute_iou_for_pair(pred: Detection, gt: Detection) -> float:
+    pred_t = torch.tensor([[pred.x1, pred.y1, pred.x2, pred.y2]], dtype=torch.float32)
+    gt_t = torch.tensor([[gt.x1, gt.y1, gt.x2, gt.y2]], dtype=torch.float32)
+    return float(torchvision.ops.box_iou(pred_t, gt_t)[0, 0])
 
 
 def _compute_metrics(
@@ -120,7 +119,7 @@ def _compute_metrics(
     recall = num_matched / total_gt if total_gt > 0 else 1.0
 
     if num_matched > 0:
-        avg_iou = sum(compute_iou(p, g) for p, g in matched_pairs) / num_matched
+        avg_iou = sum(_compute_iou_for_pair(p, g) for p, g in matched_pairs) / num_matched
         class_mismatches = sum(1 for p, g in matched_pairs if p.class_id != g.class_id)
         class_mismatch_rate = class_mismatches / num_matched
     else:

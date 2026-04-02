@@ -77,12 +77,6 @@ def build_parser(subparsers: SubParsers) -> None:
         help="Model uses end2end NMS output format",
     )
     bench_parser.add_argument(
-        "--max-memory-gb",
-        type=float,
-        default=20.0,
-        help="VRAM limit in GB; warn if peak usage exceeds this (default: 20)",
-    )
-    bench_parser.add_argument(
         "--output",
         "-o",
         type=Path,
@@ -110,7 +104,6 @@ def run(args: argparse.Namespace) -> None:
     num_images: int = args.num_images
     warmup_runs: int = args.warmup_runs
     end2end: bool = args.end2end
-    max_memory_gb: float = args.max_memory_gb
     output_path: Path | None = args.output
     repository_root: Path | None = args.repository_root
 
@@ -136,7 +129,6 @@ def run(args: argparse.Namespace) -> None:
         num_images=num_images,
         warmup_runs=warmup_runs,
         end2end=end2end,
-        max_memory_gb=max_memory_gb,
     )
 
     result = run_benchmark(config, image_dir)

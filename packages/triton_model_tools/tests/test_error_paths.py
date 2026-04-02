@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-from triton_model_tools.inference.preprocessing import YoloPreprocessor
 from triton_model_tools.testing.e2e_test import ConnectorE2ETestHarness, E2ETestConfig
+from triton_shared_models.preprocessing import LetterBoxPreprocessor as YoloPreprocessor
 
 
 class TestRedisConnectionFailure:

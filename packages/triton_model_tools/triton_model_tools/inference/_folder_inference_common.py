@@ -17,9 +17,9 @@ if TYPE_CHECKING:
     from typing import Any
 
     from numpy.typing import NDArray
+    from triton_shared_models.preprocessing import LetterBoxPreprocessor as YoloPreprocessor
 
     from triton_model_tools.inference.postprocessing import YoloPostprocessor
-    from triton_model_tools.inference.preprocessing import YoloPreprocessor
 
 
 def run_image_loop(  # noqa: PLR0913
