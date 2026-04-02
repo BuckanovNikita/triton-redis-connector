@@ -4,40 +4,40 @@
 
 ## Основные возможности
 
-- **9 вариантов исполнения** -- inline, threaded, process для каждого примитива
-- **Автоматическая маршрутизация** -- граф строится по типовым аннотациям `__call__`
+- **6 параллельных вариантов исполнения** -- все узлы работают в выделенных потоках
+- **Автоматическая маршрутизация** -- граф строится по типовым аннотациям `__orig_bases__`
+- **PipelineEvent** -- типизированная композиция пользовательского контекста и стадии обработки
 - **Конфигурация** -- Hydra YAML + Pydantic-валидация
+- **ModelBundle** -- группировка процессоров для одной модели
+- **Маршрутизаторы** -- `FieldBasedRouter`, `BroadcastRouter` для мульти-модельных пайплайнов
 - **Метрики** -- transit time, inference time, Triton-метрики, оконная агрегация
-- **Debug-режим** -- `single_thread`, `stop_on_error`
+- **Debug-режим** -- `stop_on_error`
 - **Mermaid-диаграмма** -- генерируется при старте для визуализации графа
 
 ## Варианты исполнения
 
-Фреймворк предоставляет три примитива, каждый с вариантами исполнения:
+Фреймворк предоставляет три примитива с параллельными вариантами исполнения (6 вариантов). Inline-вариантов нет -- все узлы работают в выделенных потоках.
 
 ### Source -- производит события
 
-| Вариант | Описание | `stop` |
+| Вариант | Базовый класс | `stop` |
 |---------|----------|--------|
-| `Source` | Inline, вызывается в главном цикле | -- |
-| `ThreadSource` | Выделенный поток | `threading.Event` |
-| `ProcessSource` | Выделенный процесс | `threading.Event` |
+| `ThreadSource` | `BaseThreadSource[TOut]` | `threading.Event` |
+| `ProcessSource` | `BaseProcessSource[TOut]` | `threading.Event` |
 
 ### Processor -- преобразует события
 
-| Вариант | Описание | `stop` |
+| Вариант | Базовый класс | `stop` |
 |---------|----------|--------|
-| `Processor` | Inline, синхронный | -- |
-| `ThreadProcessor` | Выделенный поток | `threading.Event` |
-| `ThreadPoolProcessor` | Пул из N потоков | `threading.Event` |
-| `ProcessPoolProcessor` | Пул из N процессов | `threading.Event` |
+| `ThreadProcessor` | `BaseThreadProcessor[TIn, TOut]` | `threading.Event` |
+| `ThreadPoolProcessor` | `BaseThreadPoolProcessor[TIn, TOut]` | `threading.Event` |
+| `ProcessPoolProcessor` | `BaseProcessPoolProcessor[TIn, TOut]` | `threading.Event` |
 
 ### Sink -- потребляет события
 
-| Вариант | Описание | `stop` |
+| Вариант | Базовый класс | `stop` |
 |---------|----------|--------|
-| `Sink` | Inline, синхронный | -- |
-| `ThreadSink` | Выделенный поток | `threading.Event` |
+| `ThreadSink` | `BaseThreadSink[TIn]` | `threading.Event` |
 
 Все протоколы определены в `triton_redis_connector/protocols.py`. Обёртки для параллельных вариантов -- в `triton_redis_connector/engine/wrappers.py`.
 
@@ -59,35 +59,62 @@ class MyProcessor(BaseThreadProcessor[InputEvent, OutputEvent]):
 registry.register("proc", MyProcessor("value"))
 ```
 
-### Сборка из конфигурации
+### Доменная модель событий
 
-Встроенные процессоры собираются из YAML-конфигурации:
+- `Event` -- базовый класс с `fw: FrameworkMeta` (source_stream, message_id)
+- `PipelineEvent[TCtx, TPayload]` -- типизированная композиция пользовательского контекста и payload обработки
+- `ImagePayload` -- путь к изображению или байты для препроцессора
+- `TritonRequest` -- тензор или байты для Triton-инференса
+- `DetectionResult` / `ClassificationResult` -- типизированные результаты
 
-```yaml
-nodes:
-  - name: input_extractor
-    class_path: triton_redis_connector.engine.shipped_processors.EnvelopeExtractor
-    variant: thread_processor
-    params:
-      model_class: myapp.events.InputEvent
+### Построение пайплайна
+
+#### Application.build() -- предпочтительный способ
+
+```python
+from triton_redis_connector import Application, ModelBundle, expand_bundle
+
+bundle = ModelBundle(
+    name="yolo",
+    preprocessor=ClientPreprocessorNode(...),
+    inference=InferenceNode(grpc_url="triton:8001"),
+    postprocessor=PostProcessorNode(postprocessor=yolo_bridge),
+    sink=LogErrorSinkNode(),
+)
+
+app = Application.build(
+    config,
+    processors=[source, *expand_bundle(bundle), redis_sink],
+)
+app.run()
 ```
 
-Функция `assemble_all()` импортирует классы, подставляет параметры, оборачивает в нужный вариант и регистрирует в пайплайне.
-
-Для shipped-процессоров используйте `build_application()`:
+#### build_application() -- конфигурационный подход
 
 ```python
 from triton_redis_connector.providers.app_factory import build_application
 
 app = build_application(
     config,
-    event_model=MyInputEvent,
     postprocessor=MyPostProcessor(),
 )
 app.run()
 ```
 
-Shipped-процессоры (EnvelopeExtractor, DaliTritonRequestBuilder/ClientPreprocessor, InferenceWorker, EventSerializer, LogErrorSink) регистрируются автоматически на основе полей конфигурации.
+Shipped-процессоры (preprocessor, InferenceWorker, EventSerializer, LogErrorSink) регистрируются автоматически на основе полей конфигурации.
+
+#### NodeConfig -- пользовательские узлы из YAML
+
+```yaml
+nodes:
+  - name: decoder
+    class_path: myapp.processors.ImageDecoder
+    variant: thread_processor
+    params:
+      target_size: [640, 640]
+```
+
+Функция `assemble_all()` импортирует классы, подставляет параметры, оборачивает в нужный вариант и регистрирует в пайплайне.
 
 ## Построение графа
 
@@ -111,21 +138,18 @@ Union-типы в возвращаемом значении (`EventA | EventB | 
 ```mermaid
 graph LR
     redis_source([redis_source])
-    envelope_extractor[envelope_extractor]
-    image_decoder[image_decoder]
-    preprocessor[preprocessor]
-    inference[inference]
-    postprocessor[postprocessor]
-    serializer[serializer]
+    preprocessor[ClientPreprocessorNode]
+    inference[InferenceNode]
+    postprocessor[PostProcessorNode]
+    error_sink[[LogErrorSinkNode]]
     redis_sink[[redis_sink]]
 
-    redis_source -->|Envelope| envelope_extractor
-    envelope_extractor -->|bytes| image_decoder
-    image_decoder -->|DecodedImage| preprocessor
-    preprocessor -->|TritonRequest| inference
-    inference -->|InferenceOutput| postprocessor
-    postprocessor -->|DetectionResult| serializer
-    serializer -->|Envelope| redis_sink
+    redis_source -->|PipelineEvent| preprocessor
+    preprocessor -->|PipelineEvent| inference
+    preprocessor -->|PreprocessingError| error_sink
+    inference -->|PipelineEvent| postprocessor
+    inference -->|InferenceError| error_sink
+    postprocessor -->|PipelineEvent| redis_sink
 ```
 
 Форма узлов: `([Source])`, `[Processor]`, `[[Sink]]`.
@@ -184,9 +208,33 @@ metrics:
 debug:
   stop_on_error: false
   single_thread: false
+
+router:
+  router_class: triton_redis_connector.routers.default.FieldBasedRouter
+  default_model: yolo11s
+  model_field: model_name
+
+output_routing:
+  default_stream: detection_results
+  model_streams: {}
 ```
 
 Переменные окружения подставляются через Hydra OmegaConf-resolver `${oc.env:VAR,default}`.
+
+## Маршрутизаторы
+
+### FieldBasedRouter
+
+Маршрутизирует по полю события (по умолчанию `model_name`). Если поле отсутствует -- fallback на `default_model`.
+
+### BroadcastRouter
+
+Отправляет каждое событие на все сконфигурированные модели:
+
+```yaml
+router:
+  router_class: triton_redis_connector.routers.multi_model.BroadcastRouter
+```
 
 ## Метрики и наблюдаемость
 
@@ -207,24 +255,26 @@ debug:
 
 ## Точки расширения
 
-1. **Новый Source/Processor/Sink** -- реализуйте протокол из `protocols.py` и оберните через `engine/wrappers.py`
-2. **Новый декодер** -- реализуйте `ImageDecoder` протокол (`preprocessing/protocols.py`)
-3. **Кастомные метрики** -- реализуйте `AggregationRuleProtocol`
-4. **DI-провайдеры** -- добавьте Dishka-провайдер для своих зависимостей
+1. **Новый Source/Processor/Sink** -- наследуйтесь от базового класса в `protocols.py` или оберните через `engine/wrappers.py`
+2. **Новый Router** -- реализуйте метод `route(event) -> list[RoutingTarget]`
+3. **Новый декодер** -- реализуйте `ImageDecoder` протокол (`preprocessing/protocols.py`)
+4. **Кастомные метрики** -- реализуйте `AggregationRuleProtocol`
+5. **DI-провайдеры** -- добавьте Dishka-провайдер для своих зависимостей
 
 ## Структура модулей
 
 ```
 triton_redis_connector/
   config/         -- Hydra + Pydantic конфигурация
-  connectors/     -- Redis Stream I/O, consumer groups
+  connectors/     -- Redis Stream I/O, consumer groups, output router
   engine/         -- Application, PipelineRegistry, QueueBus, diagram
   errors/         -- типизированные ошибки (ConnectorError, InferenceError, ...)
   inference/      -- InferenceWorker, model registry
   metrics/        -- MetricBuffer, MetricEmitter, TritonCollector, агрегация
   preprocessing/  -- декодеры (OpenCV, TurboJPEG), letterbox
-  protocols/      -- все 9 вариантов, Envelope, фабрики
+  protocols/      -- 6 параллельных вариантов, базовые классы, Envelope, фабрики
   providers/      -- Dishka DI-провайдеры, build_application, ConfigurableClientPreprocessor
+  routers/        -- FieldBasedRouter, BroadcastRouter
 ```
 
 Подробная архитектура описана в [docs/architecture.md](../../docs/architecture.md).

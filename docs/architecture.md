@@ -24,7 +24,7 @@ Internal layer hierarchy of `triton_redis_connector`:
 
 ```
 providers                                                             <- top: DI
-connectors | inference | preprocessing | metrics                       <- domain siblings
+connectors | inference | preprocessing | metrics | routers            <- domain siblings
 engine                                                                <- orchestration
 config | errors                                                       <- shared
 protocols                                                             <- leaf
@@ -50,13 +50,12 @@ __main__  ->  cli  ->  benchmarks  ->  testing  ->  inference | export  ->  mode
 
 ## Execution Variant Model
 
-Three primitives, each with execution mode variants (9 total). All protocols defined in `protocols.py`.
+Three primitives, each with parallel execution mode variants (6 total). All protocols defined in `protocols.py`. There are no inline variants -- all nodes run in dedicated threads managed by the Application main loop.
 
 ### Source (produces events)
 
 | Variant | Protocol | Execution |
 |---|---|---|
-| `Source` | `Source[TOut]` | Inline, polled by main loop |
 | `ThreadSource` | `ThreadSource[TOut]` | Dedicated thread, has `stop: Event` |
 | `ProcessSource` | `ProcessSource[TOut]` | Dedicated OS process, has `stop: Event` |
 
@@ -64,7 +63,6 @@ Three primitives, each with execution mode variants (9 total). All protocols def
 
 | Variant | Protocol | Execution |
 |---|---|---|
-| `Processor` | `Processor[TIn, TOut]` | Inline, dispatched by main loop |
 | `ThreadProcessor` | `ThreadProcessor[TIn, TOut]` | Dedicated thread |
 | `ThreadPoolProcessor` | `ThreadPoolProcessor[TIn, TOut]` | N threads, shared queue |
 | `ProcessPoolProcessor` | `ProcessPoolProcessor[TIn, TOut]` | N processes, shared queue |
@@ -73,7 +71,6 @@ Three primitives, each with execution mode variants (9 total). All protocols def
 
 | Variant | Protocol | Execution |
 |---|---|---|
-| `Sink` | `Sink[TIn]` | Inline, runs in main loop |
 | `ThreadSink` | `ThreadSink[TIn]` | Dedicated thread, has `stop: Event` |
 
 User code has two options for declaring the execution variant:
@@ -85,18 +82,15 @@ See: `protocols.py` (base classes), `engine/wrappers.py`, `engine/registry.py`
 
 ### Base Classes for User Processors
 
-User-defined processors inherit from base classes that declare the execution variant explicitly. Nine base classes in `protocols.py` correspond to the nine execution variants:
+User-defined processors inherit from base classes that declare the execution variant explicitly. Six base classes in `protocols.py` correspond to the six parallel execution variants:
 
 | Base Class | Variant | Has `stop` |
 |---|---|---|
-| `BaseSource[TOut]` | Inline source | No |
 | `BaseThreadSource[TOut]` | Threaded source | Yes |
 | `BaseProcessSource[TOut]` | Process source | Yes |
-| `BaseProcessor[TIn, TOut]` | Inline processor | No |
 | `BaseThreadProcessor[TIn, TOut]` | Dedicated thread | Yes |
 | `BaseThreadPoolProcessor[TIn, TOut]` | Thread pool | Yes |
 | `BaseProcessPoolProcessor[TIn, TOut]` | Process pool | Yes |
-| `BaseSink[TIn]` | Inline sink | No |
 | `BaseThreadSink[TIn]` | Threaded sink | Yes |
 
 Base classes satisfy the `WrappedNode` protocol (fast-path variant detection in registry). User code:
@@ -120,7 +114,7 @@ registry.register("proc", MyProcessor("triton:8001"))
 `NodeConfig` is primarily for **user-defined processors** that need a `class_path` to be imported dynamically. Shipped processors (extractor, preprocessor, inference worker, serializer, error sink) are registered automatically by `build_application` from config fields -- no `NodeConfig` entries needed. The variant is a deployment decision in config, not hardcoded in the processor.
 
 Config schema (`config/schema.py`):
-- `NodeVariant` -- StrEnum mirroring `ExecutionVariant` (SOURCE, THREAD_SOURCE, PROCESS_SOURCE, PROCESSOR, THREAD_PROCESSOR, THREAD_POOL_PROCESSOR, PROCESS_POOL_PROCESSOR, SINK, THREAD_SINK)
+- `NodeVariant` -- StrEnum mirroring `ExecutionVariant` (THREAD_SOURCE, PROCESS_SOURCE, THREAD_PROCESSOR, THREAD_POOL_PROCESSOR, PROCESS_POOL_PROCESSOR, THREAD_SINK)
 - `NodeConfig` -- name, class_path, variant, params, tracked, pool_size
 - `AppConfig.nodes: list[NodeConfig]` for user-defined processors that require dynamic import
 
@@ -133,14 +127,40 @@ Assembly (`engine/assembly.py`):
 DI Provider (`providers/node_assembly_provider.py`):
 - `NodeAssemblyProvider` reads `AppConfig.nodes`, assembles, and registers all nodes before `Application` starts
 
+### Application.build() Classmethod
+
+`engine/app.py` provides `Application.build(config, processors, *, triton_collector)` -- a classmethod that creates a fully wired Application from an explicit processor list.
+
+```python
+from triton_redis_connector import Application, ModelBundle, expand_bundle
+
+bundle = ModelBundle(
+    name="yolo",
+    preprocessor=ClientPreprocessorNode(...),
+    inference=InferenceNode(grpc_url="triton:8001"),
+    postprocessor=PostProcessorNode(postprocessor=my_postprocessor),
+    sink=LogErrorSinkNode(),
+)
+
+app = Application.build(
+    config,
+    processors=[redis_source, *expand_bundle(bundle), redis_sink],
+)
+app.run()
+```
+
+What `Application.build` does:
+- Creates `PipelineRegistry` and registers each processor by its `name` attribute or class name
+- Auto-creates `MetricBuffer`, `MetricEmitter`, `QueueBus` from config
+- Runs graph validation before returning
+
 ### build_application Factory
 
-`providers/app_factory.py` provides `build_application()` -- a high-level factory that creates a fully wired `Application` from an `AppConfig` with minimal boilerplate.
+`providers/app_factory.py` provides `build_application(config, *, postprocessor, extra_nodes)` -- a config-driven factory that creates a fully wired `Application` from an `AppConfig`.
 
 ```python
 app = build_application(
     config,
-    event_model=SteelInspectionInput,
     postprocessor=YoloPostProcessorBridge(
         conf_threshold=config.pipeline.postprocessor.conf_threshold,
         iou_threshold=config.pipeline.postprocessor.iou_threshold,
@@ -153,22 +173,25 @@ app = build_application(
 What `build_application` does automatically:
 - Creates Redis client and verifies connectivity
 - Creates `RedisStreamSource`/`RedisStreamSink` from `config.sources`/`config.sinks`
-- Registers shipped processors from config fields: `EnvelopeExtractor` (from `event_model`), preprocessor (from `preprocessing.decoder` + `pipeline.model_name`), `InferenceWorker` (from `inference.grpc_url`), `EventSerializer`, `LogErrorSink`
+- Registers shipped processors from config fields: preprocessor (from `preprocessing.decoder` + `pipeline.model_name`), `InferenceWorker` (from `inference.grpc_url`), `EventSerializer`, `LogErrorSink`
 - Assembles any `NodeConfig` entries from `config.nodes`
 - Registers user processors passed via `extra_nodes`
 
 Separation of concerns:
 - **Config** contains only infrastructure params (Redis URLs, model names, thresholds, tensor names) -- no class paths for shipped processors
-- **Code** provides `event_model` (pydantic model for envelope extraction) and `postprocessor` (e.g., `YoloPostProcessorBridge` from model_tools)
+- **Code** provides `postprocessor` (e.g., `YoloPostProcessorBridge` from model_tools)
 - **extra_nodes** receives user-defined processors that extend the pipeline graph
 
 ## Shipped Processors
 
-Seven reusable processors provided out of the box. Five live in `triton_redis_connector.engine.shipped_processors`, one in `triton_redis_connector.providers.shipped_factories`, one in `triton_model_tools.inference.yolo_bridge`. Shipped processors are variant-agnostic plain callables. When using `build_application`, they are registered automatically from config fields. They can also be assembled manually from YAML config with any execution variant via `NodeConfig` entries (see "Config-Driven Node Assembly" above).
+Two generations of shipped processors coexist. Legacy processors are plain callables wrapped at assembly time. New Node classes inherit from Base* classes and use the `PipelineEvent` composition pattern.
+
+### Legacy Shipped Processors (variant-agnostic)
+
+When using `build_application`, these are registered automatically from config fields. They can also be assembled manually from YAML config with any execution variant via `NodeConfig` entries (see "Config-Driven Node Assembly" above).
 
 | Processor | Location | Input | Output | Purpose |
 |---|---|---|---|---|
-| `EnvelopeExtractor[T]` | connector | `Envelope[bytes]` | `T` (pydantic) | Deserialize envelope bytes into a typed pydantic model |
 | `DaliTritonRequestBuilder` | connector | `_ImageBytesEvent` or `_ImagePathEvent` | `TritonRequest` | Wrap raw image bytes for DALI ensemble inference (reads from path if needed) |
 | `ClientPreprocessor` | connector | `_ImagePathEvent` | `TritonRequest` | Read file, decode, letterbox, wrap as tensor |
 | `ConfigurableClientPreprocessor` | connector (providers) | `_ImagePathEvent` | `TritonRequest` | Config-friendly ClientPreprocessor (decoder_type + target_size) |
@@ -176,7 +199,47 @@ Seven reusable processors provided out of the box. Five live in `triton_redis_co
 | `LogErrorSink` | connector | `BaseModel` | `None` | Log error events at error level via loguru |
 | `YoloPostProcessorBridge` | model_tools | `InferenceOutput` | `DetectionResult` | YOLO postprocessing (NMS + confidence filter), config-friendly constructor |
 
-**Metadata bypass**: All preprocessors (`DaliTritonRequestBuilder`, `ClientPreprocessor`, `ConfigurableClientPreprocessor`) support metadata passthrough. If the input event carries a `metadata: dict[str, Any]` field, it is copied through the pipeline via `TritonRequest.metadata` -> `InferenceOutput.metadata` -> `DetectionResult.metadata` without interpretation. This allows domain-specific fields (camera ID, timestamp, custom tags) to travel alongside inference data.
+### New Node Classes (PipelineEvent-aware)
+
+These inherit from Base* classes for variant declaration and use the `PipelineEvent[TCtx, TPayload]` composition pattern. Designed for `Application.build()` and `ModelBundle` usage.
+
+| Node | Location | Input | Output | Purpose |
+|---|---|---|---|---|
+| `ClientPreprocessorNode[TCtx, TPayload]` | connector | `PipelineEvent[TCtx, ImagePayload]` | `PipelineEvent[TCtx, TritonRequest]` or `PreprocessingError` | Decode + letterbox from ImagePayload |
+| `InferenceNode[TCtx, TReq, TOut]` | connector | `PipelineEvent[TCtx, TritonRequest]` | `PipelineEvent[TCtx, InferenceOutput]` or `InferenceError` | Send TritonRequest to Triton via gRPC |
+| `PostProcessorNode[TCtx, TIn, TResult]` | connector | `PipelineEvent[TCtx, InferenceOutput]` | `PipelineEvent[TCtx, TResult]` | Delegate to user postprocessor, wrap result |
+| `LogErrorSinkNode` | connector | `InferenceError` or `ConnectorError` or `PreprocessingError` | `None` | Log error events on dedicated thread |
+
+## Domain Event Model
+
+All domain events inherit from `Event` (in `engine/events.py`), which carries framework metadata:
+
+- `Event` -- base class with `fw: FrameworkMeta` (source_stream, message_id, priority)
+- `PipelineEvent[TCtx, TPayload]` -- typed composition of user context (an `Event` subclass) and processing payload
+- `ImagePayload` -- carries `image_path` or `image_bytes` for preprocessor consumption
+- `TritonRequest` -- carries preprocessed tensor or raw bytes for Triton inference
+- `DetectionResult` -- structured detections with metrics annotations
+- `ClassificationResult` -- structured classification predictions with metrics annotations
+- `FrameworkMeta` -- framework-owned metadata, set by RedisStreamSource, stripped by RedisStreamSink
+
+The `PipelineEvent` pattern allows the original user event (context) to travel alongside processing stages without being lost. Framework routes by exact generic match on `PipelineEvent[ConcreteCtx, ConcretePayload]`.
+
+## ModelBundle
+
+`ModelBundle` (in `engine/bundle.py`) groups the four core processors for one model into a pipeline segment:
+
+```python
+bundle = ModelBundle(
+    name="yolo",
+    preprocessor=ClientPreprocessorNode(...),
+    inference=InferenceNode(grpc_url="triton:8001"),
+    postprocessor=PostProcessorNode(postprocessor=yolo_bridge),
+    sink=LogErrorSinkNode(),
+)
+processors = expand_bundle(bundle)  # returns [preprocessor, inference, postprocessor, sink]
+```
+
+`expand_bundle(bundle)` returns the bundle's processors in pipeline order, suitable for `Application.build(processors=[...])`.
 
 `YoloPostProcessorBridge` accepts config-friendly constructor params (`end2end`, `conf_threshold`, `iou_threshold`) directly and constructs the internal `YoloPostprocessor` automatically. A pre-built `YoloPostprocessor` instance can also be passed for programmatic use.
 
@@ -232,6 +295,16 @@ When `decoder: dali`, `build_application` sends raw image bytes to Triton for se
 
 Configured via `PreprocessingConfig.decoder` (default: `OPENCV`).
 
+## Per-Model Output Routing
+
+`OutputStreamRouter` (`connectors/output_router.py`) maps model names to output Redis streams.
+
+Configuration via `OutputRoutingConfig`:
+- `model_streams: dict[str, str]` -- explicit model-to-stream mapping
+- `default_stream: str | None` -- fallback for unmapped models
+
+The router lazily creates `RedisStreamOutputConnector` instances per stream. `validate_routing()` checks at startup that all known models are routable.
+
 ## TensorRT Acceleration
 
 The `convert` CLI command exports YOLO models to ONNX format. Triton's `onnxruntime` backend can optionally use TensorRT as an execution provider for GPU acceleration. The `ExportFormat` enum in `triton_shared_models` supports both `ONNX` and `TENSORRT` targets. TRT plan files use the `tensorrt_plan` platform in Triton config.
@@ -267,7 +340,7 @@ Three-scope hierarchy defined in `providers/scopes.py`:
 Providers (`providers/` directory):
 - `ConfigProvider` -- config models from Hydra YAML
 - `EngineProvider` -- PipelineRegistry, QueueBus, Application
-- `ConnectorProvider` -- Redis connectors, ConsumerGroupManager
+- `ConnectorProvider` -- Redis connectors, ConsumerGroupManager, OutputStreamRouter
 - `InferenceProvider` -- InferenceWorker, InferenceWorkerFactory
 - `PreprocessingProvider` -- decoders, LetterBoxPreprocessor
 - `MetricsProvider` -- MetricBuffer, MetricEmitter, TritonMetricsCollector
@@ -284,9 +357,18 @@ Both satisfy `Processor[TIn, TOut]` and compose via nesting.
 
 ## Pipeline Construction
 
-### Preferred: build_application (recommended)
+### Preferred: Application.build() with explicit processor list
 
-1. Load config via `@hydra.main` + `load_config_from_dict_config()` (Hydra YAML + env var interpolation)
+1. Load config via `load_config()` (Hydra YAML + env var interpolation)
+2. Create processor instances (Node classes or legacy processors)
+3. Call `Application.build(config, processors=[...])` -- validates graph, creates metrics
+4. `app.run()` -- starts all nodes in dedicated threads, monitors health
+
+All nodes run in dedicated threads. The main loop monitors variant health and handles graceful shutdown.
+
+### Config-driven: build_application()
+
+1. Load config via `load_config()` (Hydra YAML + env var interpolation)
 2. Call `build_application(config, postprocessor=..., extra_nodes=[...])`
 3. `app.run()`
 
@@ -294,13 +376,11 @@ The factory handles Redis client creation, shipped processor registration, and g
 
 ### Manual construction (advanced)
 
-1. Load config via `@hydra.main` + `load_config_from_dict_config()` (Hydra YAML + env var interpolation)
+1. Load config via `load_config()` (Hydra YAML + env var interpolation)
 2. Create `PipelineRegistry`, register nodes with type-annotated `__call__`
-3. Registry inspects signatures to build DAG, validates connectivity
+3. Registry inspects `__orig_bases__` to extract generic type parameters, builds DAG
 4. Create `Application` with registry and `QueueBus`
-5. `app.run()` validates graph, wires queues, starts parallel threads, enters main loop
-
-Main loop: poll inline sources, type-match events to consumers, route recursively. Parallel nodes get dedicated threads with input/output queues. Health monitoring restarts crashed threads.
+5. `app.run()` validates graph, wires queues, starts all nodes in dedicated threads, enters health monitoring loop
 
 See: `examples/dual_model_pipeline/run_pipeline.py`
 
