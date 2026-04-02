@@ -9,4 +9,4 @@ from triton_shared_models.detection.preprocessing import (
     LetterBoxPreprocessor,
 )
 
-__all__ = ["Detection", "LETTERBOX_PAD_VALUE", "YOLO_NORMALIZE_DIVISOR", "LetterBoxPreprocessor"]
+__all__ = ["LETTERBOX_PAD_VALUE", "YOLO_NORMALIZE_DIVISOR", "Detection", "LetterBoxPreprocessor"]
