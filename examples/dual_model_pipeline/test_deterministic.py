@@ -238,7 +238,7 @@ def _test_output_format(detections: list[dict[str, Any]], model_name: str, metal
     result: dict[str, str | int | float] = {
         "camera_no": 2 if metal_type == "HK" else 3,
         "metal_type": metal_type,
-        "detections_json": json.dumps(detections),
+        "detections": json.dumps(detections),
         "model_name": model_name,
         "inference_time_ms": 12.5,
         "num_detections": len(detections),
@@ -248,7 +248,7 @@ def _test_output_format(detections: list[dict[str, Any]], model_name: str, metal
     required_fields = {
         "camera_no",
         "metal_type",
-        "detections_json",
+        "detections",
         "model_name",
         "inference_time_ms",
         "num_detections",
@@ -259,16 +259,16 @@ def _test_output_format(detections: list[dict[str, Any]], model_name: str, metal
         logger.error("Missing fields: {}", missing)
         return False
 
-    parsed = json.loads(str(result["detections_json"]))
+    parsed = json.loads(str(result["detections"]))
     if not isinstance(parsed, list):
-        logger.error("detections_json is not a list")
+        logger.error("detections field is not a list")
         return False
 
     if len(parsed) != result["num_detections"]:
         logger.error("num_detections mismatch: {} vs {}", len(parsed), result["num_detections"])
         return False
 
-    logger.info("  All fields present, detections_json valid ({} detections)", len(parsed))
+    logger.info("  All fields present, detections valid ({} detections)", len(parsed))
     logger.info("  metal_type={}, camera_no={}", result["metal_type"], result["camera_no"])
     return True
 

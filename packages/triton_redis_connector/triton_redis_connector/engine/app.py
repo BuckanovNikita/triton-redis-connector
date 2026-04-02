@@ -2,7 +2,8 @@
 
 The Application class owns the main loop, monitoring parallel variant
 health and managing graceful shutdown. All nodes run in dedicated threads.
-Resolved from the dishka container via EngineProvider.
+Resolved from the dishka container via EngineProvider, or via the
+``Application.build()`` classmethod for explicit processor-list wiring.
 """
 
 from __future__ import annotations
@@ -10,12 +11,13 @@ from __future__ import annotations
 import queue
 import threading
 import time
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 from loguru import logger
 
 from triton_redis_connector.engine.diagram import generate_mermaid
-from triton_redis_connector.engine.registry import SINK_VARIANTS, SOURCE_VARIANTS
+from triton_redis_connector.engine.registry import SINK_VARIANTS, SOURCE_VARIANTS, PipelineRegistry
+from triton_redis_connector.engine.validation import validate_graph
 from triton_redis_connector.errors.models import ConnectorError, InferenceError, PreprocessingError
 from triton_redis_connector.protocols import (
     LifecycleService,
@@ -31,7 +33,7 @@ from triton_redis_connector.protocols import (
 if TYPE_CHECKING:
     from triton_redis_connector.config.schema import AppConfig
     from triton_redis_connector.engine.queue_bus import QueueBus
-    from triton_redis_connector.engine.registry import GraphNode, PipelineRegistry
+    from triton_redis_connector.engine.registry import GraphNode
 
 
 class Application:
@@ -71,6 +73,72 @@ class Application:
         self._stats_timer: threading.Timer | None = None
         self._stats_interval: float = 0.0
         self._routing_table: dict[str, list[tuple[str, type]]] = {}
+
+    @classmethod
+    def build(
+        cls,
+        config: AppConfig,
+        processors: list[object],
+        *,
+        triton_collector: LifecycleService | None = None,
+    ) -> Application:
+        """Build a fully wired Application from an explicit processor list.
+
+        Each processor instance is registered using its ``name`` attribute
+        (if present) or its class name. Auto-creates MetricBuffer,
+        MetricEmitter, QueueBus, and PipelineRegistry from config.
+        Runs graph validation before returning.
+        """
+        from triton_redis_connector.engine.queue_bus import QueueBus  # noqa: PLC0415
+        from triton_redis_connector.metrics.buffer import MetricBuffer  # noqa: PLC0415
+        from triton_redis_connector.metrics.emitter import MetricEmitter  # noqa: PLC0415
+
+        registry = PipelineRegistry()
+        used_names: dict[str, int] = {}
+
+        for proc in processors:
+            raw_name: str = _node_name(proc)
+            count = used_names.get(raw_name, 0)
+            used_names[raw_name] = count + 1
+            name = raw_name if count == 0 else f"{raw_name}_{count}"
+            registry.register(name, proc)
+
+        errors = validate_graph(registry)
+        if errors:
+            for error in errors:
+                logger.error("Build validation error: {}", error)
+            msg = f"Pipeline graph has {len(errors)} validation error(s)"
+            raise ValueError(msg)
+
+        queue_bus = QueueBus(config=config.queues)
+        metric_buffer = MetricBuffer()
+
+        metric_emitter: LifecycleService | None = None
+        if config.metrics.output_stream:
+            import redis as redis_lib  # noqa: PLC0415
+
+            redis_client: redis_lib.Redis[bytes] = redis_lib.Redis(
+                host=config.redis.host,
+                port=config.redis.port,
+                db=config.redis.db,
+                decode_responses=False,
+            )
+            metric_emitter = MetricEmitter(
+                buffer=metric_buffer,
+                client=redis_client,
+                stream=config.metrics.output_stream,
+                interval_s=config.metrics.emit_interval_s,
+                known_metrics=registry.all_counter_names,
+            )
+
+        return cls(
+            config=config,
+            registry=registry,
+            queue_bus=queue_bus,
+            metric_buffer=metric_buffer,
+            triton_collector=triton_collector,
+            metric_emitter=metric_emitter,
+        )
 
     def run(self) -> None:
         """Run the main event loop.
@@ -325,3 +393,18 @@ class Application:
         ):
             return instance.stop
         return None
+
+
+def _node_name(node: object) -> str:
+    """Extract a node name from the ``name`` attribute or the class name."""
+    if isinstance(node, _HasName):
+        return node.name or type(node).__name__
+    return type(node).__name__
+
+
+@runtime_checkable
+class _HasName(Protocol):
+    """Structural check for nodes with a ``name`` attribute."""
+
+    @property
+    def name(self) -> str: ...

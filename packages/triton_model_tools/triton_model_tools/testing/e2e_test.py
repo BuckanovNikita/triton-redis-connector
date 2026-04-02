@@ -74,8 +74,11 @@ def ensure_consumer_group(
         logger.debug("Consumer group {} already exists on stream {}", group, stream)
 
 
-def _deserialize_detections(raw_detections: str) -> list[Detection]:
-    parsed: list[dict[str, object]] = json.loads(raw_detections)
+def _deserialize_detections(raw_detections: str | list[dict[str, object]]) -> list[Detection]:
+    if isinstance(raw_detections, str):
+        parsed: list[dict[str, object]] = json.loads(raw_detections)
+    else:
+        parsed = raw_detections
     return [Detection.model_validate(d) for d in parsed]
 
 
@@ -190,7 +193,7 @@ class ConnectorE2ETestHarness:
     ) -> ImageDetectionResult:
         """Parse pipeline output where DetectionResult JSON is in the 'data' field."""
         parsed: dict[str, Any] = json.loads(data_field)
-        detections_raw = parsed.get("detections_json", "[]")
+        detections_raw: str | list[dict[str, object]] = parsed.get("detections", parsed.get("detections_json", "[]"))
         detections = _deserialize_detections(detections_raw)
         model_name = parsed.get("model_name", self._config.model_name)
         inference_time_ms = float(parsed.get("inference_time_ms", 0.0))

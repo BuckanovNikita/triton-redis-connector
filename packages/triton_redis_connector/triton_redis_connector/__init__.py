@@ -7,8 +7,11 @@ from __future__ import annotations
 
 from triton_redis_connector.config.schema import AppConfig, NodeConfig, NodeVariant
 from triton_redis_connector.engine.app import Application
+from triton_redis_connector.engine.bundle import ModelBundle, expand_bundle
 from triton_redis_connector.engine.context import EventContext, current_context
 from triton_redis_connector.engine.events import (
+    ClassificationResult,
+    DetectionResult,
     Event,
     FrameworkMeta,
     ImagePayload,
@@ -91,6 +94,7 @@ __all__ = [
     "BaseThreadProcessor",
     "BaseThreadSink",
     "BaseThreadSource",
+    "ClassificationResult",
     "ClientPreprocessor",
     "ClientPreprocessorNode",
     "ConfigProvider",
@@ -103,6 +107,7 @@ __all__ = [
     "DetachedThreadProcessor",
     "DetachedThreadSink",
     "DetachedThreadSource",
+    "DetectionResult",
     "EngineProvider",
     "Envelope",
     "Event",
@@ -125,6 +130,7 @@ __all__ = [
     "MetricAggregator",
     "MetricRecorder",
     "MetricsProvider",
+    "ModelBundle",
     "MultiProcessProcessor",
     "NodeAssemblyProvider",
     "NodeConfig",
@@ -147,4 +153,5 @@ __all__ = [
     "WrappedNode",
     "build_application",
     "current_context",
+    "expand_bundle",
 ]

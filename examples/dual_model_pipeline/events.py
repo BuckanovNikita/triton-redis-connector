@@ -14,6 +14,7 @@ from typing import Annotated, Any, ClassVar
 from pydantic import BaseModel, ConfigDict, Field
 from triton_redis_connector.engine.events import Event
 from triton_redis_connector.protocols import Counter, GroupBy
+from triton_shared_models.detection import Detection  # noqa: TC002 — pydantic needs runtime access
 
 EVEN_MODEL = "yolo11s_960x608"
 ODD_MODEL = "yolo26l"
@@ -60,10 +61,9 @@ class EvenModelResult(BaseModel):
 
     _metrics_: ClassVar[list[Counter]] = [Counter("even_model_result")]
 
-    detections_json: str
+    detections: tuple[Detection, ...]
     model_name: str
     inference_time_ms: float
-    num_detections: int
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -72,8 +72,7 @@ class OddModelResult(BaseModel):
 
     _metrics_: ClassVar[list[Counter]] = [Counter("odd_model_result")]
 
-    detections_json: str
+    detections: tuple[Detection, ...]
     model_name: str
     inference_time_ms: float
-    num_detections: int
     metadata: dict[str, Any] = Field(default_factory=dict)

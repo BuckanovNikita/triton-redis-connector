@@ -154,6 +154,8 @@ layers = [
 ]
 ignore_imports = [
     "triton_redis_connector.engine.metric_aggregator -> triton_redis_connector.metrics.collector",
+    "triton_redis_connector.engine.app -> triton_redis_connector.metrics.buffer",
+    "triton_redis_connector.engine.app -> triton_redis_connector.metrics.emitter",
     "triton_redis_connector.engine.shipped_processors -> triton_redis_connector.inference.request",
     "triton_redis_connector.engine.shipped_processors -> triton_redis_connector.errors.models",
 ]
