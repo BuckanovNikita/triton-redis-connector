@@ -6,6 +6,8 @@ and postprocessing use shipped processors configured in config.yaml.
 
 from __future__ import annotations
 
+import json
+
 from redis import Redis  # noqa: TC002 — needed at runtime for sink __init__
 from triton_redis_connector.engine.events import DetectionResult
 from triton_redis_connector.protocols import BaseThreadProcessor, BaseThreadSink
@@ -70,20 +72,20 @@ class ModelResultRouter(
         """Route result to the output type matching the model that produced it."""
         cls = EvenModelResult if event.model_name == EVEN_MODEL else OddModelResult
         return cls(
-            detections_json=event.detections_json,
+            detections=event.detections,
             model_name=event.model_name,
             inference_time_ms=event.inference_time_ms,
-            num_detections=event.num_detections,
         )
 
 
 def _result_to_redis_fields(event: EvenModelResult | OddModelResult) -> dict[str, str]:
     """Convert a model result to Redis hash fields for XADD."""
+    detections_json = json.dumps([d.model_dump() for d in event.detections])
     fields: dict[str, str] = {
-        "detections_json": event.detections_json,
+        "detections": detections_json,
         "model_name": event.model_name,
         "inference_time_ms": str(event.inference_time_ms),
-        "num_detections": str(event.num_detections),
+        "num_detections": str(len(event.detections)),
     }
     for key, value in event.metadata.items():
         fields[str(key)] = str(value)

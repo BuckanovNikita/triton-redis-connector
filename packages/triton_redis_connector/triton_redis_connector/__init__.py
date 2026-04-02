@@ -9,6 +9,8 @@ from triton_redis_connector.config.schema import AppConfig, NodeConfig, NodeVari
 from triton_redis_connector.engine.app import Application
 from triton_redis_connector.engine.context import EventContext, current_context
 from triton_redis_connector.engine.events import (
+    ClassificationResult,
+    DetectionResult,
     Event,
     FrameworkMeta,
     ImagePayload,
@@ -91,6 +93,7 @@ __all__ = [
     "BaseThreadProcessor",
     "BaseThreadSink",
     "BaseThreadSource",
+    "ClassificationResult",
     "ClientPreprocessor",
     "ClientPreprocessorNode",
     "ConfigProvider",
@@ -103,6 +106,7 @@ __all__ = [
     "DetachedThreadProcessor",
     "DetachedThreadSink",
     "DetachedThreadSource",
+    "DetectionResult",
     "EngineProvider",
     "Envelope",
     "Event",

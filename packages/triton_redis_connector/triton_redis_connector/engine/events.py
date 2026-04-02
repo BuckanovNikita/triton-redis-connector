@@ -10,11 +10,13 @@ the import-linter sibling constraint.
 
 from __future__ import annotations
 
-from typing import Annotated, Self
+from typing import Annotated, ClassVar, Self
 
 import numpy as np  # noqa: TC002 — pydantic needs runtime access for model_rebuild()
 import numpy.typing as npt  # noqa: TC002
 from pydantic import BaseModel, ConfigDict, model_validator
+from triton_shared_models.classification import ClassificationPrediction  # noqa: TC002
+from triton_shared_models.detection import Detection  # noqa: TC002
 
 from triton_redis_connector.protocols import Counter, Gauge
 
@@ -75,16 +77,27 @@ class ImagePayload(BaseModel):
 
 
 class DetectionResult(BaseModel):
-    """Serializable detection output ready for Redis sink."""
+    """Typed detection output with structured Detection objects."""
 
     model_config = ConfigDict(frozen=True)
 
-    _metrics_ = [Counter("detection_done")]
+    _metrics_: ClassVar[list[Counter]] = [Counter("detection_done")]
 
-    detections_json: str
+    detections: tuple[Detection, ...]
     model_name: str
     inference_time_ms: Annotated[float, Gauge("inference_time_ms")]
-    num_detections: int
+
+
+class ClassificationResult(BaseModel):
+    """Typed classification output with structured predictions."""
+
+    model_config = ConfigDict(frozen=True)
+
+    _metrics_: ClassVar[list[Counter]] = [Counter("classification_done")]
+
+    predictions: tuple[ClassificationPrediction, ...]
+    model_name: str
+    inference_time_ms: Annotated[float, Gauge("inference_time_ms")]
 
 
 class TritonRequest(BaseModel):

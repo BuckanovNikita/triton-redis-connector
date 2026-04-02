@@ -1,5 +1,8 @@
 """Triton client, ONNX client, YOLO pre/postprocessing, classification, and batch inference."""
 
+from triton_model_tools.inference.classification_bridge import (
+    ClassificationPostProcessorBridge,
+)
 from triton_model_tools.inference.classification_postprocessing import (
     ClassificationPostprocessor,
 )
@@ -15,15 +18,18 @@ from triton_model_tools.inference.preprocessing import (
     YOLO_NORMALIZE_DIVISOR,
     YoloPreprocessor,
 )
+from triton_model_tools.inference.yolo_bridge import YoloPostProcessorBridge
 
 __all__ = [
     "DEFAULT_CONFIDENCE_THRESHOLD",
     "DEFAULT_IOU_THRESHOLD",
     "LETTERBOX_PAD_VALUE",
     "YOLO_NORMALIZE_DIVISOR",
+    "ClassificationPostProcessorBridge",
     "ClassificationPostprocessor",
     "OnnxInferenceClient",
     "TritonInferenceClient",
+    "YoloPostProcessorBridge",
     "YoloPostprocessor",
     "YoloPreprocessor",
 ]

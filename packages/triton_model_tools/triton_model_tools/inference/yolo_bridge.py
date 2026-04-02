@@ -14,8 +14,8 @@ class YoloPostProcessorBridge:
     """Bridges YoloPostprocessor output into a pipeline DetectionResult event.
 
     Takes raw InferenceOutput from Triton, runs YOLO postprocessing
-    (NMS + confidence filtering), and produces a serializable DetectionResult.
-    Bypasses metadata from the inference output.
+    (NMS + confidence filtering), and produces a typed DetectionResult
+    with structured Detection objects.
 
     Config-friendly: accepts simple params and constructs YoloPostprocessor
     internally. For programmatic use, pass a pre-built ``postprocessor``.
@@ -38,7 +38,7 @@ class YoloPostProcessorBridge:
         self._iou_threshold = iou_threshold
 
     def __call__(self, output: InferenceOutput) -> DetectionResult:
-        """Run YOLO postprocessing and return a DetectionResult."""
+        """Run YOLO postprocessing and return a typed DetectionResult."""
         detections = self._postprocessor.postprocess(
             outputs=output.outputs,
             scale=self._scale,
@@ -46,10 +46,8 @@ class YoloPostProcessorBridge:
             conf_threshold=self._conf_threshold,
             iou_threshold=self._iou_threshold,
         )
-        detections_json = "[" + ",".join(d.model_dump_json() for d in detections) + "]"
         return DetectionResult(
-            detections_json=detections_json,
+            detections=tuple(detections),
             model_name=output.model_name,
             inference_time_ms=output.inference_time_ms,
-            num_detections=len(detections),
         )

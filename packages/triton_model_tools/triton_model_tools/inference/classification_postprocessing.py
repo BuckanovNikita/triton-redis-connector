@@ -5,8 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-
-from triton_model_tools.models.classification import ClassificationPrediction
+from triton_shared_models.classification import ClassificationPrediction
 
 if TYPE_CHECKING:
     import numpy.typing as npt
