@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+
 import pytest
 from pydantic import BaseModel
 from triton_redis_connector.config.schema import NodeConfig, NodeVariant
@@ -13,14 +15,14 @@ from triton_redis_connector.engine.assembly import (
     wrap_with_variant,
 )
 from triton_redis_connector.engine.registry import ExecutionVariant, PipelineRegistry
-from triton_redis_connector.engine.shipped_processors import EnvelopeExtractor
-from triton_redis_connector.protocols import BaseThreadProcessor, Envelope, WrappedNode
+from triton_redis_connector.engine.shipped_processors import EventSerializer
+from triton_redis_connector.protocols import BaseThreadProcessor, WrappedNode
 
 
 class TestImportClass:
     def test_imports_shipped_processor(self) -> None:
-        cls = import_class("triton_redis_connector.engine.shipped_processors.EnvelopeExtractor")
-        assert cls.__name__ == "EnvelopeExtractor"
+        cls = import_class("triton_redis_connector.engine.shipped_processors.LogErrorSink")
+        assert cls.__name__ == "LogErrorSink"
 
     def test_imports_builtin_type(self) -> None:
         cls = import_class("pydantic.BaseModel")
@@ -36,7 +38,7 @@ class TestImportClass:
 
     def test_raises_on_bare_name(self) -> None:
         with pytest.raises(ImportError, match="fully-qualified"):
-            import_class("EnvelopeExtractor")
+            import_class("LogErrorSink")
 
 
 class _StubEvent:
@@ -54,14 +56,14 @@ class _StubModel(BaseModel):
 class TestResolveTypeParams:
     def test_resolves_type_param_from_string(self) -> None:
         params = resolve_type_params(
-            EnvelopeExtractor,
-            {"model_class": "pydantic.BaseModel"},
+            EventSerializer,
+            {"event_type": "pydantic.BaseModel"},
         )
-        assert params["model_class"] is BaseModel
+        assert params["event_type"] is BaseModel
 
     def test_passes_through_non_type_params(self) -> None:
-        params = resolve_type_params(EnvelopeExtractor, {"model_class": BaseModel})
-        assert params["model_class"] is BaseModel
+        params = resolve_type_params(EventSerializer, {"event_type": BaseModel})
+        assert params["event_type"] is BaseModel
 
 
 class _PlainProcessor:
@@ -86,11 +88,6 @@ class TestWrapWithVariant:
         wrapped = wrap_with_variant(inner, NodeVariant.THREAD_PROCESSOR)
         assert wrapped is inner
 
-    def test_returns_inline_unwrapped(self) -> None:
-        inner = _PlainProcessor()
-        wrapped = wrap_with_variant(inner, NodeVariant.PROCESSOR)
-        assert wrapped is inner
-
 
 class TestAssembleNode:
     def test_assembles_shipped_sink(self) -> None:
@@ -103,38 +100,28 @@ class TestAssembleNode:
         assert name == "log_sink"
         assert isinstance(node, WrappedNode)
 
-    def test_assembles_envelope_extractor_with_type_param(self) -> None:
-        cfg = NodeConfig(
-            name="extractor",
-            class_path="triton_redis_connector.engine.shipped_processors.EnvelopeExtractor",
-            variant=NodeVariant.THREAD_PROCESSOR,
-            params={"model_class": "pydantic.BaseModel"},
-        )
-        name, node = assemble_node(cfg)
-        assert name == "extractor"
-        assert isinstance(node, WrappedNode)
+
+class _ThreadedSource:
+    stop = threading.Event()
+
+    def __call__(self) -> _StubEvent | None:
+        return _StubEvent()
 
 
 class TestAssembleAll:
     def test_registers_nodes_in_registry(self) -> None:
         registry = PipelineRegistry()
-
-        class _Src:
-            def __call__(self) -> Envelope[bytes] | None:
-                return None
-
-        registry.register("src", _Src())
+        registry.register("src", _ThreadedSource())
 
         configs = [
             NodeConfig(
-                name="extractor",
-                class_path="triton_redis_connector.engine.shipped_processors.EnvelopeExtractor",
+                name="log_sink",
+                class_path="triton_redis_connector.engine.shipped_processors.LogErrorSink",
                 variant=NodeVariant.THREAD_PROCESSOR,
-                params={"model_class": "pydantic.BaseModel"},
             ),
         ]
         assemble_all(configs, registry)
-        node = registry.get_node("extractor")
+        node = registry.get_node("log_sink")
         assert node is not None
         assert node.variant == ExecutionVariant.THREAD_PROCESSOR
 

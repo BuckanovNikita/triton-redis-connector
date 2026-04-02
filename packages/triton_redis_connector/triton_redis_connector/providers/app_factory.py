@@ -9,7 +9,6 @@ Shipped processors resolved from config:
 - EventSerializer and LogErrorSink are always registered.
 
 Passed from code (not config):
-- ``event_model`` → EnvelopeExtractor
 - ``postprocessor`` → any callable (e.g., YoloPostProcessorBridge)
 - ``extra_nodes`` → user-defined processors
 """
@@ -36,7 +35,6 @@ from triton_redis_connector.engine.queue_bus import QueueBus
 from triton_redis_connector.engine.registry import PipelineRegistry
 from triton_redis_connector.engine.shipped_processors import (
     DaliInferenceInputBuilder,
-    EnvelopeExtractor,
     EventSerializer,
     LogErrorSink,
 )
@@ -46,8 +44,6 @@ from triton_redis_connector.metrics.emitter import MetricEmitter
 from triton_redis_connector.providers.shipped_factories import ConfigurableClientPreprocessor
 
 if TYPE_CHECKING:
-    from pydantic import BaseModel
-
     from triton_redis_connector.config.schema import AppConfig
     from triton_redis_connector.protocols import LifecycleService, MetricRecorder
 
@@ -67,7 +63,6 @@ def _register_shipped(
 def build_application(  # noqa: PLR0913
     config: AppConfig,
     *,
-    event_model: type[BaseModel] | None = None,
     postprocessor: object | None = None,
     extra_nodes: list[tuple[str, object]] | None = None,
     metric_buffer: MetricRecorder | None = None,
@@ -94,7 +89,6 @@ def build_application(  # noqa: PLR0913
     _register_shipped_processors(
         registry,
         config,
-        event_model=event_model,
         postprocessor=postprocessor,
         metric_recorder=metric_buffer,
     )
@@ -150,17 +144,11 @@ def _register_shipped_processors(
     registry: PipelineRegistry,
     config: AppConfig,
     *,
-    event_model: type[BaseModel] | None = None,
     postprocessor: object | None = None,
     metric_recorder: MetricRecorder | None = None,
 ) -> None:
     pipeline = config.pipeline
     mr = metric_recorder
-
-    if event_model is not None:
-        _register_shipped(
-            registry, "extractor", EnvelopeExtractor(event_model), NodeVariant.THREAD_PROCESSOR, metric_recorder=mr
-        )
 
     if pipeline.model_name:
         preprocessor = _build_preprocessor(config)

@@ -1,8 +1,8 @@
 """Application skeleton — main entry point for the pipeline.
 
-The Application class owns the main loop, dispatching inline nodes
-and monitoring parallel variant health. Resolved from the dishka
-container via EngineProvider.
+The Application class owns the main loop, monitoring parallel variant
+health and managing graceful shutdown. All nodes run in dedicated threads.
+Resolved from the dishka container via EngineProvider.
 """
 
 from __future__ import annotations
@@ -15,12 +15,10 @@ from typing import TYPE_CHECKING, cast
 
 from loguru import logger
 
-from triton_redis_connector.engine.context import EventContext, reset_context, set_context
 from triton_redis_connector.engine.diagram import generate_mermaid
-from triton_redis_connector.engine.registry import INLINE_VARIANTS, SINK_VARIANTS, SOURCE_VARIANTS
+from triton_redis_connector.engine.registry import SINK_VARIANTS, SOURCE_VARIANTS
 from triton_redis_connector.errors.models import ConnectorError, InferenceError, PreprocessingError
 from triton_redis_connector.protocols import (
-    Envelope,
     LifecycleService,
     MetricRecorder,
     ProcessPoolProcessor,
@@ -40,8 +38,8 @@ if TYPE_CHECKING:
 class Application:
     """Main pipeline application.
 
-    Dispatches inline nodes in topological order, monitors parallel
-    variant health, and handles graceful shutdown.
+    All nodes run as parallel variants in dedicated threads. The main
+    loop monitors variant health and handles graceful shutdown.
     """
 
     def __init__(  # noqa: D107, PLR0913
@@ -83,8 +81,7 @@ class Application:
         3. Start parallel variant threads
         4. Start metrics components
         5. Start periodic stats logging
-        6. Run inline dispatch loop
-        7. Monitor parallel variant health
+        6. Monitor parallel variant health
         """
         errors = self._registry.validate()
         if errors:
@@ -96,7 +93,6 @@ class Application:
         mermaid = generate_mermaid(self._registry)
         logger.info("Pipeline graph:\n```mermaid\n{}\n```", mermaid)
 
-        dispatch_order = self._registry.get_dispatch_order()
         self._build_routing_table()
         self._wire_parallel_queues()
         self._start_parallel_variants()
@@ -108,14 +104,11 @@ class Application:
 
         self._start_stats_timer()
 
-        logger.info("Application main loop started with {} inline nodes", len(dispatch_order))
+        logger.info("Application main loop started (all nodes are parallel)")
 
         while not self._shutdown.is_set():
-            dispatched_any = self._dispatch_cycle(dispatch_order)
             self._check_parallel_health()
-
-            if not dispatched_any:
-                time.sleep(0.001)
+            time.sleep(0.01)
 
     def shutdown(self) -> None:
         """Signal all components to stop and wait for parallel variants to finish."""
@@ -129,101 +122,6 @@ class Application:
             self._metric_emitter.stop()
 
         self._stop_parallel_variants()
-
-    def _dispatch_cycle(self, dispatch_order: list[GraphNode]) -> bool:
-        """Run one cycle of inline dispatch, returning True if any event was dispatched."""
-        dispatched_any = False
-        for node in dispatch_order:
-            if self._shutdown.is_set():
-                break
-            if node.variant in SOURCE_VARIANTS:
-                event: object = node.instance()
-                if event is not None:
-                    dispatched_any = True
-                    envelope: Envelope[object] = event if isinstance(event, Envelope) else Envelope(payload=event)
-                    envelope.track_state("queued")
-                    self._route_to_parallel_consumers(event)
-                    self._route_event(envelope.payload, dispatch_order, envelope=envelope)
-
-        if self._drain_inline_queues(dispatch_order):
-            dispatched_any = True
-
-        return dispatched_any
-
-    def _drain_inline_queues(self, dispatch_order: list[GraphNode]) -> bool:
-        """Process events queued for inline consumer nodes by parallel producers."""
-        drained_any = False
-        for node in dispatch_order:
-            if node.variant in SOURCE_VARIANTS:
-                continue
-            queue_name = f"{node.name}:input"
-            while not self._shutdown.is_set():
-                try:
-                    event = self._queue_bus.get_nowait(queue_name)
-                except queue.Empty:
-                    break
-                node.instance(event)
-                self._stats_per_node[node.name] = self._stats_per_node.get(node.name, 0) + 1
-                if node.variant in SINK_VARIANTS:
-                    self._stats_processed += 1
-                    self._stats_sink_writes[node.name] = self._stats_sink_writes.get(node.name, 0) + 1
-                drained_any = True
-        return drained_any
-
-    def _route_event(
-        self,
-        event: object,
-        dispatch_order: list[GraphNode],
-        envelope: Envelope[object] | None = None,
-    ) -> None:
-        """Route an event through inline processors/sinks and parallel consumer queues."""
-        self._log_error_event(event)
-
-        if envelope is None:
-            envelope = event if isinstance(event, Envelope) else Envelope(payload=event)
-
-        token = set_context(
-            EventContext(
-                message_id=envelope.message_id,
-                source_stream=envelope.source_stream,
-                created_at=envelope.created_at,
-                original_fields=dict(envelope.original_fields),
-            )
-        )
-
-        try:
-            for node in dispatch_order:
-                if node.variant in SOURCE_VARIANTS:
-                    continue
-                if any(self._type_matches(event, t) for t in node.input_types):
-                    envelope.track_state("processing_start")
-                    self._stats_in_progress += 1
-                    result: object = node.instance(event)
-                    self._stats_in_progress -= 1
-                    self._stats_per_node[node.name] = self._stats_per_node.get(node.name, 0) + 1
-
-                    if node.variant in SINK_VARIANTS:
-                        envelope.track_state("output_sent")
-                        self._stats_processed += 1
-                        self._stats_sink_writes[node.name] = self._stats_sink_writes.get(node.name, 0) + 1
-
-                    if result is not None and node.variant not in SINK_VARIANTS:
-                        child_envelope = envelope.derive(result)
-                        self._route_event(result, dispatch_order, envelope=child_envelope)
-
-        finally:
-            reset_context(token)
-
-    def _route_to_parallel_consumers(self, event: object) -> None:
-        """Put an event onto input queues of matching parallel consumer nodes."""
-        for consumed_type, consumer_names in self._registry.type_consumers.items():
-            if not self._type_matches(event, consumed_type):
-                continue
-            for consumer_name in consumer_names:
-                consumer_node = self._registry.get_node(consumer_name)
-                if consumer_node is not None and consumer_node.variant not in INLINE_VARIANTS:
-                    queue_name = f"{consumer_name}:input"
-                    self._queue_bus.put(queue_name, event)
 
     def _log_error_event(self, event: object) -> None:
         """Log error events in the main thread and optionally stop on error."""
@@ -316,18 +214,17 @@ class Application:
                 logger.debug("Wired input queue for node {}", name)
 
     def _start_parallel_variants(self) -> None:
-        """Start all parallel variant nodes in dedicated threads."""
+        """Start all nodes in dedicated threads."""
         for name, node in self._registry.nodes.items():
-            if node.variant not in INLINE_VARIANTS:
-                thread = threading.Thread(
-                    target=self._run_parallel_node,
-                    args=(node,),
-                    name=f"parallel-{name}",
-                    daemon=True,
-                )
-                self._parallel_threads[name] = thread
-                thread.start()
-                logger.info("Started parallel variant thread for {}", name)
+            thread = threading.Thread(
+                target=self._run_parallel_node,
+                args=(node,),
+                name=f"parallel-{name}",
+                daemon=True,
+            )
+            self._parallel_threads[name] = thread
+            thread.start()
+            logger.info("Started parallel variant thread for {}", name)
 
     def _run_parallel_node(self, node: GraphNode) -> None:
         """Run a parallel variant node in a loop until shutdown.
@@ -392,10 +289,9 @@ class Application:
     def _stop_parallel_variants(self) -> None:
         """Signal stop and join all parallel variant threads."""
         for node in self._registry.nodes.values():
-            if node.variant not in INLINE_VARIANTS:
-                stop_event = self._get_stop_event(node.instance)
-                if stop_event is not None:
-                    stop_event.set()
+            stop_event = self._get_stop_event(node.instance)
+            if stop_event is not None:
+                stop_event.set()
 
         for name, thread in self._parallel_threads.items():
             thread.join(timeout=5.0)
