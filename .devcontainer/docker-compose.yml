@@ -48,6 +48,7 @@ services:
 
   triton:
     image: nvcr.io/nvidia/tritonserver:${TRITON_VERSION:-25.03}-py3
+    runtime: nvidia
     volumes:
       - ../model_repository:/models
     shm_size: 1g
