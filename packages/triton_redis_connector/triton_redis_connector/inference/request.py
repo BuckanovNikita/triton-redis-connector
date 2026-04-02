@@ -1,7 +1,7 @@
 """Inference input/output event models flowing through the pipeline graph.
 
-InferenceInput is defined in engine.events (so both preprocessing and
-inference layers can import it). Re-exported here for backward compatibility.
+TritonRequest is defined in engine.events (so both preprocessing and
+inference layers can import it). Re-exported here for convenience.
 
 InferenceOutput carries raw numpy arrays for cross-process transport.
 """
@@ -14,9 +14,9 @@ import numpy as np  # noqa: TC002 — pydantic needs runtime access for model_re
 import numpy.typing as npt  # noqa: TC002
 from pydantic import BaseModel, ConfigDict, Field
 
-from triton_redis_connector.engine.events import InferenceInput
+from triton_redis_connector.engine.events import TritonRequest
 
-__all__ = ["InferenceInput", "InferenceOutput"]
+__all__ = ["InferenceOutput", "TritonRequest"]
 
 
 class InferenceOutput(BaseModel):

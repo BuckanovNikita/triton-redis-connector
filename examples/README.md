@@ -8,7 +8,7 @@
 Однако **доменные процессоры требуют Python-кода**, потому что:
 - Каждый процессор -- это класс с типизированным `__call__`
 - Фреймворк строит DAG автоматически по аннотациям типов
-- Shipped-процессоры (EnvelopeExtractor, DaliInferenceInputBuilder/ClientPreprocessor, InferenceWorker, EventSerializer, LogErrorSink) регистрируются автоматически через `build_application()` на основе полей конфигурации
+- Shipped-процессоры (EnvelopeExtractor, DaliTritonRequestBuilder/ClientPreprocessor, InferenceWorker, EventSerializer, LogErrorSink) регистрируются автоматически через `build_application()` на основе полей конфигурации
 
 ### Что настраивается через YAML
 
@@ -87,7 +87,7 @@ uv run python examples/dual_model_pipeline/run_pipeline.py
 
 ```
 RedisStreamSource -> EnvelopeExtractor -> CameraBranchRouter
-  -> [even] DaliInferenceInputBuilder ---+
+  -> [even] DaliTritonRequestBuilder ---+
   -> [odd]  ClientPreprocessor ----------+-> InferenceWorker
                                               -> YoloPostProcessorBridge
                                                   -> EventSerializer -> RedisStreamSink

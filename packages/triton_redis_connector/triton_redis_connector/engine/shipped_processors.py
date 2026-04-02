@@ -4,7 +4,7 @@ Provides ready-made building blocks: envelope extraction, DALI input
 wrapping, client-side preprocessing, event serialization, and error logging.
 
 All preprocessors support metadata bypass: if the input event carries a
-``metadata`` dict, it is copied through to the ``InferenceInput`` without
+``metadata`` dict, it is copied through to the ``TritonRequest`` without
 interpretation.
 """
 
@@ -18,7 +18,7 @@ from loguru import logger
 from pydantic import BaseModel, ValidationError
 
 from triton_redis_connector.engine.context import current_context
-from triton_redis_connector.engine.events import InferenceInput
+from triton_redis_connector.engine.events import TritonRequest
 from triton_redis_connector.protocols import Envelope
 
 if TYPE_CHECKING:
@@ -100,8 +100,8 @@ class EnvelopeExtractor[T: BaseModel]:
             return None
 
 
-class DaliInferenceInputBuilder:
-    """Wraps raw image bytes into InferenceInput for DALI ensemble pipelines.
+class DaliTritonRequestBuilder:
+    """Wraps raw image bytes into TritonRequest for DALI ensemble pipelines.
 
     When Triton uses a DALI ensemble for server-side preprocessing,
     the client sends raw encoded image bytes rather than preprocessed tensors.
@@ -121,8 +121,8 @@ class DaliInferenceInputBuilder:
         self._input_name = input_name
         self._output_names = tuple(output_names)
 
-    def __call__(self, event: _ImageBytesEvent | _ImagePathEvent) -> InferenceInput | None:
-        """Create InferenceInput with image_bytes for server-side decoding."""
+    def __call__(self, event: _ImageBytesEvent | _ImagePathEvent) -> TritonRequest | None:
+        """Create TritonRequest with image_bytes for server-side decoding."""
         raw: bytes
         if isinstance(event, _ImageBytesEvent):
             raw = event.image_bytes
@@ -133,7 +133,7 @@ class DaliInferenceInputBuilder:
                 logger.exception("Failed to read image at {}", event.image_path)
                 return None
 
-        return InferenceInput(
+        return TritonRequest(
             model_name=self._model_name,
             image_bytes=raw,
             input_name=self._input_name,
@@ -146,7 +146,7 @@ class ClientPreprocessor:
     """Full client-side preprocessing: read file, decode, letterbox, wrap.
 
     Reads an image file from the filesystem, decodes it using the provided
-    decoder, applies letterbox preprocessing, and creates an InferenceInput
+    decoder, applies letterbox preprocessing, and creates a TritonRequest
     with the resulting tensor. Bypasses metadata from the input event.
     """
 
@@ -165,8 +165,8 @@ class ClientPreprocessor:
         self._input_name = input_name
         self._output_names = tuple(output_names)
 
-    def __call__(self, event: _ImagePathEvent) -> InferenceInput | None:
-        """Read image from filesystem, preprocess, and wrap as InferenceInput."""
+    def __call__(self, event: _ImagePathEvent) -> TritonRequest | None:
+        """Read image from filesystem, preprocess, and wrap as TritonRequest."""
         try:
             raw_bytes = Path(event.image_path).read_bytes()
         except (FileNotFoundError, PermissionError, OSError):
@@ -180,7 +180,7 @@ class ClientPreprocessor:
             return None
 
         tensor, _scale, _pad_offset = self._preprocessor.preprocess(decoded)
-        return InferenceInput(
+        return TritonRequest(
             model_name=self._model_name,
             raw_image=tensor,
             input_name=self._input_name,

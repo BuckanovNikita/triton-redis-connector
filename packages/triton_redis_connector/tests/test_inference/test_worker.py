@@ -9,19 +9,19 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 from triton_redis_connector.config.schema import InferenceConfig
-from triton_redis_connector.inference.request import InferenceInput, InferenceOutput
+from triton_redis_connector.inference.request import InferenceOutput, TritonRequest
 from triton_redis_connector.inference.worker import InferenceWorker, InferenceWorkerFactory
 
 
-def _make_input(model_name: str = "yolo11s") -> InferenceInput:
-    return InferenceInput(
+def _make_input(model_name: str = "yolo11s") -> TritonRequest:
+    return TritonRequest(
         model_name=model_name,
         raw_image=np.zeros((1, 3, 640, 640), dtype=np.float32),
     )
 
 
-def _make_bytes_input(model_name: str = "yolo11s") -> InferenceInput:
-    return InferenceInput(
+def _make_bytes_input(model_name: str = "yolo11s") -> TritonRequest:
+    return TritonRequest(
         model_name=model_name,
         image_bytes=b"\xff\xd8\xff\xe0" + b"\x00" * 100,
     )

@@ -103,7 +103,7 @@ uv run pytest
 
 ## Пример: dual_model_pipeline
 
-Полный пайплайн стальной инспекции с двумя моделями и ветвлением по камерам. Использует фабрику `build_application` — shipped-процессоры (`EnvelopeExtractor`, `DaliInferenceInputBuilder`, `ClientPreprocessor`, `InferenceWorker`, `YoloPostProcessorBridge`, `EventSerializer`, `LogErrorSink`) резолвятся автоматически из конфига с прозрачным пробросом метаданных.
+Полный пайплайн стальной инспекции с двумя моделями и ветвлением по камерам. Использует фабрику `build_application` — shipped-процессоры (`EnvelopeExtractor`, `DaliTritonRequestBuilder`, `ClientPreprocessor`, `InferenceWorker`, `YoloPostProcessorBridge`, `EventSerializer`, `LogErrorSink`) резолвятся автоматически из конфига с прозрачным пробросом метаданных.
 
 ```
 examples/dual_model_pipeline/
@@ -118,7 +118,7 @@ examples/dual_model_pipeline/
 
 ```
 RedisStreamSource -> EnvelopeExtractor -> CameraBranchRouter
-  -> [even] DaliInferenceInputBuilder ---+
+  -> [even] DaliTritonRequestBuilder ---+
   -> [odd]  ClientPreprocessor ----------+-> InferenceWorker
                                               -> YoloPostProcessorBridge
                                                   -> EventSerializer -> RedisStreamSink

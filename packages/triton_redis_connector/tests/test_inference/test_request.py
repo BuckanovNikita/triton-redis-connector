@@ -1,17 +1,17 @@
-"""Tests for inference input/output event models."""
+"""Tests for TritonRequest/InferenceOutput event models."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
 from pydantic import ValidationError
-from triton_redis_connector.inference import InferenceInput, InferenceOutput
+from triton_redis_connector.inference import InferenceOutput, TritonRequest
 
 
-class TestInferenceInput:
+class TestTritonRequest:
     def test_numpy_array_preserved(self) -> None:
         tensor = np.random.default_rng(42).random((1, 3, 640, 640), dtype=np.float32)
-        event = InferenceInput(
+        event = TritonRequest(
             model_name="yolo11s",
             raw_image=tensor,
         )
@@ -20,7 +20,7 @@ class TestInferenceInput:
         assert event.raw_image.dtype == np.float32
 
     def test_image_bytes_mode(self) -> None:
-        event = InferenceInput(
+        event = TritonRequest(
             model_name="yolo11s",
             image_bytes=b"\xff\xd8\xff",
         )
@@ -30,7 +30,7 @@ class TestInferenceInput:
     def test_both_modes_raises(self) -> None:
         tensor = np.zeros((1, 3, 640, 640), dtype=np.float32)
         with pytest.raises(ValidationError, match="Exactly one"):
-            InferenceInput(
+            TritonRequest(
                 model_name="yolo11s",
                 raw_image=tensor,
                 image_bytes=b"\xff\xd8\xff",
@@ -38,11 +38,11 @@ class TestInferenceInput:
 
     def test_neither_mode_raises(self) -> None:
         with pytest.raises(ValidationError, match="Exactly one"):
-            InferenceInput(model_name="yolo11s")
+            TritonRequest(model_name="yolo11s")
 
     def test_missing_required_field_raises(self) -> None:
         with pytest.raises(ValidationError):
-            InferenceInput(  # type: ignore[call-arg]
+            TritonRequest(  # type: ignore[call-arg]
                 model_version="1",
             )
 

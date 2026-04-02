@@ -3,7 +3,7 @@
 These are domain event models that flow through the pipeline. They are
 distinct from the framework-internal Envelope wrapper.
 
-InferenceInput lives here (not in inference/request.py) so that both
+TritonRequest lives here (not in inference/request.py) so that both
 preprocessing and inference layers can import it without violating
 the import-linter sibling constraint.
 """
@@ -27,35 +27,6 @@ class Event(BaseModel):
     """
 
     model_config = ConfigDict(frozen=True, strict=True)
-
-
-class TensorSpec(BaseModel):
-    """Specification of a tensor's shape and data type.
-
-    Used to describe input/output tensor requirements for inference.
-    """
-
-    model_config = ConfigDict(frozen=True, strict=True)
-
-    name: str
-    shape: tuple[int, ...]
-    dtype: str
-
-
-class InferenceOutput(BaseModel):
-    """Result of a Triton inference request.
-
-    Carries the model name, version, and output tensor specifications.
-    Raw output data is transported separately (as numpy arrays via the
-    processing graph, not serialized in this model).
-    """
-
-    model_config = ConfigDict(frozen=True, strict=True)
-
-    model_name: str
-    model_version: str
-    outputs: tuple[TensorSpec, ...]
-    request_id: str = ""
 
 
 class DecodedImage(BaseModel):
@@ -91,7 +62,7 @@ class DetectionResult(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class InferenceInput(BaseModel):
+class TritonRequest(BaseModel):
     """Input event for Triton inference processor.
 
     Carries the preprocessed tensor and metadata needed to dispatch
@@ -124,4 +95,4 @@ class InferenceInput(BaseModel):
 
 
 DecodedImage.model_rebuild()
-InferenceInput.model_rebuild()
+TritonRequest.model_rebuild()

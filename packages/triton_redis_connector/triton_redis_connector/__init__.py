@@ -16,7 +16,7 @@ from triton_redis_connector.engine.registry import (
 )
 from triton_redis_connector.engine.shipped_processors import (
     ClientPreprocessor,
-    DaliInferenceInputBuilder,
+    DaliTritonRequestBuilder,
     EnvelopeExtractor,
     EventSerializer,
     LogErrorSink,
@@ -97,7 +97,7 @@ __all__ = [
     "ConnectorProvider",
     "ConnectorScope",
     "Counter",
-    "DaliInferenceInputBuilder",
+    "DaliTritonRequestBuilder",
     "DetachedProcessSource",
     "DetachedThreadProcessor",
     "DetachedThreadSink",
