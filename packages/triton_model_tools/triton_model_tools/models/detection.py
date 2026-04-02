@@ -3,20 +3,9 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
+from triton_shared_models.detection import Detection
 
-
-class Detection(BaseModel):
-    """Single object detection with bounding box, confidence, and class info."""
-
-    model_config = ConfigDict(frozen=True)
-
-    x1: float
-    y1: float
-    x2: float
-    y2: float
-    confidence: float = Field(ge=0.0)
-    class_id: int = Field(ge=0)
-    class_name: str = ""
+__all__ = ["Detection", "FolderInferenceResult", "ImageDetectionResult"]
 
 
 class ImageDetectionResult(BaseModel):

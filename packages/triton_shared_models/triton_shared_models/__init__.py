@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from triton_shared_models.classification import ClassificationPrediction
+from triton_shared_models.detection import Detection
 from triton_shared_models.nms import nms
 from triton_shared_models.preprocessing import (
     LETTERBOX_PAD_VALUE,
@@ -31,6 +33,8 @@ __all__ = [
     "EXPORT_FORMAT_TO_PLATFORM",
     "LETTERBOX_PAD_VALUE",
     "YOLO_NORMALIZE_DIVISOR",
+    "ClassificationPrediction",
+    "Detection",
     "DynamicBatchingConfig",
     "EnsembleStep",
     "EnsembleStepMapping",
