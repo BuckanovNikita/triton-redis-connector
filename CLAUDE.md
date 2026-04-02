@@ -180,6 +180,8 @@ See: `engine/shipped_processors.py`, `triton_model_tools/inference/yolo_bridge.p
 
 ### ModelBundle
 
+Models are defined exclusively via `ModelBundle`. The `expand_bundle()` function unpacks a bundle into the processor list for `Application.build()`.
+
 `ModelBundle` (in `engine/bundle.py`) groups the four core processors for one model (preprocessor, inference, postprocessor, sink). `expand_bundle(bundle)` returns them as a flat list suitable for `Application.build(processors=[...])`.
 
 ### Application.build() Classmethod

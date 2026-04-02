@@ -13,6 +13,7 @@ import numpy as np
 import numpy.typing as npt
 import tritonclient.grpc as grpcclient
 
+from triton_redis_connector.engine.middleware import RetryMiddleware
 from triton_redis_connector.errors.models import InferenceError  # noqa: TC001 — needed at runtime for get_type_hints
 from triton_redis_connector.inference.request import InferenceOutput, TritonRequest
 
@@ -84,6 +85,14 @@ class InferenceWorkerFactory:
         """Return inference config as shared context (picklable pydantic model)."""
         return self._config
 
-    def create_processor(self, shared: InferenceConfig) -> InferenceWorker:
-        """Create an InferenceWorker with its own gRPC client."""
-        return InferenceWorker(grpc_url=shared.grpc_url)
+    def create_processor(
+        self, shared: InferenceConfig
+    ) -> RetryMiddleware[TritonRequest, InferenceOutput | InferenceError]:
+        """Create an InferenceWorker with its own gRPC client, wrapped with RetryMiddleware."""
+        worker = InferenceWorker(grpc_url=shared.grpc_url)
+        return RetryMiddleware(
+            worker,
+            max_attempts=shared.max_retry_attempts,
+            base_delay_s=shared.retry_base_delay_s,
+            backoff_multiplier=shared.retry_backoff_multiplier,
+        )

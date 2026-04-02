@@ -9,6 +9,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 from triton_redis_connector.config.schema import InferenceConfig
+from triton_redis_connector.engine.middleware import RetryMiddleware
 from triton_redis_connector.inference.request import InferenceOutput, TritonRequest
 from triton_redis_connector.inference.worker import InferenceWorker, InferenceWorkerFactory
 
@@ -123,12 +124,29 @@ class TestInferenceWorkerFactory:
 
         assert shared is config
 
-    def test_create_processor_returns_worker(self) -> None:
+    def test_create_processor_returns_retry_wrapped_worker(self) -> None:
         config = InferenceConfig(grpc_url="test:8001")
         factory = InferenceWorkerFactory(config=config)
 
         fake_module = _build_fake_grpc_module()
         with patch(_GRPC_PATCH_TARGET, fake_module):
-            worker = factory.create_processor(config)
+            wrapped = factory.create_processor(config)
 
-        assert isinstance(worker, InferenceWorker)
+        assert isinstance(wrapped, RetryMiddleware)
+
+    def test_create_processor_retries_on_failure(self) -> None:
+        config = InferenceConfig(
+            grpc_url="test:8001",
+            max_retry_attempts=3,
+            retry_base_delay_s=0.001,
+            retry_backoff_multiplier=1.0,
+        )
+        factory = InferenceWorkerFactory(config=config)
+
+        fake_module = _build_fake_grpc_module(fail_count=2)
+        with patch(_GRPC_PATCH_TARGET, fake_module):
+            wrapped = factory.create_processor(config)
+            result = wrapped(_make_input())
+
+        assert isinstance(result, InferenceOutput)
+        assert result.model_name == "yolo11s"

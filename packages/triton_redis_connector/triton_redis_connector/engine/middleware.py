@@ -1,12 +1,11 @@
-"""Composable middleware classes that wrap processors for cross-cutting concerns.
+"""Composable middleware that wraps processors for cross-cutting concerns.
 
 Each middleware satisfies the Processor[TIn, TOut] protocol so they
-compose naturally via nesting: RetryMiddleware(ConcurrencyLimitMiddleware(inner)).
+compose naturally via nesting.
 """
 
 from __future__ import annotations
 
-import threading
 import time
 from typing import TYPE_CHECKING
 
@@ -57,32 +56,3 @@ class RetryMiddleware[TIn, TOut]:
                 )
                 time.sleep(delay)
         return None
-
-
-class ConcurrencyLimitMiddleware[TIn, TOut]:
-    """Wraps a processor with semaphore-based concurrency limiting.
-
-    When the semaphore cannot be acquired within the timeout, the event
-    is dropped and None is returned.
-    """
-
-    def __init__(  # noqa: D107
-        self,
-        inner: Callable[[TIn], TOut | None],
-        max_concurrent: int,
-        acquire_timeout: float = 0.1,
-    ) -> None:
-        self._inner = inner
-        self._semaphore = threading.Semaphore(max_concurrent)
-        self._acquire_timeout = acquire_timeout
-
-    def __call__(self, event: TIn) -> TOut | None:
-        """Execute inner processor if concurrency limit not reached."""
-        acquired = self._semaphore.acquire(timeout=self._acquire_timeout)
-        if not acquired:
-            logger.error("Concurrency limit reached, dropping event")
-            return None
-        try:
-            return self._inner(event)
-        finally:
-            self._semaphore.release()
