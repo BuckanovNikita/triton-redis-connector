@@ -1,5 +1,10 @@
-"""Shared types: YOLO model registry and detection result models."""
+"""Shared types: YOLO model registry, detection and classification result models."""
 
+from triton_model_tools.models.classification import (
+    ClassificationPrediction,
+    FolderClassificationResult,
+    ImageClassificationResult,
+)
 from triton_model_tools.models.detection import (
     Detection,
     FolderInferenceResult,
@@ -30,13 +35,16 @@ __all__ = [
     "EXPORT_FORMAT_TO_FILENAME",
     "EXPORT_FORMAT_TO_PLATFORM",
     "YOLO_MODELS",
+    "ClassificationPrediction",
     "Detection",
     "DiscoveredModel",
     "DynamicBatchingConfig",
     "EnsembleStep",
     "EnsembleStepMapping",
     "ExportFormat",
+    "FolderClassificationResult",
     "FolderInferenceResult",
+    "ImageClassificationResult",
     "ImageDetectionResult",
     "ModelWarmupConfig",
     "OptimizationConfig",
