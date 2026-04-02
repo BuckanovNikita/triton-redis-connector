@@ -107,6 +107,7 @@ def build_application(  # noqa: PLR0913
             stream=config.metrics.output_stream,
             interval_s=config.metrics.emit_interval_s,
             known_metrics=registry.all_counter_names,
+            app_name=config.app_name,
         )
 
     return Application(

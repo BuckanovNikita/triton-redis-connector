@@ -11,7 +11,7 @@ from typing import Any
 from dishka import Provider, provide
 from redis import Redis  # noqa: TC002 — dishka needs runtime access
 
-from triton_redis_connector.config.schema import InferenceConfig, MetricsConfig  # noqa: TC001
+from triton_redis_connector.config.schema import AppConfig, InferenceConfig, MetricsConfig  # noqa: TC001
 from triton_redis_connector.errors.collector import ErrorCollector
 from triton_redis_connector.errors.handler import ErrorHandler
 from triton_redis_connector.metrics.buffer import MetricBuffer
@@ -66,10 +66,12 @@ class MetricsProvider(Provider):
         buffer: MetricBuffer,
         client: Redis,  # type: ignore[type-arg]
         config: MetricsConfig,
+        app_config: AppConfig,
     ) -> MetricEmitter:
         return MetricEmitter(
             buffer=buffer,
             client=client,
             stream=config.output_stream,
             interval_s=config.emit_interval_s,
+            app_name=app_config.app_name,
         )
