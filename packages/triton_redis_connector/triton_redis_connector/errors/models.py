@@ -6,6 +6,8 @@ return these typed error events, which the graph routes to error-handling sinks.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from pydantic import BaseModel, ConfigDict
 
 from triton_redis_connector.protocols import Counter
@@ -54,7 +56,7 @@ class PreprocessingError(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    _metrics_ = [Counter("decode_failure")]
+    _metrics_: ClassVar[list[Counter]] = [Counter("decode_failure")]
 
     message_id: str
     decoder_type: str
