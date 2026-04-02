@@ -397,4 +397,4 @@ Docker Compose in `.devcontainer/`:
 
 Two compose files: `docker-compose.yml` (devcontainer, internal network) and `docker-compose.debug.yml` (exposed ports for host access).
 
-Model management: `model_repository/` is live (mounted into Triton), `model_repository_offline/` is staging. Triton polls for changes every 10 seconds.
+Model management: `model_repository/` is live (mounted into Triton), `model_repository_offline/` is staging. Triton runs in explicit mode — models are loaded/unloaded via HTTP API (`POST /v2/repository/models/{name}/load`).

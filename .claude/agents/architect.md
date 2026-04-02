@@ -355,9 +355,9 @@ standalone. The shared `nms_postprocess` model is reused across all ensembles.
 
 - `--model-control-mode=none`: all models in repository loaded at startup, no changes.
 - `--model-control-mode=poll`: Triton periodically checks for new/changed models.
-  This project uses `--repository-poll-secs=10`.
 - `--model-control-mode=explicit`: models loaded/unloaded via API calls only.
-  Best for production — no filesystem polling overhead.
+  **This project uses explicit mode** — no models loaded at startup, load via
+  `curl -X POST http://localhost:8000/v2/repository/models/{name}/load`.
 
 ### gRPC vs HTTP Protocol Choice
 
@@ -616,12 +616,12 @@ explicitly — never leave docs silently out of sync with decisions.
 
 **GPU memory is limited — never overload it with models.**
 
-- `model_repository/` — **live**, mounted into Triton at `/models`. Models here are loaded on GPU.
-- `model_repository_offline/` — **storage/staging**. Models moved here are unloaded from GPU.
-- To load a model: copy/move from `model_repository_offline/` → `model_repository/`
-- To unload: move from `model_repository/` → `model_repository_offline/`
-- Triton runs in **poll mode** (`--repository-poll-secs=10`) — **wait 10 seconds** after changes.
-- After completing work, **move models back to offline** to free GPU memory.
+- `model_repository/` — **live**, mounted into Triton at `/models`.
+- `model_repository_offline/` — **storage/staging**. Models here are not visible to Triton.
+- Triton runs in **explicit mode** (`--model-control-mode=explicit`) — no models loaded at startup.
+- To load: `curl -X POST http://localhost:8000/v2/repository/models/{name}/load`
+- To unload: `curl -X POST http://localhost:8000/v2/repository/models/{name}/unload`
+- After completing work, **unload models** to free GPU memory.
 - If a model breaks Triton (server stops responding), **stop immediately and ask the user to check Triton logs**.
 
 ---
