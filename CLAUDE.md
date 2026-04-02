@@ -91,13 +91,13 @@ Modules within a `|` group are siblings at the same layer and must NOT cross-imp
 
 ### Shipped Processors
 
-Six reusable processors for common pipeline patterns. All preprocessors support **metadata bypass** — if the input event carries a `metadata: dict[str, Any]`, it is copied through `InferenceInput` → `InferenceOutput` → `DetectionResult` without interpretation.
+Six reusable processors for common pipeline patterns. All preprocessors support **metadata bypass** — if the input event carries a `metadata: dict[str, Any]`, it is copied through `TritonRequest` → `InferenceOutput` → `DetectionResult` without interpretation.
 
 | Processor | Package | Purpose |
 |---|---|---|
 | `EnvelopeExtractor[T]` | connector | Deserialize envelope bytes into typed pydantic model |
-| `DaliInferenceInputBuilder` | connector | Wrap image bytes/path for DALI ensemble inference |
-| `ClientPreprocessor` | connector | Read file, decode, letterbox, wrap as InferenceInput |
+| `DaliTritonRequestBuilder` | connector | Wrap image bytes/path for DALI ensemble inference |
+| `ClientPreprocessor` | connector | Read file, decode, letterbox, wrap as TritonRequest |
 | `ConfigurableClientPreprocessor` | connector (providers) | Config-friendly ClientPreprocessor (takes decoder_type string) |
 | `EventSerializer[T]` | connector | Serialize event to JSON bytes with original_fields passthrough |
 | `LogErrorSink` | connector | Log error events at error level via loguru |

@@ -88,7 +88,7 @@ app = build_application(
 app.run()
 ```
 
-Shipped-процессоры (EnvelopeExtractor, DaliInferenceInputBuilder/ClientPreprocessor, InferenceWorker, EventSerializer, LogErrorSink) регистрируются автоматически на основе полей конфигурации.
+Shipped-процессоры (EnvelopeExtractor, DaliTritonRequestBuilder/ClientPreprocessor, InferenceWorker, EventSerializer, LogErrorSink) регистрируются автоматически на основе полей конфигурации.
 
 ## Построение графа
 
@@ -123,7 +123,7 @@ graph LR
     redis_source -->|Envelope| envelope_extractor
     envelope_extractor -->|bytes| image_decoder
     image_decoder -->|DecodedImage| preprocessor
-    preprocessor -->|InferenceInput| inference
+    preprocessor -->|TritonRequest| inference
     inference -->|InferenceOutput| postprocessor
     postprocessor -->|DetectionResult| serializer
     serializer -->|Envelope| redis_sink

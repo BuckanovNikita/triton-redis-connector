@@ -13,7 +13,7 @@ import numpy as np
 import tritonclient.grpc as grpcclient
 
 from triton_redis_connector.errors.models import InferenceError  # noqa: TC001 — needed at runtime for get_type_hints
-from triton_redis_connector.inference.request import InferenceInput, InferenceOutput
+from triton_redis_connector.inference.request import InferenceOutput, TritonRequest
 
 if TYPE_CHECKING:
     from triton_redis_connector.config.schema import InferenceConfig
@@ -29,8 +29,8 @@ class InferenceWorker:
     def __init__(self, grpc_url: str) -> None:  # noqa: D107
         self._client: grpcclient.InferenceServerClient = grpcclient.InferenceServerClient(url=grpc_url)
 
-    def __call__(self, event: InferenceInput) -> InferenceOutput | InferenceError | None:
-        """Run inference on a single InferenceInput event."""
+    def __call__(self, event: TritonRequest) -> InferenceOutput | InferenceError | None:
+        """Run inference on a single TritonRequest event."""
         start = time.monotonic()
 
         if event.raw_image is not None:
@@ -41,7 +41,7 @@ class InferenceWorker:
             input_tensor = grpcclient.InferInput(event.input_name, [len(data)], "UINT8")
             input_tensor.set_data_from_numpy(data)
         else:
-            msg = "Neither raw_image nor image_bytes set on InferenceInput"
+            msg = "Neither raw_image nor image_bytes set on TritonRequest"
             raise ValueError(msg)
         outputs = [grpcclient.InferRequestedOutput(name) for name in event.output_names]
 

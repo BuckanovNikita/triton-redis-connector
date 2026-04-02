@@ -169,14 +169,14 @@ Seven reusable processors provided out of the box. Five live in `triton_redis_co
 | Processor | Location | Input | Output | Purpose |
 |---|---|---|---|---|
 | `EnvelopeExtractor[T]` | connector | `Envelope[bytes]` | `T` (pydantic) | Deserialize envelope bytes into a typed pydantic model |
-| `DaliInferenceInputBuilder` | connector | `_ImageBytesEvent` or `_ImagePathEvent` | `InferenceInput` | Wrap raw image bytes for DALI ensemble inference (reads from path if needed) |
-| `ClientPreprocessor` | connector | `_ImagePathEvent` | `InferenceInput` | Read file, decode, letterbox, wrap as tensor |
-| `ConfigurableClientPreprocessor` | connector (providers) | `_ImagePathEvent` | `InferenceInput` | Config-friendly ClientPreprocessor (decoder_type + target_size) |
+| `DaliTritonRequestBuilder` | connector | `_ImageBytesEvent` or `_ImagePathEvent` | `TritonRequest` | Wrap raw image bytes for DALI ensemble inference (reads from path if needed) |
+| `ClientPreprocessor` | connector | `_ImagePathEvent` | `TritonRequest` | Read file, decode, letterbox, wrap as tensor |
+| `ConfigurableClientPreprocessor` | connector (providers) | `_ImagePathEvent` | `TritonRequest` | Config-friendly ClientPreprocessor (decoder_type + target_size) |
 | `EventSerializer[T]` | connector | `T` (pydantic) | `Envelope[bytes]` | Serialize event to JSON bytes with original_fields passthrough |
 | `LogErrorSink` | connector | `BaseModel` | `None` | Log error events at error level via loguru |
 | `YoloPostProcessorBridge` | model_tools | `InferenceOutput` | `DetectionResult` | YOLO postprocessing (NMS + confidence filter), config-friendly constructor |
 
-**Metadata bypass**: All preprocessors (`DaliInferenceInputBuilder`, `ClientPreprocessor`, `ConfigurableClientPreprocessor`) support metadata passthrough. If the input event carries a `metadata: dict[str, Any]` field, it is copied through the pipeline via `InferenceInput.metadata` -> `InferenceOutput.metadata` -> `DetectionResult.metadata` without interpretation. This allows domain-specific fields (camera ID, timestamp, custom tags) to travel alongside inference data.
+**Metadata bypass**: All preprocessors (`DaliTritonRequestBuilder`, `ClientPreprocessor`, `ConfigurableClientPreprocessor`) support metadata passthrough. If the input event carries a `metadata: dict[str, Any]` field, it is copied through the pipeline via `TritonRequest.metadata` -> `InferenceOutput.metadata` -> `DetectionResult.metadata` without interpretation. This allows domain-specific fields (camera ID, timestamp, custom tags) to travel alongside inference data.
 
 `YoloPostProcessorBridge` accepts config-friendly constructor params (`end2end`, `conf_threshold`, `iou_threshold`) directly and constructs the internal `YoloPostprocessor` automatically. A pre-built `YoloPostprocessor` instance can also be passed for programmatic use.
 
@@ -226,7 +226,7 @@ These are pure infrastructure parameters. The actual `event_model` type and `pos
 |---|---|---|
 | `OPENCV` | `ConfigurableClientPreprocessor` (OpenCV decoder) | Client-side |
 | `TURBOJPEG` | `ConfigurableClientPreprocessor` (TurboJPEG decoder) | Client-side |
-| `DALI` | `DaliInferenceInputBuilder` | Server-side (Triton DALI ensemble) |
+| `DALI` | `DaliTritonRequestBuilder` | Server-side (Triton DALI ensemble) |
 
 When `decoder: dali`, `build_application` sends raw image bytes to Triton for server-side decoding and preprocessing via a DALI ensemble pipeline. Client-side decoders (`opencv`, `turbojpeg`) read the file, decode, letterbox, and send the preprocessed tensor.
 

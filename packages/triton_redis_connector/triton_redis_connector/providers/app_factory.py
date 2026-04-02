@@ -35,7 +35,7 @@ from triton_redis_connector.engine.assembly import assemble_all, wrap_with_varia
 from triton_redis_connector.engine.queue_bus import QueueBus
 from triton_redis_connector.engine.registry import PipelineRegistry
 from triton_redis_connector.engine.shipped_processors import (
-    DaliInferenceInputBuilder,
+    DaliTritonRequestBuilder,
     EnvelopeExtractor,
     EventSerializer,
     LogErrorSink,
@@ -219,12 +219,12 @@ def _extract_return_type(node: object) -> type[Any] | None:
     return None
 
 
-def _build_preprocessor(config: AppConfig) -> DaliInferenceInputBuilder | ConfigurableClientPreprocessor:
+def _build_preprocessor(config: AppConfig) -> DaliTritonRequestBuilder | ConfigurableClientPreprocessor:
     pipeline = config.pipeline
     output_names = tuple(pipeline.model_output_names)
 
     if config.preprocessing.decoder == DecoderType.DALI:
-        return DaliInferenceInputBuilder(
+        return DaliTritonRequestBuilder(
             model_name=pipeline.model_name,
             input_name=pipeline.model_input_name,
             output_names=output_names,
