@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from triton_shared_models.classification import ClassificationPrediction
+from triton_shared_models.classification.preprocessing import CenterCropPreprocessor
 from triton_shared_models.detection import Detection
 from triton_shared_models.nms import nms
 from triton_shared_models.preprocessing import (
@@ -33,6 +34,7 @@ __all__ = [
     "EXPORT_FORMAT_TO_PLATFORM",
     "LETTERBOX_PAD_VALUE",
     "YOLO_NORMALIZE_DIVISOR",
+    "CenterCropPreprocessor",
     "ClassificationPrediction",
     "Detection",
     "DynamicBatchingConfig",
