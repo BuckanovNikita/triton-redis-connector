@@ -140,8 +140,33 @@ class Application:
                     dispatched_any = True
                     envelope: Envelope[object] = event if isinstance(event, Envelope) else Envelope(payload=event)
                     envelope.track_state("queued")
+                    self._route_to_parallel_consumers(event)
                     self._route_event(envelope.payload, dispatch_order, envelope=envelope)
+
+        if self._drain_inline_queues(dispatch_order):
+            dispatched_any = True
+
         return dispatched_any
+
+    def _drain_inline_queues(self, dispatch_order: list[GraphNode]) -> bool:
+        """Process events queued for inline consumer nodes by parallel producers."""
+        drained_any = False
+        for node in dispatch_order:
+            if node.variant in SOURCE_VARIANTS:
+                continue
+            queue_name = f"{node.name}:input"
+            while not self._shutdown.is_set():
+                try:
+                    event = self._queue_bus.get_nowait(queue_name)
+                except queue.Empty:
+                    break
+                node.instance(event)
+                self._stats_per_node[node.name] = self._stats_per_node.get(node.name, 0) + 1
+                if node.variant in SINK_VARIANTS:
+                    self._stats_processed += 1
+                    self._stats_sink_writes[node.name] = self._stats_sink_writes.get(node.name, 0) + 1
+                drained_any = True
+        return drained_any
 
     def _route_event(
         self,
@@ -149,10 +174,9 @@ class Application:
         dispatch_order: list[GraphNode],
         envelope: Envelope[object] | None = None,
     ) -> None:
-        """Route an event through inline processors and sinks by type matching."""
+        """Route an event through inline processors/sinks and parallel consumer queues."""
         self._log_error_event(event)
 
-        event_type = type(event)
         if envelope is None:
             envelope = event if isinstance(event, Envelope) else Envelope(payload=event)
 
@@ -169,7 +193,7 @@ class Application:
             for node in dispatch_order:
                 if node.variant in SOURCE_VARIANTS:
                     continue
-                if event_type in node.input_types:
+                if any(self._type_matches(event, t) for t in node.input_types):
                     envelope.track_state("processing_start")
                     self._stats_in_progress += 1
                     result: object = node.instance(event)
@@ -184,8 +208,20 @@ class Application:
                     if result is not None and node.variant not in SINK_VARIANTS:
                         child_envelope = envelope.derive(result)
                         self._route_event(result, dispatch_order, envelope=child_envelope)
+
         finally:
             reset_context(token)
+
+    def _route_to_parallel_consumers(self, event: object) -> None:
+        """Put an event onto input queues of matching parallel consumer nodes."""
+        for consumed_type, consumer_names in self._registry.type_consumers.items():
+            if not self._type_matches(event, consumed_type):
+                continue
+            for consumer_name in consumer_names:
+                consumer_node = self._registry.get_node(consumer_name)
+                if consumer_node is not None and consumer_node.variant not in INLINE_VARIANTS:
+                    queue_name = f"{consumer_name}:input"
+                    self._queue_bus.put(queue_name, event)
 
     def _log_error_event(self, event: object) -> None:
         """Log error events in the main thread and optionally stop on error."""
@@ -244,12 +280,12 @@ class Application:
         )
 
     def _wire_parallel_queues(self) -> None:
-        """Pre-create input queues for all non-source parallel nodes."""
+        """Pre-create input queues for all non-source nodes (parallel and inline sinks)."""
         for name, node in self._registry.nodes.items():
-            if node.variant not in INLINE_VARIANTS and node.variant not in SOURCE_VARIANTS:
+            if node.variant not in SOURCE_VARIANTS:
                 queue_name = f"{name}:input"
                 self._queue_bus.get_queue(queue_name)
-                logger.debug("Wired input queue for parallel node {}", name)
+                logger.debug("Wired input queue for node {}", name)
 
     def _start_parallel_variants(self) -> None:
         """Start all parallel variant nodes in dedicated threads."""
@@ -289,20 +325,25 @@ class Application:
                         result = cast("object", node.instance(event))
                         if result is not None:
                             self._route_to_consumers(node, result)
-            except (RuntimeError, ValueError, TypeError, OSError, queue.Full):
+            except (RuntimeError, ValueError, TypeError, OSError, LookupError, queue.Full):
                 logger.exception("Error in parallel node {}", node.name)
                 if not self._shutdown.is_set():
                     time.sleep(0.1)
 
     def _route_to_consumers(self, node: GraphNode, result: object) -> None:
-        """Route a result from a parallel node to downstream consumer input queues."""
+        """Route a result from a parallel node to downstream consumer input queues.
+
+        Uses subtype-aware matching: if a consumer is registered for a
+        supertype or protocol that the result satisfies, the result is routed.
+        Both parallel and inline consumers receive events via their input queues.
+        """
         routed = False
-        for out_type in node.output_types:
-            if not self._type_matches(result, out_type):
+        for consumed_type, consumer_names in self._registry.type_consumers.items():
+            if not self._type_matches(result, consumed_type):
                 continue
-            for consumer_name in self._registry.type_consumers.get(out_type, []):
+            for consumer_name in consumer_names:
                 consumer_node = self._registry.get_node(consumer_name)
-                if consumer_node is not None and consumer_node.variant not in INLINE_VARIANTS:
+                if consumer_node is not None:
                     queue_name = f"{consumer_name}:input"
                     self._queue_bus.put(queue_name, result)
                     routed = True

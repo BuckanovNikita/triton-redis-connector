@@ -7,6 +7,8 @@ graph integrity before the pipeline starts.
 
 from __future__ import annotations
 
+import inspect
+import sys
 import types
 import typing
 from enum import StrEnum, auto
@@ -140,30 +142,70 @@ class PipelineRegistry:
         )
 
     def validate(self) -> list[str]:
-        """Validate graph integrity. Returns a list of error messages (empty = valid)."""
+        """Validate graph integrity. Returns a list of error messages (empty = valid).
+
+        Type matching is subtype-aware: a consumer of ``BaseModel`` matches
+        any producer of a ``BaseModel`` subclass, and a consumer of a
+        ``Protocol`` matches producers of types that satisfy that protocol.
+        """
         errors: list[str] = []
 
         for name, node in self._nodes.items():
             if not node.input_types and not node.output_types:
                 errors.append(f"Orphan node '{name}' has no input or output types")
 
-        for event_type, consumers in self._type_consumers.items():
-            if event_type not in self._type_producers:
+        all_produced_types = set(self._type_producers.keys())
+
+        for consumed_type, consumers in self._type_consumers.items():
+            if not self._any_producer_matches(consumed_type, all_produced_types):
+                type_name = getattr(consumed_type, "__name__", str(consumed_type))
                 errors.extend(
-                    f"Node '{consumer_name}' consumes {event_type.__name__} but no node produces it"
+                    f"Node '{consumer_name}' consumes {type_name} but no node produces it"
                     for consumer_name in consumers
                 )
 
-        for event_type, producers in self._type_producers.items():
-            if event_type not in self._type_consumers:
+        all_consumed_types = set(self._type_consumers.keys())
+
+        for produced_type, producers in self._type_producers.items():
+            if not self._any_consumer_matches(produced_type, all_consumed_types):
                 for producer_name in producers:
                     node = self._nodes[producer_name]
                     if node.variant not in SINK_VARIANTS:
-                        errors.append(f"Node '{producer_name}' produces {event_type.__name__} but no node consumes it")
+                        type_name = getattr(produced_type, "__name__", str(produced_type))
+                        errors.append(f"Node '{producer_name}' produces {type_name} but no node consumes it")
 
         errors.extend(self._check_connectivity())
 
         return errors
+
+    @staticmethod
+    def _is_subtype(child: type, parent: type) -> bool:
+        """Check if *child* is a subtype of *parent*, with protocol support.
+
+        ``issubclass`` fails for protocols with non-method members (e.g.
+        ``@property``).  When that happens, fall back to structural
+        matching: check that all ``__protocol_attrs__`` exist on the
+        child class or in its ``model_fields`` (pydantic v2).
+        """
+        try:
+            return issubclass(child, parent)
+        except TypeError:
+            protocol_attrs: set[str] | None = getattr(parent, "__protocol_attrs__", None)
+            if protocol_attrs is None:
+                return False
+            model_fields: set[str] = set(getattr(child, "model_fields", {}).keys())
+            child_attrs = set(dir(child)) | model_fields
+            return protocol_attrs <= child_attrs
+
+    @classmethod
+    def _any_producer_matches(cls, consumed_type: type, produced_types: set[type]) -> bool:
+        """Check if any produced type is a subtype of consumed_type."""
+        return any(produced == consumed_type or cls._is_subtype(produced, consumed_type) for produced in produced_types)
+
+    @classmethod
+    def _any_consumer_matches(cls, produced_type: type, consumed_types: set[type]) -> bool:
+        """Check if any consumed type is a supertype of produced_type."""
+        return any(produced_type == consumed or cls._is_subtype(produced_type, consumed) for consumed in consumed_types)
 
     def get_dispatch_order(self) -> list[GraphNode]:
         """Return inline nodes in topological order for main-loop dispatch.
@@ -233,6 +275,8 @@ class PipelineRegistry:
         """Check that the graph has no disconnected subgraphs.
 
         All nodes must be reachable from at least one source node.
+        Uses subtype-aware matching: a produced type reaches consumers
+        whose input type is a supertype or protocol satisfied by it.
         """
         errors: list[str] = []
         source_names = {name for name, node in self._nodes.items() if node.variant in SOURCE_VARIANTS}
@@ -250,11 +294,9 @@ class PipelineRegistry:
             reachable.add(current_name)
             current_node = self._nodes[current_name]
             for out_type in current_node.output_types:
-                frontier.extend(
-                    consumer_name
-                    for consumer_name in self._type_consumers.get(out_type, [])
-                    if consumer_name not in reachable
-                )
+                for consumed_type, consumer_names in self._type_consumers.items():
+                    if out_type == consumed_type or self._is_subtype(out_type, consumed_type):
+                        frontier.extend(name for name in consumer_names if name not in reachable)
 
         unreachable = set(self._nodes.keys()) - reachable
         errors.extend(
@@ -269,9 +311,20 @@ class PipelineRegistry:
 
         PEP 695 generic wrappers with ``from __future__ import annotations``
         have unresolved TypeVar forward references that cause NameError in
-        ``typing.get_type_hints``. When that happens, inspect ``_inner``
-        attribute (set by framework wrappers) to get concrete type hints.
+        ``typing.get_type_hints``. Resolution strategy:
+
+        0. Explicit ``__call_hints__`` on the node or its ``_inner`` — set by the
+           factory when it knows the concrete types (generic shipped processors)
+        1. ``typing.get_type_hints`` on the outer node (works for concrete types)
+        2. ``typing.get_type_hints`` on ``_inner`` (works when inner has no TypeVars)
+        3. ``inspect.get_annotations(eval_str=True)`` on ``_inner`` with enriched
+           globals — injects PEP 695 TypeVar bounds so ``T`` resolves to its bound
         """
+        for target in (node, getattr(node, "_inner", None)):
+            explicit = getattr(target, "__call_hints__", None)
+            if isinstance(explicit, dict) and explicit:
+                return explicit
+
         try:
             return typing.get_type_hints(node.__call__, include_extras=True)  # type: ignore[operator]
         except (NameError, AttributeError):
@@ -281,6 +334,29 @@ class PipelineRegistry:
                     return typing.get_type_hints(inner.__call__, include_extras=True)
                 except (NameError, AttributeError):
                     pass
+                return PipelineRegistry._eval_annotations_with_bounds(inner)
+            return {}
+
+    @staticmethod
+    def _eval_annotations_with_bounds(node: object) -> dict[str, type]:
+        """Resolve string annotations using module globals + PEP 695 TypeVar bounds.
+
+        Builds a namespace from the node class's module and injects ``__bound__``
+        for each TypeVar in ``__type_params__``, so ``T`` evaluates to its bound
+        (e.g. ``BaseModel``).  Falls back to empty dict on any resolution failure.
+        """
+        cls = type(node)
+        module = sys.modules.get(cls.__module__)
+        if module is None:
+            return {}
+        ns: dict[str, Any] = vars(module).copy()
+        for tp in getattr(cls, "__type_params__", ()):
+            bound = getattr(tp, "__bound__", None)
+            if bound is not None:
+                ns[tp.__name__] = bound
+        try:
+            return inspect.get_annotations(node.__call__, globals=ns, eval_str=True)  # type: ignore[operator]
+        except (NameError, AttributeError):
             return {}
 
     def _detect_variant(self, node: object) -> ExecutionVariant:

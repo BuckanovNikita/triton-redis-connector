@@ -16,7 +16,8 @@ Passed from code (not config):
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import typing
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 from redis import Redis
@@ -149,8 +150,38 @@ def _register_shipped_processors(
     if postprocessor is not None:
         _register_shipped(registry, "postprocessor", postprocessor, NodeVariant.THREAD_PROCESSOR)
 
-    _register_shipped(registry, "serializer", EventSerializer(), NodeVariant.THREAD_PROCESSOR)
+    serializer_event_type = _extract_return_type(postprocessor) if postprocessor is not None else None
+    _register_shipped(registry, "serializer", EventSerializer(serializer_event_type), NodeVariant.THREAD_PROCESSOR)
     _register_shipped(registry, "error_sink", LogErrorSink(), NodeVariant.THREAD_SINK)
+
+
+def _extract_return_type(node: object) -> type[Any] | None:
+    """Extract the return type from a callable's __call__ hints.
+
+    Tries ``typing.get_type_hints`` first, then falls back to
+    ``inspect.get_annotations(eval_str=True)`` with the node's module globals.
+    """
+    import contextlib  # noqa: PLC0415
+    import inspect  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    hints: dict[str, Any] = {}
+    try:
+        hints = typing.get_type_hints(node.__call__, include_extras=True)  # type: ignore[operator]
+    except (NameError, AttributeError):
+        mod = sys.modules.get(type(node).__module__)
+        if mod is not None:
+            with contextlib.suppress(NameError, AttributeError):
+                hints = inspect.get_annotations(
+                    node.__call__,  # type: ignore[operator]
+                    globals=vars(mod),
+                    eval_str=True,
+                )
+
+    ret = hints.get("return")
+    if ret is not None and ret is not type(None) and typing.get_origin(ret) is None:
+        return ret  # type: ignore[no-any-return]
+    return None
 
 
 def _build_preprocessor(config: AppConfig) -> DaliInferenceInputBuilder | ConfigurableClientPreprocessor:

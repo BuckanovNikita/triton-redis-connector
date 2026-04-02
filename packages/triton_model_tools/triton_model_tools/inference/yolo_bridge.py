@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from triton_redis_connector.engine.events import DetectionResult
+from triton_redis_connector.inference.request import (
+    InferenceOutput,  # noqa: TC002 — required at runtime for annotation resolution
+)
 
 from triton_model_tools.inference.postprocessing import YoloPostprocessor
-
-if TYPE_CHECKING:
-    from triton_redis_connector.inference.request import InferenceOutput
 
 
 class YoloPostProcessorBridge:

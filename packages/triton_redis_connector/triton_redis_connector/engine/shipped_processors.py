@@ -72,11 +72,25 @@ class EnvelopeExtractor[T: BaseModel]:
 
     def __init__(self, model_class: type[T]) -> None:  # noqa: D107
         self._model_class = model_class
+        self.__call_hints__: dict[str, type] = {
+            "event": Envelope[bytes],
+            "return": model_class | None,  # type: ignore[dict-item]
+        }
 
     def __call__(self, event: Envelope[bytes]) -> T | None:
-        """Deserialize envelope bytes payload into a pydantic model."""
+        """Deserialize envelope payload or original_fields into a pydantic model.
+
+        Tries JSON payload first. When payload is empty (Redis streams without
+        a ``data`` field), falls back to constructing the model from
+        ``original_fields`` key-value pairs.
+        """
         try:
-            return self._model_class.model_validate_json(event.payload)
+            if event.payload:
+                return self._model_class.model_validate_json(event.payload)
+            return self._model_class.model_validate(
+                event.original_fields,
+                strict=False,
+            )
         except ValidationError:
             logger.exception(
                 "Failed to deserialize {} from envelope {}",
@@ -182,16 +196,26 @@ class EventSerializer[T: BaseModel]:
     the inbound message, ensuring they are forwarded through the pipeline.
     """
 
+    def __init__(self, event_type: type[T] | None = None) -> None:  # noqa: D107
+        if event_type is not None:
+            self.__call_hints__: dict[str, type] = {
+                "event": event_type,
+                "return": Envelope[bytes],
+            }
+
     def __call__(self, event: T) -> Envelope[bytes]:
         """Serialize event to JSON bytes and wrap in an Envelope."""
         payload = event.model_dump_json().encode()
-        ctx = current_context()
-        return Envelope(
-            payload=payload,
-            source_stream=ctx.source_stream,
-            message_id=ctx.message_id,
-            original_fields=dict(ctx.original_fields),
-        )
+        try:
+            ctx = current_context()
+            return Envelope(
+                payload=payload,
+                source_stream=ctx.source_stream,
+                message_id=ctx.message_id,
+                original_fields=dict(ctx.original_fields),
+            )
+        except LookupError:
+            return Envelope(payload=payload)
 
 
 class LogErrorSink:
