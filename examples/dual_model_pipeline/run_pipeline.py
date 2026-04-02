@@ -17,16 +17,14 @@ from __future__ import annotations
 
 import signal
 import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import types
-
+import hydra
 from loguru import logger
+from omegaconf import DictConfig  # noqa: TC002 - needed at runtime for @hydra.main
 from redis import Redis
 from triton_model_tools.inference.yolo_bridge import YoloPostProcessorBridge
-from triton_redis_connector.config.hydra_app import load_config
+from triton_redis_connector.config.hydra_app import load_config_from_dict_config
 from triton_redis_connector.providers.app_factory import build_application
 
 from examples.dual_model_pipeline.processors import (
@@ -36,15 +34,21 @@ from examples.dual_model_pipeline.processors import (
     OddModelSink,
 )
 
-CONFIG_DIR = Path(__file__).resolve().parent
+if TYPE_CHECKING:
+    import types
 
 EVEN_STREAM = "steel:even_results"
 ODD_STREAM = "steel:odd_results"
 
 
-def main() -> None:
+@hydra.main(
+    version_base="1.3",
+    config_path=".",
+    config_name="config",
+)
+def main(cfg: DictConfig) -> None:
     """Load config, build pipeline, run."""
-    config = load_config(config_name="config", config_dir=CONFIG_DIR)
+    config = load_config_from_dict_config(cfg)
     logger.info("Starting {}", config.app_name)
 
     redis_client: Redis[bytes] = Redis(

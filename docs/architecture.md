@@ -296,15 +296,15 @@ Both satisfy `Processor[TIn, TOut]` and compose via nesting.
 
 ### Preferred: build_application (recommended)
 
-1. Load config via `load_config()` (Hydra YAML + env var interpolation)
-2. Call `build_application(config, event_model=..., postprocessor=..., extra_nodes=[...])`
+1. Load config via `@hydra.main` + `load_config_from_dict_config()` (Hydra YAML + env var interpolation)
+2. Call `build_application(config, postprocessor=..., extra_nodes=[...])`
 3. `app.run()`
 
 The factory handles Redis client creation, shipped processor registration, and graph wiring. See "build_application Factory" above for details.
 
 ### Manual construction (advanced)
 
-1. Load config via `load_config()` (Hydra YAML + env var interpolation)
+1. Load config via `@hydra.main` + `load_config_from_dict_config()` (Hydra YAML + env var interpolation)
 2. Create `PipelineRegistry`, register nodes with type-annotated `__call__`
 3. Registry inspects signatures to build DAG, validates connectivity
 4. Create `Application` with registry and `QueueBus`

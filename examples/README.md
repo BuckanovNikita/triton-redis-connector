@@ -32,21 +32,22 @@
 ### Минимальный шаблон запуска
 
 ```python
-from pathlib import Path
-from triton_redis_connector.config.hydra_app import load_config
+import hydra
+from omegaconf import DictConfig
+from triton_redis_connector.config.hydra_app import load_config_from_dict_config
 from triton_redis_connector.providers.app_factory import build_application
 
-config = load_config(config_name="config", config_dir=Path(__file__).parent)
-
-app = build_application(
-    config,
-    event_model=MyInputEvent,
-    postprocessor=MyPostProcessor(),
-    extra_nodes=[
-        ("my_processor", MyProcessor()),
-    ],
-)
-app.run()
+@hydra.main(version_base="1.3", config_path=".", config_name="config")
+def main(cfg: DictConfig) -> None:
+    config = load_config_from_dict_config(cfg)
+    app = build_application(
+        config,
+        postprocessor=MyPostProcessor(),
+        extra_nodes=[
+            ("my_processor", MyProcessor()),
+        ],
+    )
+    app.run()
 ```
 
 Все параметры инфраструктуры берутся из `config.yaml`, а переопределить их можно

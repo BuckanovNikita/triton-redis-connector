@@ -110,7 +110,7 @@ class TestMetricEmitter:
     def test_fields_are_string_values(self) -> None:
         buffer = MetricBuffer()
         client = MagicMock()
-        emitter = MetricEmitter(buffer=buffer, client=client, stream="metrics", interval_s=0.05)
+        emitter = MetricEmitter(buffer=buffer, client=client, stream="metrics", interval_s=0.05, app_name="testapp")
 
         buffer.record(_make_event(measure="test_field", value=3.14))
 
@@ -121,5 +121,51 @@ class TestMetricEmitter:
         xadd_call = client.xadd.call_args
         fields = xadd_call.kwargs["fields"]
         assert all(isinstance(v, str) for v in fields.values())
-        assert fields["measure"] == "test_field"
+        assert fields["measure"] == "testapp_test_field"
         assert fields["value"] == "3.14"
+
+    def test_prefix_from_app_name(self) -> None:
+        buffer = MetricBuffer()
+        client = MagicMock()
+        emitter = MetricEmitter(buffer=buffer, client=client, stream="metrics", interval_s=0.05, app_name="my-app")
+        assert emitter.prefix == "my_app"
+
+        buffer.record(_make_event(measure="counter"))
+
+        emitter.start()
+        time.sleep(0.15)
+        emitter.stop()
+
+        xadd_call = client.xadd.call_args
+        fields = xadd_call.kwargs["fields"]
+        assert fields["measure"] == "my_app_counter"
+
+    def test_prefix_falls_back_to_hostname(self) -> None:
+        import socket
+
+        buffer = MetricBuffer()
+        client = MagicMock()
+        emitter = MetricEmitter(buffer=buffer, client=client, stream="metrics", interval_s=0.05)
+        expected_prefix = "".join(c if c.isalnum() else "_" for c in socket.gethostname()).strip("_")
+        assert emitter.prefix == expected_prefix
+
+    def test_zero_value_events_are_prefixed(self) -> None:
+        buffer = MetricBuffer()
+        client = MagicMock()
+        emitter = MetricEmitter(
+            buffer=buffer,
+            client=client,
+            stream="metrics",
+            interval_s=0.05,
+            known_metrics={"idle_metric"},
+            app_name="testapp",
+        )
+
+        emitter.start()
+        time.sleep(0.15)
+        emitter.stop()
+
+        xadd_call = client.xadd.call_args
+        fields = xadd_call.kwargs["fields"]
+        assert fields["measure"] == "testapp_idle_metric"
+        assert fields["value"] == "0.0"

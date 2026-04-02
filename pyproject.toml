@@ -61,6 +61,8 @@ fixable = ["ALL"]
 "tests/**" = ["S101", "S105", "S106", "ANN401", "PLR2004", "PLC0415", "D101", "D102", "D103", "D104", "D107", "INP001", "S311", "SLF001", "TC002", "ARG002"]
 "**/tests/**" = ["S101", "S105", "S106", "ANN401", "PLR2004", "PLC0415", "D101", "D102", "D103", "D104", "D107", "INP001", "S311", "SLF001", "TC002", "ARG002"]
 "**/scripts/**" = ["ALL"]
+"test_fixtures/**" = ["S101", "D100", "D101", "D102", "D103", "D104", "D107", "INP001", "T201"]
+"conftest.py" = ["S101", "D100", "D101", "D102", "D103", "D104", "D107", "INP001"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -83,6 +85,8 @@ exclude = [
     "packages/triton_model_tools/triton_model_tools/export/scripts/",
     "model_repository/",
     "model_repository_offline/",
+    "test_fixtures/",
+    "conftest.py",
 ]
 
 [[tool.mypy.overrides]]
