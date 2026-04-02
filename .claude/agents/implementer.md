@@ -162,40 +162,26 @@ When adding or modifying workspace packages:
 
 ## Execution Variant Model
 
-### Nine Variants Overview
+### Six Parallel Variants Overview
 
-The framework has three primitives, each with execution mode variants:
+All nodes run in dedicated threads/processes. Users inherit from base classes:
 
-**Source** — produces events:
-- `Source`: inline, `__call__(self) -> Event | None`
-- `ThreadSource`: dedicated thread, has `stop: threading.Event`
-- `ProcessSource`: dedicated OS process, has `stop: threading.Event`
+**Source** — `produce(self) -> Event | None`:
+- `BaseThreadSource[TOut]`: dedicated thread (blocking I/O)
+- `BaseProcessSource[TOut]`: dedicated process (CPU-bound)
 
-**Processor** — transforms events:
-- `Processor`: inline, `__call__(self, event) -> Event | None`
-- `ThreadProcessor`: dedicated thread
-- `ThreadPoolProcessor`: thread pool (N workers)
-- `ProcessPoolProcessor`: process pool (N workers)
+**Processor** — `process(self, event) -> Event | None`:
+- `BaseThreadProcessor[TIn, TOut]`: dedicated thread
+- `BaseThreadPoolProcessor[TIn, TOut]`: thread pool (N workers)
+- `BaseProcessPoolProcessor[TIn, TOut]`: process pool (N workers)
 
-**Sink** — consumes events:
-- `Sink`: inline, `__call__(self, event) -> Any | None`
-- `ThreadSink`: dedicated thread, has `stop: threading.Event`
+**Sink** — `process(self, event) -> None`:
+- `BaseThreadSink[TIn]`: dedicated thread
 
-### Two Processor Authoring Approaches
-
-There are three ways to declare execution variants for processors, sources, and sinks.
-Approaches A and B are preferred; Approach C exists for backward compatibility and advanced use cases.
-
-### Approach A: Base Class Inheritance (user processors)
+### Processor Authoring: Base Class Inheritance
 
 User processors inherit from base classes in `protocols.py` to declare their variant.
-The base class provides `variant` property and `stop: threading.Event` for parallel variants.
-No wrapping needed at registration.
-
-Available base classes:
-- `BaseSource[TOut]`, `BaseThreadSource[TOut]`, `BaseProcessSource[TOut]`
-- `BaseProcessor[TIn, TOut]`, `BaseThreadProcessor[TIn, TOut]`, `BaseThreadPoolProcessor[TIn, TOut]`, `BaseProcessPoolProcessor[TIn, TOut]`
-- `BaseSink[TIn]`, `BaseThreadSink[TIn]`
+Base classes provide `__call__` with built-in metrics/error handling. Users override `process()`.
 
 ```python
 from __future__ import annotations

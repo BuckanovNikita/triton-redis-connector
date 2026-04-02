@@ -105,15 +105,15 @@ Follow the checklist below, section by section.
 
 ## Architecture Contract Verification
 
-### Execution Variant Compliance (9 Variants)
+### Execution Variant Compliance (6 Parallel Variants)
 
-The framework defines 9 execution variants across 3 primitive roles:
+The framework defines 6 parallel execution variants (no inline variants):
 
-| Role | Variants | Signature |
+| Role | Base Classes | User overrides |
 |---|---|---|
-| **Source** | `Source`, `ThreadSource`, `ProcessSource` | `__call__(self) -> Event \| None` |
-| **Processor** | `Processor`, `ThreadProcessor`, `ThreadPoolProcessor`, `ProcessPoolProcessor` | `__call__(self, event) -> Event \| None` |
-| **Sink** | `Sink`, `ThreadSink` | `__call__(self, event) -> Any \| None` |
+| **Source** | `BaseThreadSource[TOut]`, `BaseProcessSource[TOut]` | `produce(self) -> TOut \| None` |
+| **Processor** | `BaseThreadProcessor[TIn, TOut]`, `BaseThreadPoolProcessor`, `BaseProcessPoolProcessor` | `process(self, event: TIn) -> TOut \| None` |
+| **Sink** | `BaseThreadSink[TIn]` | `process(self, event: TIn) -> None` |
 
 Verify each component:
 

@@ -42,48 +42,38 @@ Before making architectural decisions, always read:
 
 ## Execution Variant Model
 
-### Nine Variants (3 Primitives x Execution Modes)
+### Six Parallel Variants
 
-The framework uses three callable primitives, each with execution mode variants:
+All nodes run in dedicated threads or processes. Inline variants were removed.
+Users inherit from base classes in `protocols.py` to declare variant:
 
-#### Source — `__call__(self) -> Event | None`
+#### Source — `produce(self) -> Event | None`
 
-Produces events. Returns `None` when no data is available (e.g., empty read).
+| Variant | Base Class | Use when |
+|---|---|---|
+| `ThreadSource` | `BaseThreadSource[TOut]` | Blocking I/O (Redis XREADGROUP) |
+| `ProcessSource` | `BaseProcessSource[TOut]` | CPU-bound generation |
 
-| Variant | Execution | Stop mechanism | Use when |
-|---|---|---|---|
-| `Source` | Inline in main loop | N/A (called once per tick) | Lightweight polling |
-| `ThreadSource` | Dedicated thread | `stop: threading.Event` | Blocking I/O (Redis XREADGROUP) |
-| `ProcessSource` | Dedicated process | `stop: threading.Event` | CPU-bound generation |
+#### Processor — `process(self, event) -> Event | None`
 
-#### Processor — `__call__(self, event) -> Event | None`
+| Variant | Base Class | Use when |
+|---|---|---|
+| `ThreadProcessor` | `BaseThreadProcessor[TIn, TOut]` | I/O-bound processing, routing |
+| `ThreadPoolProcessor` | `BaseThreadPoolProcessor[TIn, TOut]` | Concurrent I/O (HTTP calls) |
+| `ProcessPoolProcessor` | `BaseProcessPoolProcessor[TIn, TOut]` | CPU-bound work (image decode) |
 
-Transforms events. Returns `None` to drop/filter an event from the pipeline.
+#### Sink — `process(self, event) -> None`
 
-| Variant | Execution | Concurrency | Use when |
-|---|---|---|---|
-| `Processor` | Inline in main loop | None (sequential) | Fast transforms, routing |
-| `ThreadProcessor` | Dedicated thread | Single thread with input queue | I/O-bound processing |
-| `ThreadPoolProcessor` | Thread pool | N threads with shared input queue | Concurrent I/O (HTTP calls) |
-| `ProcessPoolProcessor` | Process pool | N processes with shared input queue | CPU-bound work (image decode, inference) |
-
-#### Sink — `__call__(self, event) -> MetricEvent | None`
-
-Consumes events, writes to external systems. Optionally returns a `MetricEvent`
-for monitoring.
-
-| Variant | Execution | Stop mechanism | Use when |
-|---|---|---|---|
-| `Sink` | Inline in main loop | N/A | Fast writes, metrics emission |
-| `ThreadSink` | Dedicated thread | `stop: threading.Event` | Blocking I/O (Redis XADD, file writes) |
+| Variant | Base Class | Use when |
+|---|---|---|
+| `ThreadSink` | `BaseThreadSink[TIn]` | Blocking I/O (Redis XADD, file writes) |
 
 ### Execution Variant Selection Guide
 
-1. **Default to inline** (`Source`, `Processor`, `Sink`) — simplest, no threading overhead.
-2. **Use Thread variants** when the operation blocks (network I/O, disk I/O).
-3. **Use ThreadPool** when you need concurrent I/O with shared resources.
-4. **Use ProcessPool** when work is CPU-bound (image preprocessing, numpy ops, Triton inference).
-5. **Use Process variants** for CPU-bound sources that generate data continuously.
+1. **Use Thread variants** when the operation blocks (network I/O, disk I/O).
+2. **Use ThreadPool** when you need concurrent I/O with shared resources.
+3. **Use ProcessPool** when work is CPU-bound (image preprocessing, numpy ops).
+4. **Use Process variants** for CPU-bound sources that generate data continuously.
 
 ### No `emit` Callback
 
@@ -105,49 +95,66 @@ between iterations.
 
 ---
 
-## Pure Business Logic + Framework Wrapping
+## Base Classes with Built-in Metrics
 
-Processors, sources, and sinks are **pure business logic** — no `stop` event,
-no threading primitives, no retry logic. The framework wraps them at assembly time:
+Users inherit from base classes and override `process()` (or `produce()` for sources).
+The `__call__` method is final — it wraps `process()` with timing, error recording,
+and metric extraction:
 
-- `DetachedThreadSource(inner)` → adds `stop`, `variant`, metric aggregation
-- `DetachedThreadProcessor(inner)` → dedicated thread wrapper
-- `ThreadedProcessor(inner)` → thread pool wrapper
-- `MultiProcessProcessor(inner)` → process pool wrapper
-- `DetachedThreadSink(inner)` → thread sink wrapper
+```python
+class BaseThreadProcessor[TIn, TOut]:
+    def __init__(self, name: str = "", *, metric_recorder=None):
+        self.stop = threading.Event()
+        self.name = name or type(self).__name__
+        self._aggregator = MetricAggregator()
 
-Wrappers live in `engine/wrappers.py`. Each wrapper:
-1. Adds `stop: threading.Event` and `variant` property (satisfying `WrappedNode` protocol)
-2. Optionally accepts a `MetricAggregator` for per-call timing/error/empty counting
-3. Delegates `__call__` to the inner pure function
+    def __call__(self, event: TIn) -> TOut | None:  # DO NOT override
+        # timing + error boundary + metric extraction
+        result = self.process(event)  # user overrides THIS
+        return result
 
-### Subclass-Based Variant Declaration (Alternative)
+    def process(self, event: TIn) -> TOut | None:
+        raise NotImplementedError
+```
 
-User processors can inherit from base classes in `protocols.py` to declare their variant:
+### Domain Event Model
 
-- `BaseSource[TOut]`, `BaseThreadSource[TOut]`, `BaseProcessSource[TOut]`
-- `BaseProcessor[TIn, TOut]`, `BaseThreadProcessor[TIn, TOut]`, `BaseThreadPoolProcessor[TIn, TOut]`, `BaseProcessPoolProcessor[TIn, TOut]`
-- `BaseSink[TIn]`, `BaseThreadSink[TIn]`
+- `Event(BaseModel)` — base for all user events, has `fw: FrameworkMeta`
+- `FrameworkMeta` — `source_stream`, `message_id`, `priority` (set by source, stripped by sink)
+- `PipelineEvent[TCtx: Event, TPayload: BaseModel]` — typed composition of context + payload
+- `ImagePayload` — carries `image_path` or `image_bytes`
+- `TritonRequest` — preprocessed tensor for Triton inference
+- `DetectionResult` — typed `detections: tuple[Detection, ...]`
+- `ClassificationResult` — typed `predictions: tuple[ClassificationPrediction, ...]`
 
-Each provides `variant` property (satisfies `WrappedNode`) and `stop: threading.Event` for
-parallel variants. No wrapping needed at registration.
+### Application.build() Classmethod (Preferred)
 
-### build_application Factory
+```python
+app = Application.build(config, processors=[
+    source, router, preprocessor, inference_node, postprocessor, sink, error_sink
+], triton_collector=collector)
+```
 
-`providers/app_factory.py` provides `build_application(config, *, event_model, postprocessor, extra_nodes)`:
-- Creates Redis client, connectors, source/sink from config automatically
-- Registers shipped processors from config fields (decoder type, model name, grpc_url)
-- `event_model` (class) and `postprocessor` (instance) come from **code**, not config
-- User processors passed via `extra_nodes` parameter
-- Config contains only infrastructure params — no class paths
+- Explicit processor list — no magic wiring
+- Auto-creates MetricBuffer, MetricEmitter, QueueBus from config
+- Runs graph validation before returning
 
-### Config-Driven Node Assembly (advanced)
+### ModelBundle + expand_bundle
 
-`NodeConfig` in YAML config declares user-defined nodes with `class_path`, variant, and params.
-Used when `build_application` is insufficient or for advanced cases.
+Groups processors for one model:
+```python
+bundle = ModelBundle(name="yolo", preprocessor=preproc, inference=infer, postprocessor=post, sink=sink)
+processors = expand_bundle(bundle)  # returns flat list in pipeline order
+```
 
-`engine/assembly.py` provides `assemble_all(config.nodes, registry)`. `providers/node_assembly_provider.py`
-handles DI wiring.
+### Shipped Node Classes
+
+| Node | Input | Output |
+|---|---|---|
+| `ClientPreprocessorNode[TCtx, TPayload]` | `PipelineEvent[TCtx, TPayload]` | `PipelineEvent[TCtx, TritonRequest] \| PreprocessingError` |
+| `InferenceNode[TCtx, TReq, TOut]` | `PipelineEvent[TCtx, TReq]` | `PipelineEvent[TCtx, TOut] \| InferenceError` |
+| `PostProcessorNode[TCtx, TIn, TResult]` | `PipelineEvent[TCtx, TIn]` | `PipelineEvent[TCtx, TResult]` |
+| `LogErrorSinkNode` | `InferenceError \| ConnectorError \| PreprocessingError` | None |
 
 ---
 
@@ -164,32 +171,22 @@ Both satisfy `Processor[TIn, TOut]` protocol. Stateless and thread-safe.
 
 ---
 
-## EventContext via contextvars
+## Framework Metadata via Event.fw
 
-User code accesses per-event metadata via `current_context()` from `engine/context.py`:
-
-```python
-from triton_redis_connector.engine.context import current_context
-ctx = current_context()  # → EventContext(message_id, source_stream, created_at)
-```
-
-The framework sets context before dispatch via `set_context()` / `reset_context()`.
-This replaces Envelope access in user code — Envelope remains framework-internal only.
+User context and framework metadata travel together via `PipelineEvent`:
+- `PipelineEvent.context` is a user `Event` subclass — carries `fw: FrameworkMeta`
+- `fw.source_stream` and `fw.message_id` set by source, used by sink for ACK
+- `fw` stripped from Redis output — only user fields appear
+- No contextvars — metadata is explicit in the type system
 
 ---
 
-## Inference as ProcessPoolProcessor
+## Inference via InferenceNode
 
-There is NO framework-level intercept pattern. Triton inference is a user-defined
-`ProcessPoolProcessor` (e.g. `InferenceWorker`):
+`InferenceNode[TCtx, TReq, TOut]` is a shipped Node class that calls Triton gRPC.
+Takes `PipelineEvent[TCtx, TReq]`, returns `PipelineEvent[TCtx, TOut] | InferenceError`.
 
-- `InferenceWorker` is pure `__call__`: takes `InferenceInput`, calls Triton gRPC,
-  returns `InferenceOutput | InferenceError | None`. No retry, no semaphore, no threading.
-- `InferenceWorkerFactory` creates workers via `create_shared()` (returns picklable config)
-  and `create_processor(shared)` (creates worker with its own gRPC client).
-- Retry/concurrency handled by wrapping: `RetryMiddleware(MultiProcessProcessor(worker))`
-
-Each process in the pool creates its own Triton gRPC client (connections are not fork-safe).
+Retry/concurrency handled by composing middleware.
 
 ---
 
@@ -253,19 +250,16 @@ No primitive raises exceptions during normal operation. Instead:
 
 ---
 
-## Main Loop Architecture
+## Supervisor Loop Architecture
 
-The main loop has three responsibilities:
+The main thread runs a supervisor loop with three responsibilities:
 
-1. **Non-parallel dispatch** — calls inline `Source`, `Processor`, and `Sink`
-   variants sequentially. Routes events through the graph based on type.
-2. **Terminal event listening** — watches for a terminal event (e.g., `ShutdownEvent`)
-   that triggers graceful shutdown of all parallel variants.
-3. **Monitor and restart parallel** — monitors Thread/Process variants for crashes.
-   On crash: logs error, restarts the variant, re-wires queues.
+1. **Error queue draining** — logs every error event on the main thread with `[MAIN]` prefix
+2. **Health monitoring** — checks parallel variant threads, restarts crashed ones with exponential backoff
+3. **Periodic stats** — logs per-node throughput, latency, error counts
 
-The main loop does NOT manage parallel variant internals — it only monitors their
-health and dispatches inline variants.
+All event dispatch happens in dedicated worker threads via queue-based routing.
+The supervisor never processes events directly.
 
 ---
 
@@ -555,7 +549,7 @@ These are verified in pre-commit. Architectural decisions MUST respect these bou
    ```
    providers (top)
    ↓
-   connectors | inference | preprocessing | metrics | routers
+   connectors | inference | preprocessing | metrics
    ↓
    engine
    ↓
@@ -567,7 +561,7 @@ These are verified in pre-commit. Architectural decisions MUST respect these bou
    Allowed violation: `engine.app → metrics.collector` (lazy import).
 
 2. **Domain module independence**: `connectors`, `inference`, `preprocessing`,
-   `metrics`, `routers` are siblings — must NOT import each other.
+   `metrics` are siblings — must NOT import each other.
 
 3. **connector-no-model-tools**: `triton_redis_connector` ↛ `triton_model_tools`.
 
