@@ -274,25 +274,29 @@ def _test_output_format(detections: list[dict[str, Any]], model_name: str, metal
 
 
 def _test_wrapper_metrics() -> bool:
-    """Verify wrapper metric extraction works for pipeline event types."""
-    logger.info("--- Wrapper metric extraction test ---")
+    """Verify metric extraction works for pipeline event types."""
+    logger.info("--- Metric extraction test ---")
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from triton_redis_connector.engine.events import DetectionResult  # noqa: PLC0415
 
     from examples.dual_model_pipeline.events import (  # noqa: PLC0415
-        EvenCameraFrame,
-        OddCameraFrame,
-        SteelInspectionInput,
+        EvenDetectionResult,
+        EvenImagePayload,
+        OddDetectionResult,
+        OddImagePayload,
+        SteelMeta,
     )
 
     all_pass = True
 
     for cls, expected in [
-        (SteelInspectionInput, "inspection_received"),
-        (EvenCameraFrame, "even_camera_frame"),
-        (OddCameraFrame, "odd_camera_frame"),
+        (SteelMeta, "inspection_received"),
+        (EvenImagePayload, "even_camera_frame"),
+        (OddImagePayload, "odd_camera_frame"),
         (DetectionResult, "detection_done"),
+        (EvenDetectionResult, "even_model_result"),
+        (OddDetectionResult, "odd_model_result"),
     ]:
         counters = extract_event_counters(cls)
         names = [c.name for c in counters]
@@ -311,8 +315,7 @@ def _test_wrapper_metrics() -> bool:
         all_pass = False
 
     for cls, expected in [
-        (EvenCameraFrame, "camera_no_per_minute"),
-        (OddCameraFrame, "camera_no_per_minute"),
+        (SteelMeta, "camera_no_per_minute"),
     ]:
         group_bys = extract_field_group_bys(cls)
         gb_names = [g.name for _, g in group_bys]

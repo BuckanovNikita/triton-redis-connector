@@ -1,120 +1,167 @@
 """Custom pipeline processors for the dual-model steel inspection pipeline.
 
-Only domain-specific routing logic lives here. All preprocessing, inference,
-and postprocessing use shipped processors configured in config.yaml.
+Only domain-specific routing and sink logic lives here. All preprocessing,
+inference, and postprocessing use shipped Node classes.
 """
 
 from __future__ import annotations
 
+from loguru import logger
 from redis import Redis  # noqa: TC002 — needed at runtime for sink __init__
-from triton_redis_connector.engine.events import DetectionResult
+from triton_redis_connector.engine.events import (
+    DetectionResult,
+    PipelineEvent,
+)
 from triton_redis_connector.protocols import BaseThreadProcessor, BaseThreadSink
 
 from examples.dual_model_pipeline.events import (
     EVEN_MODEL,
-    EvenCameraFrame,
-    EvenModelResult,
-    OddCameraFrame,
-    OddModelResult,
+    EvenDetectionResult,
+    EvenImagePayload,
+    OddDetectionResult,
+    OddImagePayload,
     SteelInspectionInput,
+    SteelMeta,
 )
 
 
 class CameraBranchRouter(
-    BaseThreadProcessor[SteelInspectionInput, EvenCameraFrame | OddCameraFrame],
+    BaseThreadProcessor[
+        SteelInspectionInput,
+        PipelineEvent[SteelMeta, EvenImagePayload] | PipelineEvent[SteelMeta, OddImagePayload],
+    ],
 ):
     """Routes inspection input to even/odd camera preprocessing paths.
 
-    Even camera_no -> EvenCameraFrame (DALI ensemble path)
-    Odd camera_no  -> OddCameraFrame  (client-side TurboJPEG path)
+    Even camera_no -> PipelineEvent[SteelMeta, EvenImagePayload]
+    Odd camera_no  -> PipelineEvent[SteelMeta, OddImagePayload]
 
-    Domain metadata is packed into the metadata dict so shipped processors
-    can bypass it through inference and back into the final output.
+    Domain metadata is packed into the typed SteelMeta context,
+    replacing the old untyped metadata dict bypass pattern.
     """
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()
 
-    def __call__(self, event: SteelInspectionInput) -> EvenCameraFrame | OddCameraFrame | None:
-        """Route based on camera_no parity, packing metadata for bypass."""
-        meta = {
-            "camera_no": event.camera_no,
-            "frame_counter": event.frame_counter,
-            "receipt_ts": event.receipt_ts,
-            "metal_type": event.metal_type or ("HK" if event.camera_no % 2 == 0 else "GK"),
-            "image_path": event.image_path,
-        }
+    def __call__(  # noqa: D102
+        self, event: SteelInspectionInput
+    ) -> PipelineEvent[SteelMeta, EvenImagePayload] | PipelineEvent[SteelMeta, OddImagePayload] | None:
+        metal_type = event.metal_type or ("HK" if event.camera_no % 2 == 0 else "GK")
+        context = SteelMeta(
+            fw=event.fw,
+            receipt_ts=event.receipt_ts,
+            camera_no=event.camera_no,
+            image_path=event.image_path,
+            frame_counter=event.frame_counter,
+            metal_type=metal_type,
+        )
 
         if event.camera_no % 2 == 0:
-            return EvenCameraFrame(
-                image_path=event.image_path,
-                camera_no=event.camera_no,
-                metadata=meta,
+            return PipelineEvent[SteelMeta, EvenImagePayload](
+                context=context,
+                payload=EvenImagePayload(image_path=event.image_path),
             )
-        return OddCameraFrame(
-            image_path=event.image_path,
-            camera_no=event.camera_no,
-            metadata=meta,
+
+        return PipelineEvent[SteelMeta, OddImagePayload](
+            context=context,
+            payload=OddImagePayload(image_path=event.image_path),
         )
 
 
 class ModelResultRouter(
-    BaseThreadProcessor[DetectionResult, EvenModelResult | OddModelResult],
+    BaseThreadProcessor[
+        PipelineEvent[SteelMeta, DetectionResult],
+        PipelineEvent[SteelMeta, EvenDetectionResult] | PipelineEvent[SteelMeta, OddDetectionResult],
+    ],
 ):
-    """Routes detection results to per-model output streams based on model_name."""
+    """Routes detection results to per-model typed sinks based on model_name.
+
+    Converts generic DetectionResult payload into model-specific subclasses
+    so the type-based routing table sends results to the correct sink.
+    """
 
     def __init__(self) -> None:  # noqa: D107
         super().__init__()
 
-    def __call__(self, event: DetectionResult) -> EvenModelResult | OddModelResult | None:
-        """Route result to the output type matching the model that produced it."""
-        cls = EvenModelResult if event.model_name == EVEN_MODEL else OddModelResult
-        return cls(
-            detections=event.detections,
-            model_name=event.model_name,
-            inference_time_ms=event.inference_time_ms,
+    def __call__(  # noqa: D102
+        self, event: PipelineEvent[SteelMeta, DetectionResult]
+    ) -> PipelineEvent[SteelMeta, EvenDetectionResult] | PipelineEvent[SteelMeta, OddDetectionResult] | None:
+        result = event.payload
+        if result.model_name == EVEN_MODEL:
+            typed_result = EvenDetectionResult(
+                detections=result.detections,
+                model_name=result.model_name,
+                inference_time_ms=result.inference_time_ms,
+            )
+            return PipelineEvent[SteelMeta, EvenDetectionResult](context=event.context, payload=typed_result)
+
+        typed_result_odd = OddDetectionResult(
+            detections=result.detections,
+            model_name=result.model_name,
+            inference_time_ms=result.inference_time_ms,
         )
+        return PipelineEvent[SteelMeta, OddDetectionResult](context=event.context, payload=typed_result_odd)
 
 
-def _result_to_redis_fields(event: EvenModelResult | OddModelResult) -> dict[str, str]:
-    """Convert a model result to Redis hash fields for XADD."""
-    import json  # noqa: PLC0415
+class EvenResultSink(
+    BaseThreadSink[PipelineEvent[SteelMeta, EvenDetectionResult]],
+):
+    """Writes even-camera detection results to a dedicated Redis stream.
 
-    detections_json = json.dumps([d.model_dump() for d in event.detections])
-    fields: dict[str, str] = {
-        "detections": detections_json,
-        "model_name": event.model_name,
-        "inference_time_ms": str(event.inference_time_ms),
-        "num_detections": str(len(event.detections)),
+    Serialization is built into the sink: context fields become top-level
+    Redis hash entries, payload is serialized as a ``result`` JSON field.
+    """
+
+    def __init__(self, client: Redis[bytes], stream: str, maxlen: int = 10_000) -> None:  # noqa: D107
+        super().__init__()
+        self._client = client
+        self._stream = stream
+        self._maxlen = maxlen
+
+    def __call__(self, event: PipelineEvent[SteelMeta, EvenDetectionResult]) -> None:  # noqa: D102
+        fields = _serialize_pipeline_event(event)
+        self._client.xadd(self._stream, fields, maxlen=self._maxlen, approximate=True)
+        logger.debug("Wrote even result to {}", self._stream)
+
+
+class OddResultSink(
+    BaseThreadSink[PipelineEvent[SteelMeta, OddDetectionResult]],
+):
+    """Writes odd-camera detection results to a dedicated Redis stream.
+
+    Same serialization as EvenResultSink, targeting a different stream.
+    """
+
+    def __init__(self, client: Redis[bytes], stream: str, maxlen: int = 10_000) -> None:  # noqa: D107
+        super().__init__()
+        self._client = client
+        self._stream = stream
+        self._maxlen = maxlen
+
+    def __call__(self, event: PipelineEvent[SteelMeta, OddDetectionResult]) -> None:  # noqa: D102
+        fields = _serialize_pipeline_event(event)
+        self._client.xadd(self._stream, fields, maxlen=self._maxlen, approximate=True)
+        logger.debug("Wrote odd result to {}", self._stream)
+
+
+def _serialize_pipeline_event(
+    event: PipelineEvent[SteelMeta, EvenDetectionResult] | PipelineEvent[SteelMeta, OddDetectionResult],
+) -> dict[str, str]:
+    """Serialize a PipelineEvent into Redis hash fields.
+
+    Context fields (excluding ``fw``) become top-level entries.
+    Payload (DetectionResult) becomes a single ``result`` JSON field.
+    """
+    ctx = event.context
+    result = event.payload
+
+    return {
+        "camera_no": str(ctx.camera_no),
+        "frame_counter": str(ctx.frame_counter),
+        "receipt_ts": str(ctx.receipt_ts),
+        "metal_type": ctx.metal_type,
+        "image_path": ctx.image_path,
+        "result": result.model_dump_json(),
+        "model_name": result.model_name,
+        "num_detections": str(len(result.detections)),
     }
-    for key, value in event.metadata.items():
-        fields[str(key)] = str(value)
-    return fields
-
-
-class EvenModelSink(BaseThreadSink[EvenModelResult]):
-    """Writes even-camera model results to a dedicated Redis stream."""
-
-    def __init__(self, client: Redis[bytes], stream: str, maxlen: int = 10_000) -> None:  # noqa: D107
-        super().__init__()
-        self._client = client
-        self._stream = stream
-        self._maxlen = maxlen
-
-    def __call__(self, event: EvenModelResult) -> None:
-        """Write result fields to the even-model output stream."""
-        self._client.xadd(self._stream, _result_to_redis_fields(event), maxlen=self._maxlen, approximate=True)
-
-
-class OddModelSink(BaseThreadSink[OddModelResult]):
-    """Writes odd-camera model results to a dedicated Redis stream."""
-
-    def __init__(self, client: Redis[bytes], stream: str, maxlen: int = 10_000) -> None:  # noqa: D107
-        super().__init__()
-        self._client = client
-        self._stream = stream
-        self._maxlen = maxlen
-
-    def __call__(self, event: OddModelResult) -> None:
-        """Write result fields to the odd-model output stream."""
-        self._client.xadd(self._stream, _result_to_redis_fields(event), maxlen=self._maxlen, approximate=True)
