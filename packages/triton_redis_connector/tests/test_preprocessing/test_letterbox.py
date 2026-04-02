@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from triton_redis_connector.preprocessing.letterbox import (
+from triton_shared_models.preprocessing import (
     LETTERBOX_PAD_VALUE,
-    NORMALIZE_DIVISOR,
+    YOLO_NORMALIZE_DIVISOR,
     LetterBoxPreprocessor,
 )
 
@@ -43,7 +43,7 @@ class TestLetterBoxPreprocessor:
 
         tensor, _, (_pad_left, _pad_top) = preprocessor.preprocess(image)
 
-        expected_pad_value = LETTERBOX_PAD_VALUE / NORMALIZE_DIVISOR
+        expected_pad_value = LETTERBOX_PAD_VALUE / YOLO_NORMALIZE_DIVISOR
         corner_value = tensor[0, 0, 0, 0]
         assert corner_value == pytest.approx(expected_pad_value, abs=0.01)
 

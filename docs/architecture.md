@@ -23,7 +23,6 @@ Four contracts enforced via `uv run lint-imports` (defined in root `pyproject.to
 Internal layer hierarchy of `triton_redis_connector`:
 
 ```
-providers                                                             <- top: DI
 connectors | inference | preprocessing | metrics | routers            <- domain siblings
 engine                                                                <- orchestration
 config | errors                                                       <- shared
@@ -109,24 +108,6 @@ class MyProcessor(BaseThreadProcessor[ImageEvent, Result]):
 registry.register("proc", MyProcessor("triton:8001"))
 ```
 
-### Config-Driven Node Assembly
-
-`NodeConfig` is primarily for **user-defined processors** that need a `class_path` to be imported dynamically. Shipped processors (extractor, preprocessor, inference worker, serializer, error sink) are registered automatically by `build_application` from config fields -- no `NodeConfig` entries needed. The variant is a deployment decision in config, not hardcoded in the processor.
-
-Config schema (`config/schema.py`):
-- `NodeVariant` -- StrEnum mirroring `ExecutionVariant` (THREAD_SOURCE, PROCESS_SOURCE, THREAD_PROCESSOR, THREAD_POOL_PROCESSOR, PROCESS_POOL_PROCESSOR, THREAD_SINK)
-- `NodeConfig` -- name, class_path, variant, params, tracked, pool_size
-- `AppConfig.nodes: list[NodeConfig]` for user-defined processors that require dynamic import
-
-Assembly (`engine/assembly.py`):
-- `import_class(class_path)` -- dynamic import from fully-qualified dotted path
-- `resolve_type_params(cls, params)` -- auto-resolve `type[X]` params from string class paths
-- `wrap_with_variant(inner, variant)` -- apply execution variant wrapper (idempotent for base-class nodes that already declare the correct variant)
-- `assemble_all(nodes, registry)` -- assemble and register all config-driven nodes
-
-DI Provider (`providers/node_assembly_provider.py`):
-- `NodeAssemblyProvider` reads `AppConfig.nodes`, assembles, and registers all nodes before `Application` starts
-
 ### Application.build() Classmethod
 
 `engine/app.py` provides `Application.build(config, processors, *, triton_collector)` -- a classmethod that creates a fully wired Application from an explicit processor list.
@@ -156,31 +137,7 @@ What `Application.build` does:
 
 ### build_application Factory
 
-`providers/app_factory.py` provides `build_application(config, *, postprocessor, extra_nodes)` -- a config-driven factory that creates a fully wired `Application` from an `AppConfig`.
-
-```python
-app = build_application(
-    config,
-    postprocessor=YoloPostProcessorBridge(
-        conf_threshold=config.pipeline.postprocessor.conf_threshold,
-        iou_threshold=config.pipeline.postprocessor.iou_threshold,
-        end2end=config.pipeline.postprocessor.end2end,
-    ),
-    extra_nodes=[("branch_router", CameraBranchRouter())],
-)
-```
-
-What `build_application` does automatically:
-- Creates Redis client and verifies connectivity
-- Creates `RedisStreamSource`/`RedisStreamSink` from `config.sources`/`config.sinks`
-- Registers shipped processors from config fields: preprocessor (from `preprocessing.decoder` + `pipeline.model_name`), `InferenceWorker` (from `inference.grpc_url`), `EventSerializer`, `LogErrorSink`
-- Assembles any `NodeConfig` entries from `config.nodes`
-- Registers user processors passed via `extra_nodes`
-
-Separation of concerns:
-- **Config** contains only infrastructure params (Redis URLs, model names, thresholds, tensor names) -- no class paths for shipped processors
-- **Code** provides `postprocessor` (e.g., `YoloPostProcessorBridge` from model_tools)
-- **extra_nodes** receives user-defined processors that extend the pipeline graph
+Models are defined exclusively via `ModelBundle`. The `expand_bundle()` function unpacks a bundle into the processor list for `Application.build()`.
 
 ## Shipped Processors
 
@@ -188,13 +145,10 @@ Two generations of shipped processors coexist. Legacy processors are plain calla
 
 ### Legacy Shipped Processors (variant-agnostic)
 
-When using `build_application`, these are registered automatically from config fields. They can also be assembled manually from YAML config with any execution variant via `NodeConfig` entries (see "Config-Driven Node Assembly" above).
-
 | Processor | Location | Input | Output | Purpose |
 |---|---|---|---|---|
 | `DaliTritonRequestBuilder` | connector | `_ImageBytesEvent` or `_ImagePathEvent` | `TritonRequest` | Wrap raw image bytes for DALI ensemble inference (reads from path if needed) |
 | `ClientPreprocessor` | connector | `_ImagePathEvent` | `TritonRequest` | Read file, decode, letterbox, wrap as tensor |
-| `ConfigurableClientPreprocessor` | connector (providers) | `_ImagePathEvent` | `TritonRequest` | Config-friendly ClientPreprocessor (decoder_type + target_size) |
 | `EventSerializer[T]` | connector | `T` (pydantic) | `Envelope[bytes]` | Serialize event to JSON bytes with original_fields passthrough |
 | `LogErrorSink` | connector | `BaseModel` | `None` | Log error events at error level via loguru |
 | `YoloPostProcessorBridge` | model_tools | `InferenceOutput` | `DetectionResult` | YOLO postprocessing (NMS + confidence filter), config-friendly constructor |
@@ -327,60 +281,20 @@ Per-node throughput/latency is tracked via `MetricAggregator` (`engine/metric_ag
 
 Zero-value guarantee: `_log_stats` emits all registered Counter names even when idle.
 
-## Dependency Injection (dishka)
-
-Three-scope hierarchy defined in `providers/scopes.py`:
-
-| Scope | Lifetime | Usage |
-|---|---|---|
-| `APP` | Application | Singletons: config, Redis pool, registry, metric services |
-| `WORKER` | Per-process | For `ProcessPoolProcessor` workers: own gRPC client, own connections |
-| `REQUEST` | Per-event | EventContext for inline dispatch |
-
-Providers (`providers/` directory):
-- `ConfigProvider` -- config models from Hydra YAML
-- `EngineProvider` -- PipelineRegistry, QueueBus, Application
-- `ConnectorProvider` -- Redis connectors, ConsumerGroupManager, OutputStreamRouter
-- `InferenceProvider` -- InferenceWorker, InferenceWorkerFactory
-- `PreprocessingProvider` -- decoders, LetterBoxPreprocessor
-- `MetricsProvider` -- MetricBuffer, MetricEmitter, TritonMetricsCollector
-
-Container is not picklable. Workers receive only picklable config and create their own container.
-
 ## Composable Middleware
 
-`engine/middleware.py` provides:
-- `RetryMiddleware[TIn, TOut]` -- exponential backoff retry with configurable attempts
-- `ConcurrencyLimitMiddleware[TIn, TOut]` -- semaphore-based concurrency limiting
-
-Both satisfy `Processor[TIn, TOut]` and compose via nesting.
+`engine/middleware.py` provides `RetryMiddleware[TIn, TOut]` -- exponential backoff retry with configurable attempts. Satisfies `Processor[TIn, TOut]` and composes via nesting.
 
 ## Pipeline Construction
 
 ### Preferred: Application.build() with explicit processor list
 
-1. Load config via `load_config()` (Hydra YAML + env var interpolation)
-2. Create processor instances (Node classes or legacy processors)
+1. Load config via Hydra YAML + env var interpolation
+2. Create processor instances using `ModelBundle` + `expand_bundle()`
 3. Call `Application.build(config, processors=[...])` -- validates graph, creates metrics
 4. `app.run()` -- starts all nodes in dedicated threads, monitors health
 
 All nodes run in dedicated threads. The main loop monitors variant health and handles graceful shutdown.
-
-### Config-driven: build_application()
-
-1. Load config via `load_config()` (Hydra YAML + env var interpolation)
-2. Call `build_application(config, postprocessor=..., extra_nodes=[...])`
-3. `app.run()`
-
-The factory handles Redis client creation, shipped processor registration, and graph wiring. See "build_application Factory" above for details.
-
-### Manual construction (advanced)
-
-1. Load config via `load_config()` (Hydra YAML + env var interpolation)
-2. Create `PipelineRegistry`, register nodes with type-annotated `__call__`
-3. Registry inspects `__orig_bases__` to extract generic type parameters, builds DAG
-4. Create `Application` with registry and `QueueBus`
-5. `app.run()` validates graph, wires queues, starts all nodes in dedicated threads, enters health monitoring loop
 
 See: `examples/dual_model_pipeline/run_pipeline.py`
 
@@ -397,4 +311,4 @@ Docker Compose in `.devcontainer/`:
 
 Two compose files: `docker-compose.yml` (devcontainer, internal network) and `docker-compose.debug.yml` (exposed ports for host access).
 
-Model management: `model_repository/` is live (mounted into Triton), `model_repository_offline/` is staging. Triton runs in explicit mode — models are loaded/unloaded via HTTP API (`POST /v2/repository/models/{name}/load`).
+Model management: `model_repository/` is live (mounted into Triton). Triton runs in explicit mode — models are loaded/unloaded via HTTP API (`POST /v2/repository/models/{name}/load`).

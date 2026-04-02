@@ -25,8 +25,8 @@ from triton_redis_connector.engine.metric_aggregator import (
     extract_field_group_bys,
 )
 from triton_redis_connector.preprocessing.decoder import OpenCVDecoder
-from triton_redis_connector.preprocessing.letterbox import LetterBoxPreprocessor
 from triton_shared_models.nms import nms
+from triton_shared_models.preprocessing import LetterBoxPreprocessor
 
 TEST_IMAGE = Path("/workspace/test_data/coco8/images/train/000000000025.jpg")
 TRITON_URL = "triton:8001"

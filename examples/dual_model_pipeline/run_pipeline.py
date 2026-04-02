@@ -47,8 +47,8 @@ from triton_redis_connector.engine.shipped_processors import (
 )
 from triton_redis_connector.inference.request import InferenceOutput
 from triton_redis_connector.preprocessing.decoder import OpenCVDecoder, TurboJPEGDecoder
-from triton_redis_connector.preprocessing.letterbox import LetterBoxPreprocessor
 from triton_redis_connector.protocols import BaseThreadSource
+from triton_shared_models.preprocessing import LetterBoxPreprocessor
 
 from examples.dual_model_pipeline.events import (
     EVEN_MODEL,

@@ -5,7 +5,7 @@ Public API re-exports for the triton-redis-connector package.
 
 from __future__ import annotations
 
-from triton_redis_connector.config.schema import AppConfig, NodeConfig, NodeVariant
+from triton_redis_connector.config.schema import AppConfig
 from triton_redis_connector.engine.app import Application
 from triton_redis_connector.engine.bundle import ModelBundle, expand_bundle
 from triton_redis_connector.engine.events import (
@@ -58,13 +58,6 @@ from triton_redis_connector.protocols import (
     ThreadSource,
     WrappedNode,
 )
-from triton_redis_connector.providers import (
-    ConfigProvider,
-    ConnectorScope,
-    InferenceProvider,
-    MetricsProvider,
-    PreprocessingProvider,
-)
 
 __all__ = [
     "AppConfig",
@@ -77,8 +70,6 @@ __all__ = [
     "BaseThreadSource",
     "ClassificationResult",
     "ClientPreprocessorNode",
-    "ConfigProvider",
-    "ConnectorScope",
     "Counter",
     "DetectionResult",
     "Event",
@@ -91,21 +82,16 @@ __all__ = [
     "ImagePayload",
     "ImagePreprocessorProtocol",
     "InferenceNode",
-    "InferenceProvider",
     "LetterBoxPreprocessor",
     "LifecycleService",
     "LogErrorSinkNode",
     "MetricAggregator",
     "MetricRecorder",
-    "MetricsProvider",
     "ModelBundle",
-    "NodeConfig",
-    "NodeVariant",
     "OpenCVDecoder",
     "PipelineEvent",
     "PipelineRegistry",
     "PostProcessorNode",
-    "PreprocessingProvider",
     "ProcessPoolProcessor",
     "ProcessSource",
     "ProcessorFactory",

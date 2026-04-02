@@ -444,77 +444,11 @@ standalone. The shared `nms_postprocess` model is reused across all ensembles.
 
 ---
 
-## Dependency Injection Architecture (dishka)
+## Application Construction
 
-### Scope Design Principles
-
-The project uses dishka for framework-internal dependency injection. Three scopes
-map to the execution variant lifecycle:
-
-- **APP scope** — Application-lifetime singletons: `AppConfig`, Redis connection pools,
-  `PipelineRegistry`, `ProcessingGraph`, `QueueBus`, `MetricBuffer`. Created once at
-  startup, shared across all inline and thread-based nodes. Closed at shutdown.
-- **REQUEST scope** — Per-event processing context for inline nodes. Entered by the
-  main loop before dispatching events to inline `Processor` and `Sink` nodes. Provides
-  `EventContext` and per-event metadata. Exited after the inline dispatch chain completes.
-- **WORKER scope** (custom) — Per worker process in `ProcessPoolProcessor`. Each worker
-  creates a fresh container with WORKER scope in its init function. Provides
-  `InferenceServerClient`, `redis.Redis`, `ModelVersionTracker` — all of which are
-  not fork-safe and must be created per-process.
-
-### Provider Organization
-
-Providers follow the import-linter layer hierarchy. Each provider corresponds to one
-architectural layer:
-
-| Provider | Layer | What it provides |
-|---|---|---|
-| `ConfigProvider` | config | `AppConfig`, all sub-config models |
-| `EngineProvider` | engine | `PipelineRegistry`, `ProcessingGraph`, `QueueBus` |
-| `ConnectorProvider` | connectors | Redis connection pool, `ConsumerGroupManager` |
-| `InferenceProvider` | inference | Worker container factory |
-| `PreprocessingProvider` | preprocessing | Decoder instances |
-| `MetricsProvider` | metrics | `MetricBuffer`, collectors, emitter |
-
-A provider may depend on objects from providers in lower layers (matching import-linter
-contracts) but never from higher layers or sibling domain modules.
-
-### ProcessPoolProcessor DI Strategy
-
-`ProcessPoolProcessor` workers cannot share the APP-scope container (connections are
-not fork-safe). Strategy:
-
-1. APP-scope container creates a **worker factory function** that captures only
-   picklable config (pydantic models are picklable).
-2. The factory is passed to each worker process via the multiprocessing start mechanism.
-3. Each worker calls the factory in its `__init__`, creating a fresh WORKER-scope
-   container with its own connections.
-4. Worker container is closed when the worker process exits.
-
-This replaces manual constructor wiring in worker init functions. The existing
-user-facing factory pattern (`create_shared`/`create_processor`) is unaffected —
-dishka handles framework internals only.
-
-### Dishka Replaces Manual Factory for Framework Wiring
-
-Before dishka, `Application.from_config()` manually constructed every dependency.
-With dishka, `Application` is resolved from the container — the full dependency tree
-is built declaratively via providers. This makes the startup sequence testable
-(swap providers for testing) and extensible (add new providers for new layers
-without modifying Application).
-
-### Scope Selection Guide
-
-| Resource type | Scope | Reason |
-|---|---|---|
-| Config objects (pydantic) | APP | Immutable after creation |
-| Redis connection pool | APP | Thread-safe, shared |
-| Individual Redis connection | WORKER | Not fork-safe |
-| `PipelineRegistry`, `ProcessingGraph` | APP | Built once at startup |
-| `EventContext` | REQUEST | Per-event metadata |
-| `tritonclient.grpc.InferenceServerClient` | WORKER | gRPC channel not fork-safe |
-| `ModelVersionTracker` | WORKER | Per-process polling |
-| `MetricBuffer` | APP | Thread-safe accumulator |
+All dependencies are constructed manually in `main.py`. `Application.build()` is a
+classmethod that creates a fully wired Application from an explicit processor list.
+Use `ModelBundle` + `expand_bundle()` to define model processing pipelines.
 
 ---
 
@@ -533,7 +467,6 @@ Common topology:
 - GPU allocation: `deploy.resources.reservations.devices` with nvidia driver.
   `shm_size: 1g` for Triton model loading.
 - Shared volumes: `../model_repository:/models` for Triton model access.
-  `model_repository_offline/` exists for offline storage of unused models.
 - SDK container (for perf_analyzer): shares workspace and model_repository
   volumes, reaches Triton via hostname `triton`.
 - Debug compose exposed ports: Redis 6379, Triton 8000-8002, RedisInsight 5540, Triton SDK 8010.
@@ -547,8 +480,6 @@ These are verified in pre-commit. Architectural decisions MUST respect these bou
 
 1. **connector-layers**: Layer hierarchy in `triton_redis_connector`:
    ```
-   providers (top)
-   ↓
    connectors | inference | preprocessing | metrics
    ↓
    engine
@@ -604,8 +535,6 @@ The architect is the owner of design documents:
 
 - **`docs/architecture.md`** — architecture overview (package structure, import-linter contracts, layer hierarchy)
 - **`docs/parallelism.md`** — execution variant decision guide
-- **`engine/assembly.py`** — config-driven node assembly (part of engine architecture)
-
 After any architectural decision, determine which document(s) need updating and include
 the specific changes in your output. If a decision contradicts existing docs, call it out
 explicitly — never leave docs silently out of sync with decisions.

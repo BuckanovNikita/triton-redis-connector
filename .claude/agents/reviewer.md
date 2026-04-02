@@ -135,9 +135,6 @@ Verify each component:
 - **Base class processors**: User processors that inherit from `BaseThreadProcessor`,
   `BaseThreadSink`, etc. are valid. Do NOT flag `self.stop = threading.Event()` when
   it comes from `super().__init__()` in a base class.
-- **build_application**: Shipped processors registered automatically by `build_application()`.
-  Config should not contain class paths — only infrastructure params. `NodeConfig` entries
-  with `class_path` are only for user-defined processors in advanced scenarios.
 - **Flag** manual wrapping (`DetachedThreadProcessor(MyProcessor())`) when the processor
   already inherits from a base class — double-wrapping is an error.
 - **Flag** new processors/sources/sinks that contain `self.stop = threading.Event()`
@@ -149,10 +146,9 @@ Verify each component:
 
 ### Middleware Compliance
 
-- `RetryMiddleware` and `ConcurrencyLimitMiddleware` in `engine/middleware.py`.
-- Both satisfy `Processor[TIn, TOut]` protocol and compose via nesting.
+- `RetryMiddleware` in `engine/middleware.py`.
+- Satisfies `Processor[TIn, TOut]` protocol and composes via nesting.
 - Flag retry logic implemented inline in processors — should use `RetryMiddleware`.
-- Flag custom semaphore/lock patterns — should use `ConcurrencyLimitMiddleware`.
 
 ### EventContext Usage
 
@@ -260,7 +256,7 @@ Verify each component:
 
 Run `uv run lint-imports` to verify. The root `pyproject.toml` enforces 6 contracts:
 
-1. **connector-layers**: `providers` → `domain modules (connectors | inference |
+1. **connector-layers**: `domain modules (connectors | inference |
    preprocessing | metrics | routers)` → `engine` → `config | errors` → `protocols` (leaf).
    Flag any reverse import. Allowed: `engine.app → metrics.collector` (lazy import).
 2. **Domain independence**: modules on the same layer (connectors, inference, preprocessing,
@@ -369,61 +365,6 @@ Additionally verify:
   a `ProcessPoolProcessor` adds unnecessary complexity. The sync
   `tritonclient.grpc` client is appropriate inside process pool workers since
   each worker has its own process with no event loop concern.
-
----
-
-## Dishka DI Review Checklist
-
-### Scope Correctness
-
-- **APP scope objects must be safe to share across threads.** Redis connection pools
-  are thread-safe (APP scope OK). Individual Redis connections and gRPC channels are
-  NOT thread-safe — use WORKER scope for `ProcessPoolProcessor`.
-- **WORKER scope must be used for non-fork-safe resources** in `ProcessPoolProcessor`.
-  Flag any `tritonclient.grpc.InferenceServerClient` or `redis.Redis` instance
-  provided in APP scope if accessed from worker processes.
-- **REQUEST scope must not hold long-lived resources.** REQUEST scope is per-event
-  for inline nodes. Flag file handles, database connections, or pooled resources
-  in REQUEST scope.
-
-### No Scope Leaks
-
-- Flag any APP-scope object that captures a REQUEST-scope or WORKER-scope dependency.
-  This creates a scope leak where a short-lived dependency outlives its scope.
-- Flag any worker process that accesses an APP-scope container directly (workers must
-  create their own WORKER-scope container via the factory).
-
-### Provider Organization
-
-- Each provider must correspond to one architectural layer.
-- Provider dependencies must follow the import-linter layer hierarchy:
-  `connectors|inference|preprocessing|metrics` → `engine` → `config|errors`.
-- Flag any provider that imports from a sibling domain module (e.g.,
-  `InferenceProvider` importing from `connectors`).
-- Flag any circular provider dependency.
-
-### Anti-Patterns
-
-- **Sharing non-fork-safe resources across processes**: Redis connections, gRPC
-  channels, file handles in APP scope accessed from `ProcessPoolProcessor` workers.
-  These MUST be in WORKER scope.
-- **Container as service locator**: passing the container itself as a dependency
-  to components. Components should declare dependencies explicitly via
-  constructor injection, not call `container.get()` at runtime.
-- **Overriding APP scope in REQUEST**: changing APP-scope singletons within REQUEST
-  scope indicates a design error. APP scope is immutable after creation.
-- **Provider with side effects in `@provide`**: provider methods should be pure
-  factories. Side effects (logging, metric emission) during dependency creation
-  indicate misplaced logic.
-
-### Process Safety Verification
-
-- Verify that `ProcessPoolProcessor` workers use WORKER-scope containers, not
-  APP-scope containers.
-- Verify that the worker container factory captures only picklable objects
-  (pydantic config models). Flag any non-picklable object in the factory closure.
-- Verify that WORKER-scope containers are closed when worker processes exit
-  (prevent resource leaks).
 
 ---
 

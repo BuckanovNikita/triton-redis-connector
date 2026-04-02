@@ -106,7 +106,6 @@ to check. Violating them also fails `uv run pre-commit run --all-files`. Know th
 
 1. **connector-layers** (type: `layers`): Layer hierarchy in `triton_redis_connector`:
    ```
-   (providers)                                                          ← top: DI
    (connectors) | (inference) | (preprocessing) | (metrics) | (routers) ← domain
    (engine)                                                             ← orchestration
    (config) | (errors)                                                  ← shared
@@ -203,26 +202,8 @@ registry.register("proc", MyProcessor("value"))
 
 ### Approach B: build_application Factory (preferred for pipelines)
 
-`build_application()` registers shipped processors automatically from config fields.
-Event model and postprocessor come from code. User processors via `extra_nodes`.
-
-```python
-from triton_redis_connector.providers.app_factory import build_application
-
-app = build_application(
-    config,
-    event_model=MyInputEvent,
-    postprocessor=MyPostProcessor(),
-    extra_nodes=[("my_router", MyRouter())],
-)
-app.run()
-```
-
-Shipped processors resolved: EnvelopeExtractor, preprocessor (from `preprocessing.decoder`),
-InferenceWorker, EventSerializer, LogErrorSink. Config has no class paths.
-
-For advanced cases, `NodeConfig` in YAML declares user-defined nodes with `class_path`.
-`engine/assembly.py` provides `assemble_all(config.nodes, registry)`.
+`Application.build()` registers shipped processors from the provided processor list.
+Event model and postprocessor come from code. Use `ModelBundle` + `expand_bundle()`.
 
 ### Approach C: Manual Wrapping (legacy/advanced)
 

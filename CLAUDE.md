@@ -103,7 +103,7 @@ packages/
     triton_shared_models/               — source code
     tests/                              — tests
   triton_redis_connector/               — core connector
-    pyproject.toml                      — deps: redis, tritonclient, pydantic, loguru, dishka
+    pyproject.toml                      — deps: redis, tritonclient, pydantic, loguru
     triton_redis_connector/             — source code
     tests/                              — tests
   triton_model_tools/                   — model tools
@@ -128,7 +128,7 @@ triton_model_tools -> triton_redis_connector -> triton_shared_models (leaf)
 
 **connector-layers** (triton_redis_connector internal):
 ```
-providers -> connectors | inference | preprocessing | metrics | routers -> engine -> config | errors -> protocols (leaf)
+connectors | inference | preprocessing | metrics | routers -> engine -> config | errors -> protocols (leaf)
 ```
 
 **model-tools-layers** (triton_model_tools internal):
@@ -163,7 +163,6 @@ Two generations of shipped processors coexist. Legacy processors are plain calla
 |---|---|---|
 | `DaliTritonRequestBuilder` | connector | Wrap image bytes/path for DALI ensemble inference |
 | `ClientPreprocessor` | connector | Read file, decode, letterbox, wrap as TritonRequest |
-| `ConfigurableClientPreprocessor` | connector (providers) | Config-friendly ClientPreprocessor (takes decoder_type string) |
 | `EventSerializer[T]` | connector | Serialize event to JSON bytes with original_fields passthrough |
 | `LogErrorSink` | connector | Log error events at error level via loguru |
 | `YoloPostProcessorBridge` | model_tools | YOLO postprocessing (NMS + confidence filter) into DetectionResult |
@@ -177,7 +176,7 @@ Two generations of shipped processors coexist. Legacy processors are plain calla
 | `PostProcessorNode[TCtx, TIn, TResult]` | connector | Delegate to user postprocessor, wraps result back into PipelineEvent |
 | `LogErrorSinkNode` | connector | Logs InferenceError, ConnectorError, PreprocessingError on a dedicated thread |
 
-See: `engine/shipped_processors.py`, `providers/shipped_factories.py`, `triton_model_tools/inference/yolo_bridge.py`
+See: `engine/shipped_processors.py`, `triton_model_tools/inference/yolo_bridge.py`
 
 ### ModelBundle
 
@@ -186,16 +185,6 @@ See: `engine/shipped_processors.py`, `providers/shipped_factories.py`, `triton_m
 ### Application.build() Classmethod
 
 `Application.build(config, processors, *, triton_collector)` is a classmethod that creates a fully wired Application from an explicit processor list. Each processor is registered using its `name` attribute (if present) or its class name. Auto-creates MetricBuffer, MetricEmitter, QueueBus, and PipelineRegistry from config. Runs graph validation before returning.
-
-### build_application Factory
-
-`providers/app_factory.py` provides `build_application(config, *, postprocessor, extra_nodes)` for config-driven wiring:
-- Creates Redis client, connectors, source/sink from config automatically
-- Registers shipped processors from config fields (decoder type, model name, grpc_url)
-- Postprocessor comes from **code** (not config)
-- User processors passed via `extra_nodes` parameter
-
-Config contains only infrastructure params (thresholds, model names, URLs). No class paths in config.
 
 ### PipelineConfig
 
@@ -210,13 +199,6 @@ Six base classes in `protocols.py` for explicit variant declaration (parallel va
 `BaseThreadSource`, `BaseProcessSource`, `BaseThreadProcessor`, `BaseThreadPoolProcessor`, `BaseProcessPoolProcessor`, `BaseThreadSink`.
 
 All nodes run in dedicated threads. There are no inline variants. User processors inherit from base classes to declare variant. Shipped processors are either wrapped at registration time (legacy) or inherit from base classes (new Node classes).
-
-### Config-Driven Node Assembly
-
-- `NodeConfig` in `config/schema.py` — for user-defined nodes with class_path + variant + params
-- `engine/assembly.py` — import, resolve type params, wrap, register
-- `providers/node_assembly_provider.py` — DI provider assembles config-driven nodes
-- `AppConfig.nodes: list[NodeConfig]` — optional, for advanced use cases only
 
 ### CLI Commands (triton-model-tools)
 

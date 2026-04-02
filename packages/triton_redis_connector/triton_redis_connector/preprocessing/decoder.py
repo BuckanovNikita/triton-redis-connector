@@ -16,8 +16,11 @@ import numpy as np
 import numpy.typing as npt
 import turbojpeg
 
+from triton_redis_connector.config.schema import DecoderType
+from triton_redis_connector.preprocessing.protocols import ImageDecoderProtocol
 
-class OpenCVDecoder:
+
+class OpenCVDecoder(ImageDecoderProtocol):
     """Decodes raw image bytes into BGR HWC uint8 numpy array using OpenCV."""
 
     def decode(self, raw: bytes) -> npt.NDArray[np.uint8]:
@@ -45,7 +48,7 @@ class OpenCVDecoder:
         return image
 
 
-class TurboJPEGDecoder:
+class TurboJPEGDecoder(ImageDecoderProtocol):
     """Decodes JPEG bytes using PyTurboJPEG. Faster for JPEG-only workloads.
 
     Uses thread-local TurboJPEG instances for thread safety in ThreadPoolProcessor.
@@ -84,3 +87,12 @@ class TurboJPEGDecoder:
             raise ValueError(msg)
 
         return image
+
+
+def create_decoder(decoder_type: DecoderType) -> ImageDecoderProtocol:
+    """Create an image decoder based on the configured decoder type."""
+    match decoder_type:
+        case DecoderType.OPENCV | DecoderType.DALI:
+            return OpenCVDecoder()
+        case DecoderType.TURBOJPEG:
+            return TurboJPEGDecoder()

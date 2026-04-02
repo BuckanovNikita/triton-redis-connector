@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from enum import StrEnum, auto
-from typing import Any, Self
+from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RedisConnectionConfig(BaseModel):
@@ -127,50 +126,6 @@ class DebugConfig(BaseModel):
     mermaid_path: str = ""
 
 
-class NodeVariant(StrEnum):
-    """Execution variant for config-driven pipeline nodes (parallel only).
-
-    Values match ``ExecutionVariant`` in ``engine.registry`` so the assembly
-    layer can convert between them with a simple ``ExecutionVariant(value)``.
-    """
-
-    THREAD_SOURCE = auto()
-    PROCESS_SOURCE = auto()
-    THREAD_PROCESSOR = auto()
-    THREAD_POOL_PROCESSOR = auto()
-    PROCESS_POOL_PROCESSOR = auto()
-    THREAD_SINK = auto()
-
-
-_POOL_VARIANTS = {NodeVariant.THREAD_POOL_PROCESSOR, NodeVariant.PROCESS_POOL_PROCESSOR}
-
-
-class NodeConfig(BaseModel):
-    """Configuration for a single pipeline node assembled from config.
-
-    Used only for user-defined processors that need ``class_path``.
-    Shipped processors are registered via ``Application.build()``.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    name: str = Field(min_length=1)
-    class_path: str = Field(min_length=1)
-    variant: NodeVariant
-    params: dict[str, Any] = Field(default_factory=dict)
-    tracked: bool = False
-    tracked_name: str = ""
-    pool_size: int = Field(default=1, ge=1)
-
-    @model_validator(mode="after")
-    def pool_size_requires_pool_variant(self) -> Self:
-        """Reject pool_size > 1 for non-pool variants."""
-        if self.pool_size > 1 and self.variant not in _POOL_VARIANTS:
-            msg = f"pool_size > 1 requires a pool variant, got {self.variant!r}"
-            raise ValueError(msg)
-        return self
-
-
 class PostprocessorConfig(BaseModel):
     """YOLO postprocessor thresholds for shipped YoloPostProcessorBridge."""
 
@@ -205,7 +160,6 @@ class AppConfig(BaseModel):
     redis: RedisConnectionConfig = RedisConnectionConfig()
     sources: list[SourceConfig] = []
     sinks: list[SinkConfig] = []
-    nodes: list[NodeConfig] = []
     pipeline: PipelineConfig = PipelineConfig()
     inference: InferenceConfig = InferenceConfig()
     preprocessing: PreprocessingConfig = PreprocessingConfig()
