@@ -10,7 +10,6 @@ from __future__ import annotations
 import queue
 import threading
 import time
-import typing
 from typing import TYPE_CHECKING, cast
 
 from loguru import logger
@@ -71,7 +70,7 @@ class Application:
         self._stats_sink_writes: dict[str, int] = {}
         self._stats_timer: threading.Timer | None = None
         self._stats_interval: float = 0.0
-        self._routing_table: dict[str, list[str]] = {}
+        self._routing_table: dict[str, list[tuple[str, type]]] = {}
 
     def run(self) -> None:
         """Run the main event loop.
@@ -92,6 +91,12 @@ class Application:
 
         mermaid = generate_mermaid(self._registry)
         logger.info("Pipeline graph:\n```mermaid\n{}\n```", mermaid)
+
+        if self._config.debug.mermaid_path:
+            from pathlib import Path  # noqa: PLC0415
+
+            Path(self._config.debug.mermaid_path).write_text(mermaid, encoding="utf-8")
+            logger.info("Mermaid diagram written to {}", self._config.debug.mermaid_path)
 
         self._build_routing_table()
         self._wire_parallel_queues()
@@ -182,28 +187,14 @@ class Application:
     def _build_routing_table(self) -> None:
         """Precompute producer -> consumer routing from the validated graph.
 
-        Uses the registry's subtype-aware matching (exact types, class
-        hierarchy, and protocol structural matching).  Then prunes edges
-        that would short-circuit the graph: if a produced type has an
-        exact-match consumer, protocol-only matches for that type are
-        dropped to prevent events from bypassing intended intermediate nodes.
+        Uses exact type matching. Routing table stores (consumer_name,
+        expected_input_type) pairs. At runtime, ``_route_to_consumers``
+        checks ``type(result) is expected_type`` to filter matching consumers.
         """
-        raw_table = self._registry.compute_routing_table()
-        exact_consumers = self._registry.type_consumers
-
-        for name, consumers in raw_table.items():
-            node = self._registry.get_node(name)
-            if node is None:
-                continue
-            pruned: list[str] = []
-            for out_type in node.output_types:
-                exact = exact_consumers.get(out_type, [])
-                if exact:
-                    pruned.extend(exact)
-                else:
-                    pruned.extend(consumers)
-            self._routing_table[name] = list(dict.fromkeys(pruned))
-            logger.debug("Routing table: {} -> {}", name, self._routing_table[name])
+        self._routing_table = self._registry.compute_routing_table()
+        for name, pairs in self._routing_table.items():
+            consumer_names = [cn for cn, _ in pairs]
+            logger.debug("Routing table: {} -> {}", name, consumer_names)
 
     def _wire_parallel_queues(self) -> None:
         """Pre-create input queues for all non-source nodes (parallel and inline sinks)."""
@@ -256,25 +247,34 @@ class Application:
                     time.sleep(0.1)
 
     def _route_to_consumers(self, node: GraphNode, result: object) -> None:
-        """Route a result to downstream consumer input queues via precomputed table."""
-        consumer_names = self._routing_table.get(node.name, [])
-        if not consumer_names:
+        """Route a result to downstream consumer input queues via runtime type check.
+
+        For each (consumer_name, expected_type) in the routing table,
+        checks ``type(result) is expected_type`` for exact match. Only
+        matching consumers receive the event. This ensures union return
+        types (e.g. ``PipelineEvent | InferenceError``) route correctly.
+        """
+        consumer_pairs = self._routing_table.get(node.name, [])
+        if not consumer_pairs:
             logger.debug(
                 "No consumer found for {} from node {}",
                 type(result).__name__,
                 node.name,
             )
             return
-        for consumer_name in consumer_names:
-            self._queue_bus.put(f"{consumer_name}:input", result)
-
-    @staticmethod
-    def _type_matches(instance: object, target_type: type) -> bool:
-        """Check if an instance matches a target type, handling generic aliases."""
-        origin = typing.get_origin(target_type)
-        if origin is not None:
-            return isinstance(instance, origin)
-        return isinstance(instance, target_type)
+        result_type = type(result)
+        routed = False
+        for consumer_name, expected_type in consumer_pairs:
+            if result_type is expected_type:
+                self._queue_bus.put(f"{consumer_name}:input", result)
+                routed = True
+        if not routed:
+            logger.debug(
+                "No type match for {} from node {} (expected: {})",
+                result_type.__name__,
+                node.name,
+                [t.__name__ for _, t in consumer_pairs],
+            )
 
     def _read_from_input_queue(self, node: GraphNode, timeout: float) -> object | None:
         """Read one event from a parallel node's input queue."""

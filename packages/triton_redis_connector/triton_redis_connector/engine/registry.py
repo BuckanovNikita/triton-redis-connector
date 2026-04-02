@@ -1,14 +1,13 @@
 """Pipeline registry for type-annotation-based DAG construction.
 
-Inspects __call__ signatures of registered nodes to build a directed
-acyclic graph where union return types create multiple edges. Validates
-graph integrity before the pipeline starts.
+Walks ``__orig_bases__`` of registered nodes to extract generic type
+parameters for input/output types. Builds a directed acyclic graph
+where union return types create multiple edges. Validates graph
+integrity before the pipeline starts.
 """
 
 from __future__ import annotations
 
-import inspect
-import sys
 import types
 import typing
 from enum import StrEnum, auto
@@ -25,6 +24,12 @@ from triton_redis_connector.engine.metric_aggregator import (
     extract_event_counters,
 )
 from triton_redis_connector.protocols import (
+    BaseProcessPoolProcessor,
+    BaseProcessSource,
+    BaseThreadPoolProcessor,
+    BaseThreadProcessor,
+    BaseThreadSink,
+    BaseThreadSource,
     ProcessPoolProcessor,
     ProcessSource,
     ThreadPoolProcessor,
@@ -55,6 +60,19 @@ SINK_VARIANTS = {
     ExecutionVariant.THREAD_SINK,
 }
 
+_BASE_CLASS_TO_VARIANT: dict[type, ExecutionVariant] = {
+    BaseThreadSource: ExecutionVariant.THREAD_SOURCE,
+    BaseProcessSource: ExecutionVariant.PROCESS_SOURCE,
+    BaseThreadProcessor: ExecutionVariant.THREAD_PROCESSOR,
+    BaseThreadPoolProcessor: ExecutionVariant.THREAD_POOL_PROCESSOR,
+    BaseProcessPoolProcessor: ExecutionVariant.PROCESS_POOL_PROCESSOR,
+    BaseThreadSink: ExecutionVariant.THREAD_SINK,
+}
+
+_SOURCE_BASE_CLASSES = frozenset({BaseThreadSource, BaseProcessSource})
+_PROCESSOR_BASE_CLASSES = frozenset({BaseThreadProcessor, BaseThreadPoolProcessor, BaseProcessPoolProcessor})
+_SINK_BASE_CLASSES = frozenset({BaseThreadSink})
+
 
 class GraphNode:
     """A node in the processing graph with its execution variant and type info."""
@@ -67,10 +85,67 @@ class GraphNode:
         self.output_types: set[type] = set()
 
 
+def _flatten_union(annotation: object) -> list[type]:
+    """Flatten a union type (A | B | None) into individual types, excluding NoneType."""
+    origin = typing.get_origin(annotation)
+    if origin is types.UnionType or origin is typing.Union:
+        result: list[type] = []
+        for arg in typing.get_args(annotation):
+            if arg is type(None):
+                continue
+            unwrapped = _unwrap_annotated(arg)
+            if unwrapped is not type(None):
+                result.append(unwrapped)
+        return result
+    if isinstance(annotation, type) and annotation is not type(None):
+        return [annotation]
+    return []
+
+
+def _unwrap_annotated(annotation: object) -> type:
+    """Unwrap ``Annotated[X, ...]`` to ``X``, or return annotation unchanged."""
+    if typing.get_origin(annotation) is typing.Annotated:
+        return typing.get_args(annotation)[0]  # type: ignore[no-any-return]
+    return annotation  # type: ignore[return-value]
+
+
+def _extract_types_from_generics(node: object) -> tuple[set[type], set[type]]:
+    """Extract (input_types, output_types) from a node's ``__orig_bases__``.
+
+    Walks the class hierarchy to find the Base* class (BaseThreadSource,
+    BaseThreadProcessor, etc.) and extracts its generic type parameters.
+
+    Sources: args[0] = output type (may be union)
+    Processors: args[0] = input, args[1] = output (each may be union)
+    Sinks: args[0] = input type (may be union)
+    """
+    cls = type(node)
+    for klass in cls.__mro__:
+        for base in getattr(klass, "__orig_bases__", ()):
+            origin = typing.get_origin(base)
+            if origin is None:
+                continue
+            args = typing.get_args(base)
+            if not args:
+                continue
+
+            if origin in _SOURCE_BASE_CLASSES:
+                return set(), set(_flatten_union(args[0]))
+
+            min_args_for_processor = 2
+            if origin in _PROCESSOR_BASE_CLASSES and len(args) >= min_args_for_processor:
+                return set(_flatten_union(args[0])), set(_flatten_union(args[1]))
+
+            if origin in _SINK_BASE_CLASSES:
+                return set(_flatten_union(args[0])), set()
+
+    return set(), set()
+
+
 class PipelineRegistry:
     """Builds a DAG from registered pipeline nodes using type annotations.
 
-    Inspects __call__ signatures to determine input/output event types.
+    Walks ``__orig_bases__`` to determine input/output event types.
     Union return types (A | B | None) create edges to consumers of both A and B.
     """
 
@@ -81,24 +156,21 @@ class PipelineRegistry:
         self._aggregators: dict[str, MetricAggregator] = {}
 
     def register(self, name: str, node: object) -> None:
-        """Register a pipeline node by inspecting its __call__ type hints."""
+        """Register a pipeline node by inspecting its ``__orig_bases__`` type parameters."""
         variant = self._detect_variant(node)
         if not callable(node):
             msg = f"Node {name!r} is not callable"
             raise TypeError(msg)
         graph_node = GraphNode(name=name, instance=node, variant=variant)
 
-        hints = self._get_call_hints(node)
+        input_types, output_types = _extract_types_from_generics(node)
 
         if variant not in SOURCE_VARIANTS:
-            input_type = self._get_input_type(hints)
-            if input_type is not None:
-                graph_node.input_types = {input_type}
-                self._type_consumers.setdefault(input_type, []).append(name)
+            graph_node.input_types = input_types
+            for in_type in input_types:
+                self._type_consumers.setdefault(in_type, []).append(name)
 
-        return_annotation = hints.get("return")
-        output_types = self._extract_union_types(return_annotation, exclude={type(None)})
-        graph_node.output_types = set(output_types)
+        graph_node.output_types = output_types
         for out_type in output_types:
             self._type_producers.setdefault(out_type, []).append(name)
 
@@ -118,9 +190,7 @@ class PipelineRegistry:
     def validate(self) -> list[str]:
         """Validate graph integrity. Returns a list of error messages (empty = valid).
 
-        Type matching is subtype-aware: a consumer of ``BaseModel`` matches
-        any producer of a ``BaseModel`` subclass, and a consumer of a
-        ``Protocol`` matches producers of types that satisfy that protocol.
+        Uses exact type matching: types must match exactly (no subtype checking).
         """
         errors: list[str] = []
 
@@ -131,8 +201,8 @@ class PipelineRegistry:
         all_produced_types = set(self._type_producers.keys())
 
         for consumed_type, consumers in self._type_consumers.items():
-            if not self._any_producer_matches(consumed_type, all_produced_types):
-                type_name = getattr(consumed_type, "__name__", str(consumed_type))
+            if consumed_type not in all_produced_types:
+                type_name = _type_display_name(consumed_type)
                 errors.extend(
                     f"Node '{consumer_name}' consumes {type_name} but no node produces it"
                     for consumer_name in consumers
@@ -141,45 +211,16 @@ class PipelineRegistry:
         all_consumed_types = set(self._type_consumers.keys())
 
         for produced_type, producers in self._type_producers.items():
-            if not self._any_consumer_matches(produced_type, all_consumed_types):
+            if produced_type not in all_consumed_types:
                 for producer_name in producers:
                     node = self._nodes[producer_name]
                     if node.variant not in SINK_VARIANTS:
-                        type_name = getattr(produced_type, "__name__", str(produced_type))
+                        type_name = _type_display_name(produced_type)
                         errors.append(f"Node '{producer_name}' produces {type_name} but no node consumes it")
 
         errors.extend(self._check_connectivity())
 
         return errors
-
-    @staticmethod
-    def _is_subtype(child: type, parent: type) -> bool:
-        """Check if *child* is a subtype of *parent*, with protocol support.
-
-        ``issubclass`` fails for protocols with non-method members (e.g.
-        ``@property``).  When that happens, fall back to structural
-        matching: check that all ``__protocol_attrs__`` exist on the
-        child class or in its ``model_fields`` (pydantic v2).
-        """
-        try:
-            return issubclass(child, parent)
-        except TypeError:
-            protocol_attrs: set[str] | None = getattr(parent, "__protocol_attrs__", None)
-            if protocol_attrs is None:
-                return False
-            model_fields: set[str] = set(getattr(child, "model_fields", {}).keys())
-            child_attrs = set(dir(child)) | model_fields
-            return protocol_attrs <= child_attrs
-
-    @classmethod
-    def _any_producer_matches(cls, consumed_type: type, produced_types: set[type]) -> bool:
-        """Check if any produced type is a subtype of consumed_type."""
-        return any(produced == consumed_type or cls._is_subtype(produced, consumed_type) for produced in produced_types)
-
-    @classmethod
-    def _any_consumer_matches(cls, produced_type: type, consumed_types: set[type]) -> bool:
-        """Check if any consumed type is a supertype of produced_type."""
-        return any(produced_type == consumed or cls._is_subtype(produced_type, consumed) for consumed in consumed_types)
 
     def get_node(self, name: str) -> GraphNode | None:
         """Return a registered node by name, or None if not found."""
@@ -216,8 +257,7 @@ class PipelineRegistry:
         """Check that the graph has no disconnected subgraphs.
 
         All nodes must be reachable from at least one source node.
-        Uses subtype-aware matching: a produced type reaches consumers
-        whose input type is a supertype or protocol satisfied by it.
+        Uses exact type matching for connectivity.
         """
         errors: list[str] = []
         source_names = {name for name, node in self._nodes.items() if node.variant in SOURCE_VARIANTS}
@@ -235,9 +275,8 @@ class PipelineRegistry:
             reachable.add(current_name)
             current_node = self._nodes[current_name]
             for out_type in current_node.output_types:
-                for consumed_type, consumer_names in self._type_consumers.items():
-                    if out_type == consumed_type or self._is_subtype(out_type, consumed_type):
-                        frontier.extend(name for name in consumer_names if name not in reachable)
+                consumer_names = self._type_consumers.get(out_type, [])
+                frontier.extend(name for name in consumer_names if name not in reachable)
 
         unreachable = set(self._nodes.keys()) - reachable
         errors.extend(
@@ -246,76 +285,28 @@ class PipelineRegistry:
 
         return errors
 
-    def compute_routing_table(self) -> dict[str, list[str]]:
-        """Build a producer-name → consumer-names routing table.
+    def compute_routing_table(self) -> dict[str, list[tuple[str, type]]]:
+        """Build a producer-name -> list[(consumer_name, expected_input_type)] table.
 
-        Uses the same subtype logic as validation: exact type match,
-        class hierarchy, and structural protocol matching.
+        Uses exact type matching. Each entry tells the router which consumer
+        to consider and what type to check against at runtime.
         """
-        table: dict[str, list[str]] = {}
+        table: dict[str, list[tuple[str, type]]] = {}
         for name, node in self._nodes.items():
-            consumers: list[str] = []
+            consumer_pairs: list[tuple[str, type]] = []
             for out_type in node.output_types:
-                for consumed_type, consumer_names in self._type_consumers.items():
-                    if out_type == consumed_type or self._is_subtype(out_type, consumed_type):
-                        consumers.extend(consumer_names)
-            if consumers:
-                table[name] = list(dict.fromkeys(consumers))
+                consumer_pairs.extend(
+                    (consumer_name, out_type) for consumer_name in self._type_consumers.get(out_type, [])
+                )
+            if consumer_pairs:
+                seen: set[tuple[str, type]] = set()
+                unique: list[tuple[str, type]] = []
+                for pair in consumer_pairs:
+                    if pair not in seen:
+                        seen.add(pair)
+                        unique.append(pair)
+                table[name] = unique
         return table
-
-    @staticmethod
-    def _get_call_hints(node: object) -> dict[str, type]:
-        """Get type hints from __call__, falling back to inner callable for wrappers.
-
-        PEP 695 generic wrappers with ``from __future__ import annotations``
-        have unresolved TypeVar forward references that cause NameError in
-        ``typing.get_type_hints``. Resolution strategy:
-
-        0. Explicit ``__call_hints__`` on the node or its ``_inner`` — set by the
-           factory when it knows the concrete types (generic shipped processors)
-        1. ``typing.get_type_hints`` on the outer node (works for concrete types)
-        2. ``typing.get_type_hints`` on ``_inner`` (works when inner has no TypeVars)
-        3. ``inspect.get_annotations(eval_str=True)`` on ``_inner`` with enriched
-           globals — injects PEP 695 TypeVar bounds so ``T`` resolves to its bound
-        """
-        for target in (node, getattr(node, "_inner", None)):
-            explicit = getattr(target, "__call_hints__", None)
-            if isinstance(explicit, dict) and explicit:
-                return explicit
-
-        try:
-            return typing.get_type_hints(node.__call__, include_extras=True)  # type: ignore[operator]
-        except (NameError, AttributeError):
-            inner = getattr(node, "_inner", None)
-            if inner is not None:
-                try:
-                    return typing.get_type_hints(inner.__call__, include_extras=True)
-                except (NameError, AttributeError):
-                    pass
-                return PipelineRegistry._eval_annotations_with_bounds(inner)
-            return {}
-
-    @staticmethod
-    def _eval_annotations_with_bounds(node: object) -> dict[str, type]:
-        """Resolve string annotations using module globals + PEP 695 TypeVar bounds.
-
-        Builds a namespace from the node class's module and injects ``__bound__``
-        for each TypeVar in ``__type_params__``, so ``T`` evaluates to its bound
-        (e.g. ``BaseModel``).  Falls back to empty dict on any resolution failure.
-        """
-        cls = type(node)
-        module = sys.modules.get(cls.__module__)
-        if module is None:
-            return {}
-        ns: dict[str, Any] = vars(module).copy()
-        for tp in getattr(cls, "__type_params__", ()):
-            bound = getattr(tp, "__bound__", None)
-            if bound is not None:
-                ns[tp.__name__] = bound
-        try:
-            return inspect.get_annotations(node.__call__, globals=ns, eval_str=True)  # type: ignore[operator]
-        except (NameError, AttributeError):
-            return {}
 
     _PROTOCOL_TO_VARIANT: typing.ClassVar[list[tuple[type, ExecutionVariant]]] = [
         (ProcessSource, ExecutionVariant.PROCESS_SOURCE),
@@ -352,46 +343,7 @@ class PipelineRegistry:
         )
         raise TypeError(msg)
 
-    def _extract_union_types(
-        self,
-        annotation: type | None,
-        exclude: set[type],
-    ) -> list[type]:
-        """Extract individual types from a union annotation, unwrapping Annotated.
 
-        ``Annotated[A, ...] | B | None`` -> ``[A, B]``.
-        Handles both ``typing.Union`` and ``|`` syntax.
-        """
-        if annotation is None:
-            return []
-        origin = typing.get_origin(annotation)
-        if origin is types.UnionType or origin is typing.Union:
-            result: list[type] = []
-            for a in typing.get_args(annotation):
-                base = self._unwrap_annotated(a)
-                if base not in exclude:
-                    result.append(base)
-            return result
-        base = self._unwrap_annotated(annotation)
-        if base not in exclude:
-            return [base]
-        return []
-
-    @staticmethod
-    def _unwrap_annotated(annotation: type) -> type:
-        """Unwrap ``Annotated[X, ...]`` to ``X``, or return annotation unchanged."""
-        if typing.get_origin(annotation) is typing.Annotated:
-            return typing.get_args(annotation)[0]  # type: ignore[no-any-return]
-        return annotation
-
-    def _get_input_type(self, hints: dict[str, type]) -> type | None:
-        """Extract the input event type from __call__ hints.
-
-        Looks for the first parameter after 'self' (named 'event' by convention,
-        but matches any first non-return hint).
-        """
-        for param_name, param_type in hints.items():
-            if param_name == "return":
-                continue
-            return param_type
-        return None
+def _type_display_name(t: type) -> str:
+    """Human-readable name for a type, including generic args."""
+    return getattr(t, "__name__", str(t))

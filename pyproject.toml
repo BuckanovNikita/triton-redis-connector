@@ -153,7 +153,9 @@ layers = [
     "(triton_redis_connector.protocols)",
 ]
 ignore_imports = [
-    "triton_redis_connector.engine.wrappers -> triton_redis_connector.metrics.collector",
+    "triton_redis_connector.engine.metric_aggregator -> triton_redis_connector.metrics.collector",
+    "triton_redis_connector.engine.shipped_processors -> triton_redis_connector.inference.request",
+    "triton_redis_connector.engine.shipped_processors -> triton_redis_connector.errors.models",
 ]
 
 # Contract 2: Domain modules must not import each other.

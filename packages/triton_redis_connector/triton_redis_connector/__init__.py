@@ -8,6 +8,12 @@ from __future__ import annotations
 from triton_redis_connector.config.schema import AppConfig, NodeConfig, NodeVariant
 from triton_redis_connector.engine.app import Application
 from triton_redis_connector.engine.context import EventContext, current_context
+from triton_redis_connector.engine.events import (
+    Event,
+    FrameworkMeta,
+    ImagePayload,
+    PipelineEvent,
+)
 from triton_redis_connector.engine.metric_aggregator import MetricAggregator, Tracked
 from triton_redis_connector.engine.registry import (
     ExecutionVariant,
@@ -16,9 +22,13 @@ from triton_redis_connector.engine.registry import (
 )
 from triton_redis_connector.engine.shipped_processors import (
     ClientPreprocessor,
+    ClientPreprocessorNode,
     DaliTritonRequestBuilder,
     EventSerializer,
+    InferenceNode,
     LogErrorSink,
+    LogErrorSinkNode,
+    PostProcessorNode,
 )
 from triton_redis_connector.engine.wrappers import (
     DetachedProcessSource,
@@ -82,6 +92,7 @@ __all__ = [
     "BaseThreadSink",
     "BaseThreadSource",
     "ClientPreprocessor",
+    "ClientPreprocessorNode",
     "ConfigProvider",
     "ConfigurableClientPreprocessor",
     "ConnectorProvider",
@@ -94,18 +105,23 @@ __all__ = [
     "DetachedThreadSource",
     "EngineProvider",
     "Envelope",
+    "Event",
     "EventContext",
     "EventSerializer",
     "ExecutionVariant",
+    "FrameworkMeta",
     "Gauge",
     "GraphNode",
     "GroupBy",
     "ImageDecoderProtocol",
+    "ImagePayload",
     "ImagePreprocessorProtocol",
+    "InferenceNode",
     "InferenceProvider",
     "LetterBoxPreprocessor",
     "LifecycleService",
     "LogErrorSink",
+    "LogErrorSinkNode",
     "MetricAggregator",
     "MetricRecorder",
     "MetricsProvider",
@@ -114,7 +130,9 @@ __all__ = [
     "NodeConfig",
     "NodeVariant",
     "OpenCVDecoder",
+    "PipelineEvent",
     "PipelineRegistry",
+    "PostProcessorNode",
     "PreprocessingProvider",
     "ProcessPoolProcessor",
     "ProcessSource",

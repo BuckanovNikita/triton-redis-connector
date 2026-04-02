@@ -52,5 +52,4 @@ class YoloPostProcessorBridge:
             model_name=output.model_name,
             inference_time_ms=output.inference_time_ms,
             num_detections=len(detections),
-            metadata=output.metadata,
         )

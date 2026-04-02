@@ -74,7 +74,6 @@ class ModelResultRouter(
             model_name=event.model_name,
             inference_time_ms=event.inference_time_ms,
             num_detections=event.num_detections,
-            metadata=event.metadata,
         )
 
 

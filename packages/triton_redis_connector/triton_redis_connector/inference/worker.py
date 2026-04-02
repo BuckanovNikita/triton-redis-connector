@@ -7,9 +7,10 @@ Concurrency and retry are handled by framework wrappers and middleware.
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
+import numpy.typing as npt
 import tritonclient.grpc as grpcclient
 
 from triton_redis_connector.errors.models import InferenceError  # noqa: TC001 — needed at runtime for get_type_hints
@@ -57,7 +58,7 @@ class InferenceWorker:
 
         elapsed_ms = (time.monotonic() - start) * 1000.0
 
-        output_arrays: dict[str, np.ndarray[Any, np.dtype[np.float32]]] = {
+        output_arrays: dict[str, npt.NDArray[np.float32]] = {
             name: np.asarray(result.as_numpy(name), dtype=np.float32) for name in event.output_names
         }
 
@@ -66,7 +67,6 @@ class InferenceWorker:
             model_version=event.model_version,
             outputs=output_arrays,
             inference_time_ms=elapsed_ms,
-            metadata=event.metadata,
         )
 
 

@@ -10,13 +10,27 @@ the import-linter sibling constraint.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Self
+from typing import Annotated, Self
 
 import numpy as np  # noqa: TC002 — pydantic needs runtime access for model_rebuild()
 import numpy.typing as npt  # noqa: TC002
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from triton_redis_connector.protocols import Counter, Gauge
+
+
+class FrameworkMeta(BaseModel):
+    """Framework-owned metadata carried through the pipeline on Event.fw.
+
+    Set by RedisStreamSource from the Redis envelope. Stripped by
+    RedisStreamSink before writing to the output stream.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    source_stream: str = ""
+    message_id: str = ""
+    priority: int = 0
 
 
 class Event(BaseModel):
@@ -24,26 +38,40 @@ class Event(BaseModel):
 
     All user-defined events should inherit from this model.
     Frozen for immutability, strict to prevent silent coercion.
+    The ``fw`` field carries framework metadata (source_stream, message_id)
+    and is NOT serialized to Redis output.
     """
 
     model_config = ConfigDict(frozen=True, strict=True)
 
+    fw: FrameworkMeta = FrameworkMeta()
 
-class DecodedImage(BaseModel):
-    """BGR image decoded from raw bytes with original dimensions.
 
-    Produced by ImageDecodeProcessor, consumed by preprocessing nodes.
+class PipelineEvent[TCtx: Event, TPayload: BaseModel](BaseModel):
+    """Typed composition of user context and processing payload.
+
+    Carries the original user event (context) alongside the current
+    processing stage payload. Framework routes by exact generic match
+    on ``PipelineEvent[ConcreteCtx, ConcretePayload]``.
     """
 
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True)
 
-    _metrics_ = [Counter("decode_success")]
+    context: TCtx
+    payload: TPayload
 
-    image: npt.NDArray[np.uint8]
-    original_height: int
-    original_width: int
-    source_stream: str = ""
-    message_id: str = ""
+
+class ImagePayload(BaseModel):
+    """Payload carrying image data for preprocessing nodes.
+
+    Either ``image_path`` (filesystem) or ``image_bytes`` (in-memory)
+    should be set for the preprocessor to consume.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    image_path: str = ""
+    image_bytes: bytes | None = None
 
 
 class DetectionResult(BaseModel):
@@ -57,9 +85,6 @@ class DetectionResult(BaseModel):
     model_name: str
     inference_time_ms: Annotated[float, Gauge("inference_time_ms")]
     num_detections: int
-    source_stream: str = ""
-    message_id: str = ""
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class TritonRequest(BaseModel):
@@ -82,7 +107,6 @@ class TritonRequest(BaseModel):
     image_bytes: bytes | None = None
     input_name: str = "images"
     output_names: tuple[str, ...] = ("output0",)
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _exactly_one_input(self) -> Self:
@@ -94,5 +118,4 @@ class TritonRequest(BaseModel):
         return self
 
 
-DecodedImage.model_rebuild()
 TritonRequest.model_rebuild()

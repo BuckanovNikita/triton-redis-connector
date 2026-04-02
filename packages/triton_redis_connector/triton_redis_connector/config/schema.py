@@ -122,6 +122,7 @@ class DebugConfig(BaseModel):
 
     stop_on_error: bool = False
     single_thread: bool = False
+    mermaid_path: str = ""
 
 
 class RouterConfig(BaseModel):

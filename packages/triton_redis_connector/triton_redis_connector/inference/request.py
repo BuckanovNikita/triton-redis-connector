@@ -8,11 +8,9 @@ InferenceOutput carries raw numpy arrays for cross-process transport.
 
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np  # noqa: TC002 — pydantic needs runtime access for model_rebuild()
 import numpy.typing as npt  # noqa: TC002
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from triton_redis_connector.engine.events import TritonRequest
 
@@ -32,7 +30,6 @@ class InferenceOutput(BaseModel):
     model_version: str
     outputs: dict[str, npt.NDArray[np.float32]]
     inference_time_ms: float
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 InferenceOutput.model_rebuild()

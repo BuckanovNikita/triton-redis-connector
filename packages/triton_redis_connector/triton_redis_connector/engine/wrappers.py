@@ -19,10 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from triton_redis_connector.engine.metric_aggregator import (
     MetricAggregator,
-    extract_event_counters,
-    extract_field_gauges,
-    extract_field_group_bys,
-    extract_field_value,
+    extract_and_record_metrics,
 )
 from triton_redis_connector.engine.registry import ExecutionVariant
 
@@ -30,38 +27,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from triton_redis_connector.protocols import MetricRecorder
-
-
-def _make_metric(component_name: str, measure: str, value: float) -> object:
-    """Create a MetricEvent via lazy import to avoid engine->metrics layer violation."""
-    from triton_redis_connector.metrics.collector import MetricEvent  # noqa: PLC0415
-
-    return MetricEvent(component_name=component_name, measure=measure, value=value)
-
-
-def _extract_and_record_metrics(
-    result: object,
-    recorder: MetricRecorder,
-    component_name: str,
-    elapsed_ms: float,
-) -> None:
-    """Extract Counter/Gauge/GroupBy metrics from a result event and record them."""
-    result_type = type(result)
-
-    for counter in extract_event_counters(result_type):
-        recorder.record(_make_metric(component_name, counter.name, 1.0))
-
-    for field_name, gauge in extract_field_gauges(result_type):
-        raw = extract_field_value(result, field_name)
-        if isinstance(raw, (int, float)):
-            recorder.record(_make_metric(component_name, gauge.name, float(raw)))
-
-    for field_name, group_by in extract_field_group_bys(result_type):
-        raw = extract_field_value(result, field_name)
-        if raw is not None:
-            recorder.record(_make_metric(component_name, f"{group_by.name}:{raw!s}", 1.0))
-
-    recorder.record(_make_metric(component_name, "node_processing_ms", elapsed_ms))
 
 
 def _call_with_metrics(
@@ -88,7 +53,7 @@ def _call_with_metrics(
         aggregator.record_call(elapsed_ms, is_empty=(result is None))
 
     if metric_recorder is not None and result is not None:
-        _extract_and_record_metrics(result, metric_recorder, component_name, elapsed_ms)
+        extract_and_record_metrics(result, metric_recorder, component_name, elapsed_ms)
 
     return result
 

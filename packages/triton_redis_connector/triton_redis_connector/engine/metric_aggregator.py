@@ -194,3 +194,38 @@ def _get_class_attr(cls: type, name: str) -> list[object]:
             if isinstance(val, list):
                 return list(val)
     return []
+
+
+def _make_metric(component_name: str, measure: str, value: float) -> object:
+    """Create a MetricEvent via lazy import to avoid engine->metrics layer violation."""
+    from triton_redis_connector.metrics.collector import MetricEvent  # noqa: PLC0415
+
+    return MetricEvent(component_name=component_name, measure=measure, value=value)
+
+
+def extract_and_record_metrics(
+    result: object,
+    recorder: Any,  # noqa: ANN401
+    component_name: str,
+    elapsed_ms: float,
+) -> None:
+    """Extract Counter/Gauge/GroupBy metrics from a result event and record them.
+
+    ``recorder`` must satisfy the ``MetricRecorder`` protocol (has ``.record()``).
+    """
+    result_type = type(result)
+
+    for counter in extract_event_counters(result_type):
+        recorder.record(_make_metric(component_name, counter.name, 1.0))
+
+    for field_name, gauge in extract_field_gauges(result_type):
+        raw = extract_field_value(result, field_name)
+        if isinstance(raw, (int, float)):
+            recorder.record(_make_metric(component_name, gauge.name, float(raw)))
+
+    for field_name, group_by in extract_field_group_bys(result_type):
+        raw = extract_field_value(result, field_name)
+        if raw is not None:
+            recorder.record(_make_metric(component_name, f"{group_by.name}:{raw!s}", 1.0))
+
+    recorder.record(_make_metric(component_name, "node_processing_ms", elapsed_ms))
