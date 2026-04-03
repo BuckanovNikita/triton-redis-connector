@@ -9,13 +9,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from loguru import logger
-from triton_redis_connector.engine.events import (
-    ClassificationResult,
-    DetectionResult,
-    PipelineEvent,
-)
-from triton_redis_connector.protocols import BaseThreadProcessor, BaseThreadSink
-
 from reference_implementation.events import (
     EVEN_MODEL,
     ClassificationImagePayload,
@@ -30,6 +23,12 @@ from reference_implementation.events import (
     TaskMeta,
     TaskType,
 )
+from triton_redis_connector.engine.events import (
+    ClassificationResult,
+    DetectionResult,
+    PipelineEvent,
+)
+from triton_redis_connector.protocols import BaseThreadProcessor, BaseThreadSink
 
 if TYPE_CHECKING:
     from redis import Redis

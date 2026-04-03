@@ -177,11 +177,7 @@ def main() -> None:
             grpc_url=config.inference.grpc_url,
         ),
         postprocessor=PostProcessorNode[TaskMeta, InferenceOutput, DetectionResult](
-            postprocessor=YoloPostProcessorBridge(  # type: ignore[arg-type]
-                conf_threshold=config.pipeline.postprocessor.conf_threshold,
-                iou_threshold=config.pipeline.postprocessor.iou_threshold,
-                end2end=config.pipeline.postprocessor.end2end,
-            ),
+            postprocessor=YoloPostProcessorBridge(),  # type: ignore[arg-type]
         ),
         sink=DetectionResultSink(redis_client, DETECTION_STREAM),
     )

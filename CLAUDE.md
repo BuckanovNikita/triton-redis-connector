@@ -193,7 +193,6 @@ Models are defined exclusively via `ModelBundle`. The `expand_bundle()` function
 `AppConfig.pipeline` configures shipped processor params:
 - `model_name` — Triton model for the preprocessor
 - `model_input_name`, `model_output_names` — tensor names
-- `postprocessor.conf_threshold`, `postprocessor.iou_threshold`, `postprocessor.end2end`
 
 ### Base Classes for User Processors
 

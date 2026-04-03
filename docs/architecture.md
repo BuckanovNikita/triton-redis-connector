@@ -216,11 +216,6 @@ Set by the framework before dispatch, reset after. User code never sees the `Env
 - `model_name: str` -- Triton model name used by the preprocessor and inference worker
 - `model_input_name: str` -- input tensor name (default `"images"`)
 - `model_output_names: list[str]` -- output tensor names (default `["output0"]`)
-- `postprocessor: PostprocessorConfig` -- YOLO postprocessor thresholds:
-  - `conf_threshold: float` (default 0.25)
-  - `iou_threshold: float` (default 0.45)
-  - `end2end: bool` (default False)
-
 These are pure infrastructure parameters. The actual `event_model` type and `postprocessor` instance come from Python code, not config.
 
 ## DecoderType

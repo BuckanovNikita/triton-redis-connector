@@ -149,11 +149,7 @@ def main() -> None:
                 grpc_url=config.inference.grpc_url,
             ),
             PostProcessorNode[SteelMeta, InferenceOutput, DetectionResult](
-                postprocessor=YoloPostProcessorBridge(  # type: ignore[arg-type]
-                    conf_threshold=config.pipeline.postprocessor.conf_threshold,
-                    iou_threshold=config.pipeline.postprocessor.iou_threshold,
-                    end2end=config.pipeline.postprocessor.end2end,
-                ),
+                postprocessor=YoloPostProcessorBridge(),  # type: ignore[arg-type]
             ),
             ModelResultRouter(),
             EvenResultSink(redis_client, EVEN_STREAM),

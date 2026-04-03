@@ -14,11 +14,6 @@ sources:
 
 sinks: []
 
-pipeline:
-  postprocessor:
-    conf_threshold: 0.25
-    iou_threshold: 0.45
-
 inference:
   grpc_url: ${oc.env:TRITON_GRPC_URL,triton:8001}
 

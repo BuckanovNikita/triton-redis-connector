@@ -112,16 +112,6 @@ class DebugConfig(BaseModel):
     mermaid_path: str = ""
 
 
-class PostprocessorConfig(BaseModel):
-    """YOLO postprocessor thresholds for shipped YoloPostProcessorBridge."""
-
-    model_config = ConfigDict(frozen=True)
-
-    conf_threshold: float = Field(default=0.25, ge=0.0, le=1.0)
-    iou_threshold: float = Field(default=0.45, ge=0.0, le=1.0)
-    end2end: bool = False
-
-
 class PipelineConfig(BaseModel):
     """Shipped processor configuration resolved by Application.build().
 
@@ -134,7 +124,6 @@ class PipelineConfig(BaseModel):
     model_name: str = ""
     model_input_name: str = "images"
     model_output_names: list[str] = Field(default_factory=lambda: ["output0"])
-    postprocessor: PostprocessorConfig = PostprocessorConfig()
 
 
 class AppConfig(BaseModel):

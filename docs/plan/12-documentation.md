@@ -27,7 +27,7 @@ Full config reference for `AppConfig` and all sub-configs. For each config model
 - `QueueConfig`
 - `MetricsConfig`
 - `DebugConfig`
-- `PipelineConfig` + `PostprocessorConfig`
+- `PipelineConfig`
 
 Note: `NodeConfig` was deleted in step 02.4 — do NOT document it.
 
