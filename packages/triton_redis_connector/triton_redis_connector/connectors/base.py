@@ -2,7 +2,7 @@
 
 These protocols define the contract that Redis connectors must satisfy.
 They are internal to the connector layer — user-facing code interacts
-with the execution variant wrappers (RedisStreamSource, RedisStreamSink).
+with the execution variant wrappers (LiveRedisStreamSource, RedisStreamSink).
 """
 
 from __future__ import annotations
@@ -28,18 +28,6 @@ class InputConnectorProtocol(Protocol):
         An empty list means no messages were available within the
         block timeout.
         """
-        ...
-
-    def read_pending(self, count: int) -> list[Envelope[bytes]]:
-        """Read pending (unacknowledged) messages from the stream.
-
-        Used during recovery. Returns messages sorted newest-first
-        for the recovery interleave strategy.
-        """
-        ...
-
-    def acknowledge(self, message_id: str) -> None:
-        """Acknowledge a message after successful processing (XACK)."""
         ...
 
 

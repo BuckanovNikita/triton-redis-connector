@@ -209,18 +209,6 @@ The `original_fields` dict carries all fields from the inbound Redis Stream mess
 
 Set by the framework before dispatch, reset after. User code never sees the `Envelope` directly.
 
-## CollectorMode
-
-Defined in `config/schema.py`. Controls Redis Stream consumer group startup behavior:
-
-| Mode | `XGROUP_CREATE` id | Behavior |
-|---|---|---|
-| `RECOVERY` | `0` | Process pending (unacked) messages first, then new |
-| `FROM_LATEST` | `$` | Skip all existing messages, start from new only |
-| `FROM_OLDEST` | `0` | Process all messages from the beginning of the stream |
-
-Configured per source via `SourceConfig.collector_mode`.
-
 ## PipelineConfig
 
 `AppConfig` includes a `pipeline` section (`PipelineConfig` in `config/schema.py`) that configures shipped processors resolved by `build_application`:

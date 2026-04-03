@@ -1,16 +1,13 @@
-"""Tests for LiveRedisStreamSource, RecoveryRedisStreamSource, and TypedRedisStreamSink."""
+"""Tests for LiveRedisStreamSource and TypedRedisStreamSink."""
 
 from __future__ import annotations
 
-import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 from pydantic import BaseModel, ConfigDict
 from triton_redis_connector.config.schema import SourceConfig
 from triton_redis_connector.connectors.redis_stream import (
     LiveRedisStreamSource,
-    RecoveryRedisStreamSource,
     RedisStreamInputConnector,
     RedisStreamOutputConnector,
     TypedRedisStreamSink,
@@ -44,8 +41,6 @@ def _make_source_config(**overrides: object) -> SourceConfig:
         "event_model": "SampleEvent",
         "batch_size": 10,
         "block_ms": 100,
-        "pending_ttl_s": 60.0,
-        "recovery_max_rps": 10,
     }
     defaults.update(overrides)
     return SourceConfig(**defaults)  # type: ignore[arg-type]
@@ -56,17 +51,13 @@ def _make_envelope(
     fields: dict[str, str] | None = None,
     payload: bytes = b"",
     stream: str = "stream:test",
-    created_at: float | None = None,
 ) -> Envelope[bytes]:
-    envelope = Envelope(
+    return Envelope(
         payload=payload,
         source_stream=stream,
         message_id=msg_id,
         original_fields=fields or {},
     )
-    if created_at is not None:
-        object.__setattr__(envelope, "created_at", created_at)
-    return envelope
 
 
 class TestLiveRedisStreamSource:
@@ -123,116 +114,6 @@ class TestLiveRedisStreamSource:
         config = _make_source_config()
         source = LiveRedisStreamSource(connector, config, SampleEvent, name="my_live")
         assert source.name == "my_live"
-
-
-class TestRecoveryRedisStreamSource:
-    def test_loads_pending_on_first_call(self) -> None:
-        connector = MagicMock(spec=RedisStreamInputConnector)
-        envelope = _make_envelope(
-            msg_id="3-0",
-            fields={"camera_id": "cam02"},
-        )
-        connector.read_pending.return_value = [envelope]
-        config = _make_source_config(recovery_max_rps=1000)
-
-        source = RecoveryRedisStreamSource(connector, config, SampleEvent)
-        result = source()
-
-        assert isinstance(result, SampleEvent)
-        assert result.camera_id == "cam02"
-        assert result.fw.priority == 1
-        assert result.fw.message_id == "3-0"
-
-    def test_returns_none_when_buffer_empty(self) -> None:
-        connector = MagicMock(spec=RedisStreamInputConnector)
-        connector.read_pending.return_value = []
-        config = _make_source_config(recovery_max_rps=1000)
-
-        source = RecoveryRedisStreamSource(connector, config, SampleEvent)
-        result = source()
-        assert result is None
-
-    def test_emits_newest_first(self) -> None:
-        connector = MagicMock(spec=RedisStreamInputConnector)
-        envelopes = [
-            _make_envelope(msg_id="2-0", fields={"camera_id": "cam_new"}),
-            _make_envelope(msg_id="1-0", fields={"camera_id": "cam_old"}),
-        ]
-        connector.read_pending.return_value = envelopes
-        config = _make_source_config(recovery_max_rps=10000)
-
-        source = RecoveryRedisStreamSource(connector, config, SampleEvent)
-        results = []
-        for _ in range(3):
-            r = source()
-            if r is not None:
-                results.append(r)
-
-        assert len(results) == 2
-        assert isinstance(results[0], SampleEvent)
-        assert results[0].fw.message_id == "2-0"
-        assert isinstance(results[1], SampleEvent)
-        assert results[1].fw.message_id == "1-0"
-
-    def test_drops_stale_messages(self) -> None:
-        connector = MagicMock(spec=RedisStreamInputConnector)
-        stale_envelope = _make_envelope(
-            msg_id="1-0",
-            fields={"camera_id": "old"},
-            created_at=time.monotonic() - 120.0,
-        )
-        fresh_envelope = _make_envelope(
-            msg_id="2-0",
-            fields={"camera_id": "fresh"},
-        )
-        connector.read_pending.return_value = [stale_envelope, fresh_envelope]
-        config = _make_source_config(pending_ttl_s=60.0, recovery_max_rps=10000)
-
-        source = RecoveryRedisStreamSource(connector, config, SampleEvent)
-        result = source()
-
-        assert isinstance(result, SampleEvent)
-        assert result.camera_id == "fresh"
-        connector.acknowledge.assert_called_once_with("1-0")
-
-        next_result = source()
-        assert next_result is None
-
-    def test_throttles_at_recovery_max_rps(self) -> None:
-        connector = MagicMock(spec=RedisStreamInputConnector)
-        envelopes = [_make_envelope(msg_id=f"{i}-0", fields={"camera_id": f"cam{i}"}) for i in range(5)]
-        connector.read_pending.return_value = envelopes
-        rps = 50
-        config = _make_source_config(recovery_max_rps=rps)
-
-        source = RecoveryRedisStreamSource(connector, config, SampleEvent)
-
-        with patch("triton_redis_connector.connectors.redis_stream.time.sleep") as mock_sleep:
-            for _ in range(5):
-                source()
-
-        assert mock_sleep.call_count == 5
-        expected_interval = 1.0 / rps
-        for call in mock_sleep.call_args_list:
-            assert call.args[0] == pytest.approx(expected_interval)
-
-    def test_self_terminates_when_empty(self) -> None:
-        connector = MagicMock(spec=RedisStreamInputConnector)
-        connector.read_pending.return_value = [
-            _make_envelope(msg_id="1-0", fields={"camera_id": "x"}),
-        ]
-        config = _make_source_config(recovery_max_rps=10000)
-
-        source = RecoveryRedisStreamSource(connector, config, SampleEvent)
-
-        first = source()
-        assert first is not None
-
-        second = source()
-        assert second is None
-
-        third = source()
-        assert third is None
 
 
 class TestTypedRedisStreamSink:
@@ -296,77 +177,6 @@ class TestTypedRedisStreamSink:
             fields = written_data[0][1]
 
         assert "fw" not in fields
-
-    def test_acks_message_when_input_connector_provided(self) -> None:
-        mock_redis = MagicMock()
-        mock_redis.xadd.return_value = b"1-0"
-
-        from triton_redis_connector.config.schema import SinkConfig
-
-        sink_config = SinkConfig(stream_name="stream:output")
-        output_connector = RedisStreamOutputConnector(mock_redis, sink_config)
-        input_connector = MagicMock(spec=RedisStreamInputConnector)
-
-        sink: TypedRedisStreamSink[SampleEvent, SampleResult] = TypedRedisStreamSink(
-            output_connector=output_connector,
-            input_connector=input_connector,
-        )
-
-        ctx = SampleEvent(
-            camera_id="cam01",
-            fw=FrameworkMeta(source_stream="stream:in", message_id="42-0"),
-        )
-        payload = SampleResult(score=0.8, label="truck")
-        event = PipelineEvent(context=ctx, payload=payload)
-
-        sink(event)
-
-        input_connector.acknowledge.assert_called_once_with("42-0")
-
-    def test_no_ack_when_no_input_connector(self) -> None:
-        mock_redis = MagicMock()
-        mock_redis.xadd.return_value = b"1-0"
-
-        from triton_redis_connector.config.schema import SinkConfig
-
-        sink_config = SinkConfig(stream_name="stream:output")
-        output_connector = RedisStreamOutputConnector(mock_redis, sink_config)
-
-        sink: TypedRedisStreamSink[SampleEvent, SampleResult] = TypedRedisStreamSink(
-            output_connector=output_connector,
-        )
-
-        ctx = SampleEvent(
-            camera_id="cam01",
-            fw=FrameworkMeta(source_stream="stream:in", message_id="42-0"),
-        )
-        payload = SampleResult(score=0.8, label="truck")
-        event = PipelineEvent(context=ctx, payload=payload)
-
-        sink(event)
-
-    def test_no_ack_when_message_id_empty(self) -> None:
-        mock_redis = MagicMock()
-        mock_redis.xadd.return_value = b"1-0"
-
-        from triton_redis_connector.config.schema import SinkConfig
-
-        sink_config = SinkConfig(stream_name="stream:output")
-        output_connector = RedisStreamOutputConnector(mock_redis, sink_config)
-        input_connector = MagicMock(spec=RedisStreamInputConnector)
-
-        sink: TypedRedisStreamSink[SampleEvent, SampleResult] = TypedRedisStreamSink(
-            output_connector=output_connector,
-            input_connector=input_connector,
-        )
-
-        ctx = SampleEvent(camera_id="cam01")
-        payload = SampleResult(score=0.8, label="truck")
-        event = PipelineEvent(context=ctx, payload=payload)
-
-        sink(event)
-
-        input_connector.acknowledge.assert_not_called()
 
     def test_context_fields_as_top_level_entries(self) -> None:
         mock_redis = MagicMock()

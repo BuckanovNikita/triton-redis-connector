@@ -18,14 +18,6 @@ class RedisConnectionConfig(BaseModel):
     decode_responses: bool = False
 
 
-class CollectorMode(StrEnum):
-    """Redis Stream collector startup behavior."""
-
-    RECOVERY = "recovery"
-    FROM_LATEST = "from_latest"
-    FROM_OLDEST = "from_oldest"
-
-
 class SourceConfig(BaseModel):
     """Configuration for a single Redis Stream source."""
 
@@ -37,12 +29,6 @@ class SourceConfig(BaseModel):
     event_model: str = Field(min_length=1)
     batch_size: int = Field(default=10, ge=1)
     block_ms: int = Field(default=1000, ge=0)
-    newest_first_on_recovery: bool = True
-    recovery_interleave_ratio: int = Field(default=4, ge=1)
-    pending_ttl_s: float = Field(default=60.0, gt=0.0)
-    collector_mode: CollectorMode = CollectorMode.RECOVERY
-    recovery_enabled: bool = True
-    recovery_max_rps: int = Field(default=10, ge=1)
 
 
 class SinkConfig(BaseModel):

@@ -1,7 +1,7 @@
 """Consumer group management for Redis Streams.
 
-Wraps Redis consumer group operations: creation, reading (new and pending),
-and acknowledgment. All operations use synchronous redis.Redis client.
+Wraps Redis consumer group operations: creation and reading new messages.
+All operations use synchronous redis.Redis client.
 """
 
 from __future__ import annotations
@@ -10,8 +10,6 @@ from typing import TYPE_CHECKING, cast
 
 from loguru import logger
 from redis.exceptions import ResponseError
-
-from triton_redis_connector.config.schema import CollectorMode
 
 if TYPE_CHECKING:
     from redis import Redis
@@ -27,15 +25,17 @@ class ConsumerGroupManager:
         client: Redis[bytes],
         stream: str,
         group: str,
-        mode: CollectorMode = CollectorMode.RECOVERY,
     ) -> None:
-        """Create consumer group idempotently, ignoring BUSYGROUP if already exists."""
-        start_id = "$" if mode == CollectorMode.FROM_LATEST else "0"
+        """Create consumer group idempotently, ignoring BUSYGROUP if already exists.
+
+        Always uses ``$`` as start ID (FROM_LATEST behavior) so only new
+        messages are delivered.
+        """
         try:
             client.xgroup_create(
                 name=stream,
                 groupname=group,
-                id=start_id,
+                id="$",
                 mkstream=True,
             )
             logger.info("Created consumer group {} on stream {}", group, stream)
@@ -43,37 +43,6 @@ class ConsumerGroupManager:
             if "BUSYGROUP" not in str(exc):
                 raise
             logger.debug("Consumer group {} already exists on stream {}", group, stream)
-
-    def read_pending_newest_first(
-        self,
-        client: Redis[bytes],
-        stream: str,
-        group: str,
-        consumer: str,
-        count: int,
-    ) -> list[tuple[str, dict[bytes, bytes]]]:
-        """Read pending messages and return them sorted newest-first.
-
-        Uses XREADGROUP with id "0-0" to fetch unacknowledged messages,
-        then reverses the order so newest messages are processed first.
-
-        Returns list of (message_id, fields) tuples.
-        """
-        raw = cast(
-            "_StreamMessages | None",
-            client.xreadgroup(
-                groupname=group,
-                consumername=consumer,
-                streams={stream: "0-0"},
-                count=count,
-            ),
-        )
-        if not raw:
-            return []
-
-        entries = self._parse_stream_messages(raw)
-        entries.reverse()
-        return entries
 
     def read_new(  # noqa: PLR0913
         self,
@@ -105,10 +74,6 @@ class ConsumerGroupManager:
             return []
 
         return self._parse_stream_messages(raw)
-
-    def acknowledge(self, client: Redis[bytes], stream: str, group: str, message_id: str) -> None:
-        """Acknowledge a message after successful processing via XACK."""
-        client.xack(stream, group, message_id)  # type: ignore[no-untyped-call]
 
     def _parse_stream_messages(
         self,

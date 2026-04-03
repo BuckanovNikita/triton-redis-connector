@@ -145,7 +145,7 @@ Modules within a `|` group are siblings at the same layer and must NOT cross-imp
 
 ### Domain Event Model
 
-All domain events inherit from `Event` (in `engine/events.py`), which carries `fw: FrameworkMeta` for source_stream and message_id. The `fw` field is set by `RedisStreamSource` and stripped by `RedisStreamSink` before writing to output.
+All domain events inherit from `Event` (in `engine/events.py`), which carries `fw: FrameworkMeta` for source_stream and message_id. The `fw` field is set by `LiveRedisStreamSource` and stripped by `TypedRedisStreamSink` before writing to output.
 
 `PipelineEvent[TCtx, TPayload]` is a typed composition of user context (an `Event` subclass) and a processing payload. Framework routes by exact generic match. This allows the original user event to travel alongside processing stages (preprocessing, inference, postprocessing) without being lost.
 

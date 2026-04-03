@@ -11,7 +11,6 @@ from triton_redis_connector.connectors.redis_stream import (
     RedisStreamInputConnector,
     RedisStreamOutputConnector,
     RedisStreamSink,
-    RedisStreamSource,
 )
 from triton_redis_connector.protocols import Envelope
 
@@ -30,8 +29,6 @@ def source_config() -> SourceConfig:
         event_model="ImageEvent",
         batch_size=10,
         block_ms=1000,
-        recovery_interleave_ratio=4,
-        pending_ttl_s=60.0,
     )
 
 
@@ -80,24 +77,6 @@ class TestRedisStreamInputConnector:
         results = connector.read_new(count=10, block_ms=1000)
         assert results == []
 
-    def test_read_pending_returns_envelopes_newest_first(
-        self, mock_redis: MagicMock, source_config: SourceConfig, group_manager: ConsumerGroupManager
-    ) -> None:
-        connector = RedisStreamInputConnector(mock_redis, source_config, group_manager)
-        mock_redis.xreadgroup.return_value = [
-            (
-                b"stream:input",
-                [
-                    (b"1-0", {b"data": b"old"}),
-                    (b"2-0", {b"data": b"new"}),
-                ],
-            )
-        ]
-        results = connector.read_pending(count=10)
-        assert len(results) == 2
-        assert results[0].message_id == "2-0"
-        assert results[1].message_id == "1-0"
-
     def test_missing_data_field_returns_empty_bytes(
         self, mock_redis: MagicMock, source_config: SourceConfig, group_manager: ConsumerGroupManager
     ) -> None:
@@ -133,59 +112,6 @@ class TestRedisStreamOutputConnector:
         connector = RedisStreamOutputConnector(mock_redis, config)
         result = connector.write({"data": b"test"})
         assert result == "2-0"
-
-
-class TestRedisStreamSource:
-    def test_first_call_loads_pending(
-        self, mock_redis: MagicMock, source_config: SourceConfig, group_manager: ConsumerGroupManager
-    ) -> None:
-        mock_redis.xreadgroup.return_value = None
-        connector = RedisStreamInputConnector(mock_redis, source_config, group_manager)
-        source = RedisStreamSource(connector, source_config)
-        result = source()
-        assert result is None
-
-    def test_reads_live_messages(
-        self, mock_redis: MagicMock, source_config: SourceConfig, group_manager: ConsumerGroupManager
-    ) -> None:
-        connector = RedisStreamInputConnector(mock_redis, source_config, group_manager)
-        mock_redis.xreadgroup.side_effect = [
-            None,
-            [(b"stream:input", [(b"1-0", {b"data": b"live_msg"})])],
-        ]
-        source = RedisStreamSource(connector, source_config)
-        result = source()
-        assert result is not None
-        assert result.payload == b"live_msg"
-
-    def test_interleave_reads_pending_every_n_calls(
-        self, mock_redis: MagicMock, group_manager: ConsumerGroupManager
-    ) -> None:
-        config = SourceConfig(
-            stream_name="stream:input",
-            consumer_group="workers",
-            consumer_name="c1",
-            event_model="ImageEvent",
-            recovery_interleave_ratio=2,
-            pending_ttl_s=9999.0,
-        )
-        pending_envelopes = [
-            Envelope(payload=b"pending1", source_stream="stream:input", message_id="p1"),
-            Envelope(payload=b"pending2", source_stream="stream:input", message_id="p2"),
-        ]
-        mock_connector = MagicMock(spec=RedisStreamInputConnector)
-        mock_connector.read_pending.return_value = pending_envelopes
-        mock_connector.read_new.return_value = [
-            Envelope(payload=b"live", source_stream="stream:input", message_id="l1"),
-        ]
-
-        source = RedisStreamSource(mock_connector, config)
-        results = []
-        for _ in range(5):
-            r = source()
-            if r is not None:
-                results.append(r.message_id)
-        assert "p1" in results
 
 
 class TestRedisStreamSink:

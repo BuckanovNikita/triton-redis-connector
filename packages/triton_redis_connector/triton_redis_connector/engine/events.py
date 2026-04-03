@@ -24,8 +24,8 @@ from triton_redis_connector.protocols import Counter, Gauge
 class FrameworkMeta(BaseModel):
     """Framework-owned metadata carried through the pipeline on Event.fw.
 
-    Set by RedisStreamSource from the Redis envelope. Stripped by
-    RedisStreamSink before writing to the output stream.
+    Set by LiveRedisStreamSource from the Redis envelope. Stripped by
+    TypedRedisStreamSink before writing to the output stream.
     """
 
     model_config = ConfigDict(frozen=True)
