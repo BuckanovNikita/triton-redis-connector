@@ -93,6 +93,7 @@ services:
     image: nvcr.io/nvidia/tritonserver:${TRITON_VERSION:-25.03}-py3-sdk
     ports:
       - 8010:8000
+    shm_size: 1g
     volumes:
       - ..:/workspace:cached
       - ../model_repository:/models
