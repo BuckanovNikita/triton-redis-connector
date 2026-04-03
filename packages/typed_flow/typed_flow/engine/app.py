@@ -86,6 +86,7 @@ class Application:
         config: AppConfig,
         processors: list[object],
         *,
+        redis_client: redis_lib.Redis[bytes] | None = None,
         extra_service: LifecycleService | None = None,
     ) -> Application:
         """Build a fully wired Application from an explicit processor list.
@@ -117,7 +118,7 @@ class Application:
 
         metric_emitter: LifecycleService | None = None
         if config.metrics.output_stream:
-            redis_client: redis_lib.Redis[bytes] = redis_lib.Redis(
+            metrics_client = redis_client or redis_lib.Redis(
                 host=config.redis.host,
                 port=config.redis.port,
                 db=config.redis.db,
@@ -125,7 +126,7 @@ class Application:
             )
             metric_emitter = MetricEmitter(
                 buffer=metric_buffer,
-                client=redis_client,
+                client=metrics_client,
                 stream=config.metrics.output_stream,
                 interval_s=config.metrics.emit_interval_s,
                 known_metrics=registry.all_counter_names,

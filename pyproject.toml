@@ -160,6 +160,10 @@ ignore_missing_imports = true
 module = ["pydantic", "pydantic.*", "loguru", "loguru.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["dishka", "dishka.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = [
     "packages/typed_flow/tests",
@@ -177,7 +181,7 @@ markers = [
 
 [tool.vulture]
 min_confidence = 80
-ignore_names = ["event", "shared", "envelope", "count", "new_payload", "block_ms", "data", "image", "raw", "message_id", "target_size", "timeout_s", "consumer_group", "input_stream", "output_stream", "end2end", "kwargs", "enable_dynamic_batching", "max_batch_size"]
+ignore_names = ["event", "shared", "envelope", "count", "new_payload", "block_ms", "data", "image", "raw", "message_id", "target_size", "timeout_s", "consumer_group", "input_stream", "output_stream", "end2end", "kwargs", "enable_dynamic_batching", "max_batch_size", "redis_connection_config", "redis_client", "consumer_group_manager", "config"]
 paths = [
     "packages/typed_flow/typed_flow",
     "packages/triton_redis_connector/triton_redis_connector",
@@ -204,7 +208,7 @@ id = "typed-flow-layers"
 name = "typed_flow layer architecture"
 type = "layers"
 layers = [
-    "(typed_flow.connectors) | (typed_flow.metrics)",
+    "(typed_flow.connectors) | (typed_flow.metrics) | (typed_flow.di)",
     "(typed_flow.engine)",
     "(typed_flow.config) | (typed_flow.errors)",
     "(typed_flow.protocols)",

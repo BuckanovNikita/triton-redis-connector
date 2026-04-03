@@ -17,6 +17,7 @@ Monorepo (`packages/`): **typed-flow** (event-streaming framework), **triton-sha
 | [docs/parallelism.md](docs/parallelism.md) | Execution variant decision guide, thread vs process selection |
 | [docs/triton-versions.md](docs/triton-versions.md) | Triton version matrix, switching versions, `.env`-driven management |
 | [docs/benchmark-results.md](docs/benchmark-results.md) | Performance measurement results |
+| [packages/typed_flow/docs/](packages/typed_flow/docs/) | typed-flow framework docs: getting started, sources/sinks, DI, execution variants |
 
 ## Skills (`.claude/skills/`)
 
@@ -29,6 +30,7 @@ Monorepo (`packages/`): **typed-flow** (event-streaming framework), **triton-sha
 | `/using-triton-inference-server` | Triton config.pbtxt, tritonclient API, model repository |
 | `/using-nvidia-dali` | DALI GPU preprocessing pipelines |
 | `/using-ultralytics` | YOLO predict/export reference |
+| `/using-dishka` | Dishka DI container, providers, scopes, testing |
 | `/uv-package-manager` | uv commands, workspace, deps, lockfile management |
 
 ## Agent Team (`.claude/agents/`)

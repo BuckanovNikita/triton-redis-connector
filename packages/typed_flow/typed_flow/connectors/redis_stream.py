@@ -115,7 +115,7 @@ class RedisStreamSink:
         self._connector.write(data)
 
 
-def _deserialize_event[T: BaseModel](
+def deserialize_envelope[T: BaseModel](
     envelope: Envelope[bytes],
     event_model: type[T],
     connector_name: str,
@@ -181,7 +181,7 @@ class LiveRedisStreamSource[T: BaseModel](BaseThreadSource[PipelineEvent[T, Unpr
         if not results:
             return None
         envelope = results[0]
-        return _deserialize_event(envelope, self._event_model, self.name, priority=0)
+        return deserialize_envelope(envelope, self._event_model, self.name, priority=0)
 
 
 class AutoRedisSource[T: BaseModel](BaseThreadSource[PipelineEvent[T, Unprocessed] | ConnectorError]):
@@ -233,7 +233,7 @@ class AutoRedisSource[T: BaseModel](BaseThreadSource[PipelineEvent[T, Unprocesse
         if not results:
             return None
         envelope = results[0]
-        return _deserialize_event(envelope, self._event_model, self.name, priority=0)
+        return deserialize_envelope(envelope, self._event_model, self.name, priority=0)
 
 
 class TypedRedisStreamSink[TCtx: BaseModel, TResult: BaseModel](
