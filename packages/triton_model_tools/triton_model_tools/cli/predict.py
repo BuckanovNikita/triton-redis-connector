@@ -30,8 +30,8 @@ def build_parser(subparsers: SubParsers) -> None:
     predict_parser.add_argument(
         "--output-dir",
         type=Path,
-        required=True,
-        help="Directory to save detection txt files",
+        default=Path("e2e_results/predict"),
+        help="Directory to save detection txt files (default: e2e_results/predict/)",
     )
     predict_parser.add_argument(
         "-m",

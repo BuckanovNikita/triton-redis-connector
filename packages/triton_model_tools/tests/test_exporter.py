@@ -191,7 +191,8 @@ class TestExportTensorrt:
             model_dir = _export_tensorrt(variant, repo_root)
 
         config_text = (model_dir / "config.pbtxt").read_text()
-        assert "1, -1, 6" in config_text
+        assert "-1, 6" in config_text
+        assert "max_batch_size: 8" in config_text
 
     def test_non_end2end_variant_has_default_output_dims(self, tmp_path: Path) -> None:
         variant = _make_variant(end2end_export=False)

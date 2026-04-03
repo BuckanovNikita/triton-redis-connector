@@ -6,6 +6,7 @@ import time
 from typing import TYPE_CHECKING
 
 from loguru import logger
+from tqdm import tqdm
 
 from triton_model_tools.inference.detection_io import load_image
 from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
@@ -52,8 +53,8 @@ def run_image_loop(  # noqa: PLR0913
     results: list[ImageDetectionResult] = []
     total_start = time.perf_counter()
 
-    for image_path in image_paths:
-        logger.info("Processing {}", image_path.name)
+    for image_path in tqdm(image_paths, desc=log_label, unit="img"):
+        logger.debug("Processing {}", image_path.name)
         image = load_image(image_path)
 
         img_start = time.perf_counter()

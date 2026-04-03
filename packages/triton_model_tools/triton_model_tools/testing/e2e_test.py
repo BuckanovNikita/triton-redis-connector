@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 import redis as redis_lib
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from tqdm import tqdm
 
 from triton_model_tools.inference.detection_io import collect_image_paths
 from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
@@ -101,7 +102,7 @@ class ConnectorE2ETestHarness:
     def push_test_images(self, image_paths: list[Path]) -> list[str]:
         """Push images to Redis input stream via XADD. Returns list of message IDs."""
         message_ids: list[str] = []
-        for image_path in image_paths:
+        for image_path in tqdm(image_paths, desc="Pushing images", unit="img"):
             image_bytes = image_path.read_bytes()
             request_id = uuid.uuid4().hex
             raw_id: Any = self._redis.xadd(

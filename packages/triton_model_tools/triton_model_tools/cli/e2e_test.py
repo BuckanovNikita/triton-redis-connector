@@ -97,6 +97,13 @@ def build_parser(subparsers: SubParsers) -> None:
         default=30.0,
         help="Timeout in seconds for collecting results (default: 30.0)",
     )
+    e2e_parser.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        default=Path("e2e_results/e2e_test"),
+        help="Directory to save detection txt files (default: e2e_results/e2e_test/)",
+    )
 
     populate_group = e2e_parser.add_argument_group("populate-only options")
     populate_group.add_argument(
@@ -269,6 +276,7 @@ def _run_e2e_test(args: argparse.Namespace) -> None:
     target_size: int | tuple[int, int] = args.target_size
     end2end: bool = args.end2end
     timeout_s: float = args.timeout
+    output_dir: Path = args.output_dir
 
     logger.info("E2E Connector Test")
     logger.info("Image dir: {}", image_dir)
@@ -293,6 +301,16 @@ def _run_e2e_test(args: argparse.Namespace) -> None:
     logger.info("Results: {} images processed", len(result.results))
     logger.info("Total time: {:.2f}s", result.total_time_s)
     logger.info("Average time: {:.1f}ms per image", result.avg_time_ms)
+
+    from triton_model_tools.inference.detection_io import save_detections_to_txt  # noqa: PLC0415
+
+    resolved_output_dir = output_dir.resolve()
+    resolved_output_dir.mkdir(parents=True, exist_ok=True)
+    for img_result in result.results:
+        stem = Path(img_result.image_path).stem
+        save_detections_to_txt(img_result.detections, resolved_output_dir / f"{stem}.txt")
+
+    logger.info("Saved detection txt files to {}", resolved_output_dir)
 
     for img_result in result.results:
         logger.info(

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
+from tqdm import tqdm
 from triton_shared_models.preprocessing import LetterBoxPreprocessor as YoloPreprocessor
 
 from triton_model_tools.benchmarks.stats import compute_statistics
@@ -44,6 +45,7 @@ class BenchmarkConfig(BaseModel):
     half: bool = False
     conf_threshold: float = Field(default=DEFAULT_CONFIDENCE_THRESHOLD, ge=0.0, le=1.0)
     iou_threshold: float = Field(default=DEFAULT_IOU_THRESHOLD, ge=0.0, le=1.0)
+    min_images: int = Field(default=5000, ge=0)
 
 
 class BenchmarkResult(BaseModel):
@@ -134,6 +136,13 @@ def run_benchmark(config: BenchmarkConfig, image_dir: Path) -> BenchmarkResult:
     """
     image_paths = collect_image_paths(image_dir, max_count=config.num_images)
 
+    if config.min_images > 0 and len(image_paths) < config.min_images:
+        logger.warning(
+            "Only {} images available, recommended minimum is {} for reliable benchmarks",
+            len(image_paths),
+            config.min_images,
+        )
+
     triton_model_name = config.model_name
     if config.backend == "tensorrt" and not triton_model_name.endswith(TENSORRT_NAME_SUFFIX):
         triton_model_name = f"{triton_model_name}{TENSORRT_NAME_SUFFIX}"
@@ -164,7 +173,7 @@ def run_benchmark(config: BenchmarkConfig, image_dir: Path) -> BenchmarkResult:
             client.infer_raw(triton_model_name, warmup_tensor, output_names)
 
     latencies_ms: list[float] = []
-    for image_path in image_paths:
+    for image_path in tqdm(image_paths, desc="Benchmark", unit="img"):
         image = load_image(image_path)
 
         start = time.perf_counter()
@@ -211,6 +220,7 @@ def save_benchmark_output(suite: BenchmarkSuite, output_path: Path) -> None:
         output_path: Output file path.
 
     """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     if output_path.suffix == ".csv":
         suite.to_csv(output_path)
     else:

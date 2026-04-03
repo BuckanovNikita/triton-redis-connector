@@ -36,6 +36,7 @@ ONNX_DTYPE_TO_TRITON: dict[int, TritonDataType] = {
 }
 
 TENSORRT_NAME_SUFFIX = "_trt"
+DEFAULT_PREFERRED_BATCH_SIZE: list[int] = [1, 2, 4, 8]
 
 
 def _extract_tensor_spec(
@@ -91,8 +92,9 @@ def _export_onnx(  # noqa: PLR0913
     repository_root: Path,
     *,
     half: bool = False,
-    enable_dynamic_batching: bool = False,
+    enable_dynamic_batching: bool = True,
     max_batch_size: int = 8,
+    preferred_batch_size: list[int] | None = None,
     trt_acceleration: bool = False,
 ) -> Path:
     """Export a YOLO model to ONNX and build its Triton repository entry.
@@ -103,6 +105,7 @@ def _export_onnx(  # noqa: PLR0913
         half: If True, export ONNX model in FP16 precision.
         enable_dynamic_batching: If True, configure Triton dynamic batching.
         max_batch_size: Maximum batch size when dynamic batching is enabled.
+        preferred_batch_size: Preferred batch sizes for dynamic batching scheduler.
         trt_acceleration: If True, add TensorRT execution accelerator to config.
 
     Returns:
@@ -134,8 +137,13 @@ def _export_onnx(  # noqa: PLR0913
         inputs = _strip_batch_dim(inputs)
         outputs = _strip_batch_dim(outputs)
         effective_max_batch_size = max_batch_size
-        dynamic_batching = DynamicBatchingConfig()
-        logger.info("Dynamic batching enabled: max_batch_size={}", max_batch_size)
+        effective_preferred = preferred_batch_size if preferred_batch_size is not None else DEFAULT_PREFERRED_BATCH_SIZE
+        dynamic_batching = DynamicBatchingConfig(preferred_batch_size=effective_preferred)
+        logger.info(
+            "Dynamic batching enabled: max_batch_size={}, preferred={}",
+            max_batch_size,
+            effective_preferred,
+        )
 
     optimization: OptimizationConfig | None = None
     if trt_acceleration:
@@ -170,13 +178,14 @@ def _export_onnx(  # noqa: PLR0913
     return model_dir
 
 
-def _export_tensorrt(
+def _export_tensorrt(  # noqa: PLR0913
     variant: YoloModelVariant,
     repository_root: Path,
     *,
     half: bool = True,
-    enable_dynamic_batching: bool = False,
+    enable_dynamic_batching: bool = True,
     max_batch_size: int = 8,
+    preferred_batch_size: list[int] | None = None,
 ) -> Path:
     """Export a YOLO model to TensorRT engine and build its Triton repository entry.
 
@@ -188,6 +197,7 @@ def _export_tensorrt(
         half: If True (default), export TensorRT engine in FP16 precision.
         enable_dynamic_batching: If True, configure Triton dynamic batching.
         max_batch_size: Maximum batch size when dynamic batching is enabled.
+        preferred_batch_size: Preferred batch sizes for dynamic batching scheduler.
 
     Returns:
         Path to the created Triton model directory.
@@ -233,8 +243,13 @@ def _export_tensorrt(
             ),
         ]
         effective_max_batch_size = max_batch_size
-        dynamic_batching = DynamicBatchingConfig()
-        logger.info("Dynamic batching enabled: max_batch_size={}", max_batch_size)
+        effective_preferred = preferred_batch_size if preferred_batch_size is not None else DEFAULT_PREFERRED_BATCH_SIZE
+        dynamic_batching = DynamicBatchingConfig(preferred_batch_size=effective_preferred)
+        logger.info(
+            "Dynamic batching enabled: max_batch_size={}, preferred={}",
+            max_batch_size,
+            effective_preferred,
+        )
     else:
         inputs = [
             TritonTensorSpec(
@@ -285,8 +300,9 @@ def export_model(  # noqa: PLR0913
     fmt: Literal["onnx", "tensorrt", "all"] = "onnx",
     *,
     half: bool = False,
-    enable_dynamic_batching: bool = False,
+    enable_dynamic_batching: bool = True,
     max_batch_size: int = 8,
+    preferred_batch_size: list[int] | None = None,
     trt_acceleration: bool = False,
 ) -> list[Path]:
     """Export a single YOLO model in the requested format(s) and build Triton entries.
@@ -299,6 +315,7 @@ def export_model(  # noqa: PLR0913
             for TensorRT defaults to FP16 regardless of this flag.
         enable_dynamic_batching: If True, configure Triton dynamic batching.
         max_batch_size: Maximum batch size when dynamic batching is enabled.
+        preferred_batch_size: Preferred batch sizes for dynamic batching scheduler.
         trt_acceleration: If True, add TensorRT execution accelerator to ONNX config.
 
     Returns:
@@ -314,6 +331,7 @@ def export_model(  # noqa: PLR0913
                 half=half,
                 enable_dynamic_batching=enable_dynamic_batching,
                 max_batch_size=max_batch_size,
+                preferred_batch_size=preferred_batch_size,
                 trt_acceleration=trt_acceleration,
             )
         )
@@ -325,6 +343,7 @@ def export_model(  # noqa: PLR0913
                 half=half,
                 enable_dynamic_batching=enable_dynamic_batching,
                 max_batch_size=max_batch_size,
+                preferred_batch_size=preferred_batch_size,
             )
         )
     return results

@@ -67,6 +67,12 @@ def build_parser(subparsers: SubParsers) -> None:
         help="Number of warmup iterations (default: 5)",
     )
     bench_parser.add_argument(
+        "--min-images",
+        type=int,
+        default=5000,
+        help="Minimum recommended image count for reliable benchmarks (default: 5000)",
+    )
+    bench_parser.add_argument(
         "--repository-root",
         type=Path,
         default=None,
@@ -82,8 +88,8 @@ def build_parser(subparsers: SubParsers) -> None:
         "--output",
         "-o",
         type=Path,
-        default=None,
-        help="Output file path (JSON or CSV based on extension)",
+        default=Path("e2e_results/benchmark/results.json"),
+        help="Output file path (JSON or CSV based on extension, default: e2e_results/benchmark/results.json)",
     )
 
     pipeline_group = bench_parser.add_argument_group("pipeline benchmark options")
@@ -303,6 +309,8 @@ def _run_triton_benchmark(args: argparse.Namespace) -> None:
     logger.info("Image dir: {}", image_dir)
     logger.info("Model: {} (backend: {})", model_name, backend)
 
+    min_images: int = args.min_images
+
     config = BenchmarkConfig(
         model_name=model_name,
         backend=backend,  # type: ignore[arg-type]
@@ -311,6 +319,7 @@ def _run_triton_benchmark(args: argparse.Namespace) -> None:
         num_images=num_images,
         warmup_runs=warmup_runs,
         end2end=end2end,
+        min_images=min_images,
     )
 
     result = run_benchmark(config, image_dir)

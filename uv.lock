@@ -4773,6 +4773,7 @@ dependencies = [
     { name = "pillow" },
     { name = "pydantic" },
     { name = "redis" },
+    { name = "tqdm" },
     { name = "triton-redis-connector" },
     { name = "triton-shared-models" },
     { name = "tritonclient", version = "2.55.0", source = { registry = "https://pypi.org/simple" }, extra = ["grpc"], marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
@@ -4798,6 +4799,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=10.4.0,<13.0.0" },
     { name = "pydantic", specifier = ">=2.12.5,<3.0.0" },
     { name = "redis", specifier = ">=5.2.0,<6.0.0" },
+    { name = "tqdm", specifier = ">=4.66.0,<5.0.0" },
     { name = "triton-redis-connector", editable = "packages/triton_redis_connector" },
     { name = "triton-shared-models", editable = "packages/triton_shared_models" },
     { name = "tritonclient", extras = ["grpc"], specifier = ">=2.55.0,<3.0.0" },
@@ -4878,6 +4880,7 @@ dev = [
     { name = "triton-redis-connector" },
     { name = "triton-shared-models" },
     { name = "types-redis" },
+    { name = "types-tqdm" },
     { name = "vulture" },
 ]
 lint = [
@@ -4886,6 +4889,7 @@ lint = [
     { name = "pyright" },
     { name = "ruff" },
     { name = "types-redis" },
+    { name = "types-tqdm" },
     { name = "vulture" },
 ]
 test = [
@@ -4925,6 +4929,7 @@ dev = [
     { name = "triton-redis-connector", editable = "packages/triton_redis_connector" },
     { name = "triton-shared-models", editable = "packages/triton_shared_models" },
     { name = "types-redis", specifier = ">=4.6.0.20241004,<5.0.0" },
+    { name = "types-tqdm", specifier = ">=4.66.0,<5.0.0" },
     { name = "vulture", specifier = ">=2.16,<3.0.0" },
 ]
 lint = [
@@ -4933,6 +4938,7 @@ lint = [
     { name = "pyright", specifier = ">=1.1.408,<2.0.0" },
     { name = "ruff", specifier = ">=0.15.8,<1.0.0" },
     { name = "types-redis", specifier = ">=4.6.0.20241004,<5.0.0" },
+    { name = "types-tqdm", specifier = ">=4.66.0,<5.0.0" },
     { name = "vulture", specifier = ">=2.16,<3.0.0" },
 ]
 test = [
@@ -5133,12 +5139,36 @@ wheels = [
 ]
 
 [[package]]
+name = "types-requests"
+version = "2.33.0.20260402"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c1/7b/a06527d20af1441d813360b8e0ce152a75b7d8e4aab7c7d0a156f405d7ec/types_requests-2.33.0.20260402.tar.gz", hash = "sha256:1bdd3ada9b869741c5c4b887d2c8b4e38284a1449751823b5ebbccba3eefd9da", size = 23851, upload-time = "2026-04-02T04:19:55.942Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/51/65/3853bb6bac5ae789dc7e28781154705c27859eccc8e46282c3f36780f5f5/types_requests-2.33.0.20260402-py3-none-any.whl", hash = "sha256:c98372d7124dd5d10af815ee25c013897592ff92af27b27e22c98984102c3254", size = 20739, upload-time = "2026-04-02T04:19:54.955Z" },
+]
+
+[[package]]
 name = "types-setuptools"
 version = "82.0.0.20260210"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/4b/90/796ac8c774a7f535084aacbaa6b7053d16fff5c630eff87c3ecff7896c37/types_setuptools-82.0.0.20260210.tar.gz", hash = "sha256:d9719fbbeb185254480ade1f25327c4654f8c00efda3fec36823379cebcdee58", size = 44768, upload-time = "2026-02-10T04:22:02.107Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3e/54/3489432b1d9bc713c9d8aa810296b8f5b0088403662959fb63a8acdbd4fc/types_setuptools-82.0.0.20260210-py3-none-any.whl", hash = "sha256:5124a7daf67f195c6054e0f00f1d97c69caad12fdcf9113eba33eff0bce8cd2b", size = 68433, upload-time = "2026-02-10T04:22:00.876Z" },
+]
+
+[[package]]
+name = "types-tqdm"
+version = "4.67.3.20260402"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "types-requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/54/42/e9e6688891d8db77b5795ec02b329524170892ff81bec63c4c4ca7425b30/types_tqdm-4.67.3.20260402.tar.gz", hash = "sha256:e0739f3bc5d1c801999a202f0537280aa1bc2e669c49f5be91bfb99376690624", size = 18077, upload-time = "2026-04-02T04:22:23.049Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4f/73/a6cf75de5be376d7b57ce6c934ae9bc90aa5be6ada4ac50a99ecbdf9763e/types_tqdm-4.67.3.20260402-py3-none-any.whl", hash = "sha256:b5d1a65fe3286e1a855e51ddebf63d3641daf9bad285afd1ec56808eb59df76e", size = 24562, upload-time = "2026-04-02T04:22:22.114Z" },
 ]
 
 [[package]]

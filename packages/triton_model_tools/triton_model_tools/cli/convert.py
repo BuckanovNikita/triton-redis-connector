@@ -76,16 +76,22 @@ def build_parser(subparsers: SubParsers) -> None:
         help="Export models in FP16 precision (default: FP32 for ONNX, FP16 for TensorRT)",
     )
     convert_parser.add_argument(
-        "--dynamic-batching",
+        "--no-dynamic-batching",
         action="store_true",
         default=False,
-        help="Enable Triton dynamic batching",
+        help="Disable Triton dynamic batching (enabled by default)",
     )
     convert_parser.add_argument(
         "--max-batch-size",
         type=int,
         default=8,
         help="Maximum batch size for dynamic batching (default: 8)",
+    )
+    convert_parser.add_argument(
+        "--preferred-batch-sizes",
+        type=str,
+        default=None,
+        help="Comma-separated preferred batch sizes for dynamic batching (default: 1,2,4,8)",
     )
     convert_parser.add_argument(
         "--dali-ensemble",
@@ -209,6 +215,10 @@ def run(args: argparse.Namespace) -> None:
         args.export_format,
     )
 
+    preferred_batch_size: list[int] | None = None
+    if args.preferred_batch_sizes is not None:
+        preferred_batch_size = [int(x.strip()) for x in args.preferred_batch_sizes.split(",")]
+
     exported_dirs = convert_model(
         weights_path=weights_path,
         repository_root=repository_root,
@@ -218,8 +228,9 @@ def run(args: argparse.Namespace) -> None:
         fmt=args.export_format,
         half=args.half,
         end2end=end2end,
-        enable_dynamic_batching=args.dynamic_batching,
+        enable_dynamic_batching=not args.no_dynamic_batching,
         max_batch_size=args.max_batch_size,
+        preferred_batch_size=preferred_batch_size,
         trt_acceleration=args.trt_optimize,
     )
 

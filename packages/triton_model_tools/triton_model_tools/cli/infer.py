@@ -79,8 +79,8 @@ def build_parser(subparsers: SubParsers) -> None:
     infer_parser.add_argument(
         "--output-dir",
         type=Path,
-        default=None,
-        help="Directory to save detection txt files (optional)",
+        default=Path("e2e_results/infer"),
+        help="Directory to save detection txt files (default: e2e_results/infer/)",
     )
     infer_parser.set_defaults(func=run)
 

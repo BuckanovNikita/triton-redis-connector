@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import redis as redis_lib
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
+from tqdm import tqdm
 
 from triton_model_tools.benchmarks.stats import compute_statistics
 from triton_model_tools.inference.detection_io import collect_image_paths
@@ -63,7 +64,7 @@ def _push_images(
 ) -> dict[str, float]:
     """Push images to Redis and record push timestamps. Returns {image_name: push_time}."""
     push_times: dict[str, float] = {}
-    for image_path in image_paths:
+    for image_path in tqdm(image_paths, desc="Pushing images", unit="img"):
         image_bytes = image_path.read_bytes()
         push_times[image_path.name] = time.monotonic()
         redis_client.xadd(
@@ -160,7 +161,7 @@ def run_pipeline_benchmark(
             )
 
     latencies_ms: list[float] = []
-    for iteration in range(config.num_iterations):
+    for iteration in tqdm(range(config.num_iterations), desc="Iterations", unit="iter"):
         batch_start = time.monotonic()
         _push_images(redis_client, config.input_stream, image_paths, config.model_name)
         collect_times = _collect_with_timestamps(

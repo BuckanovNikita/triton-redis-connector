@@ -24,8 +24,9 @@ def convert_model(  # noqa: PLR0913
     half: bool = False,
     end2end: bool = False,
     export_kwargs: dict[str, Any] | None = None,
-    enable_dynamic_batching: bool = False,
+    enable_dynamic_batching: bool = True,
     max_batch_size: int = 8,
+    preferred_batch_size: list[int] | None = None,
     trt_acceleration: bool = False,
 ) -> list[Path]:
     """Convert a YOLO .pt model to Triton repository format.
@@ -42,6 +43,7 @@ def convert_model(  # noqa: PLR0913
         export_kwargs: Additional kwargs for ultralytics export.
         enable_dynamic_batching: Enable Triton dynamic batching.
         max_batch_size: Maximum batch size for dynamic batching.
+        preferred_batch_size: Preferred batch sizes for dynamic batching scheduler.
         trt_acceleration: Enable TensorRT execution accelerator for ONNX models.
 
     Returns:
@@ -91,5 +93,6 @@ def convert_model(  # noqa: PLR0913
         half=half,
         enable_dynamic_batching=enable_dynamic_batching,
         max_batch_size=max_batch_size,
+        preferred_batch_size=preferred_batch_size,
         trt_acceleration=trt_acceleration,
     )
