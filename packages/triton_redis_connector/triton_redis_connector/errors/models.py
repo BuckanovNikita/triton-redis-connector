@@ -9,6 +9,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict
 from typed_flow.protocols import Counter
+from typed_flow.protocols.metrics import TimeMetric  # noqa: TC002
 
 
 class InferenceError(BaseModel):
@@ -25,7 +26,7 @@ class InferenceError(BaseModel):
     error_type: str
     error_message: str
     retry_count: int
-    timestamp_ms: int
+    timestamp_ms: TimeMetric
 
 
 class PreprocessingError(BaseModel):
@@ -43,4 +44,4 @@ class PreprocessingError(BaseModel):
     decoder_type: str
     error_type: str
     error_message: str
-    timestamp_ms: int
+    timestamp_ms: TimeMetric

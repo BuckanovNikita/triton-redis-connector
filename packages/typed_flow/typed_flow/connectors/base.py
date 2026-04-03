@@ -2,7 +2,7 @@
 
 These protocols define the contract that Redis connectors must satisfy.
 They are internal to the connector layer -- user-facing code interacts
-with the execution variant wrappers (LiveRedisStreamSource, RedisStreamSink).
+with the execution variant wrappers (RedisThreadSource, RedisStreamSink).
 """
 
 from __future__ import annotations

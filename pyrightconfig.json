@@ -14,6 +14,7 @@
         "build",
         "dist",
         "packages/triton_model_tools/triton_model_tools/export/scripts",
+        "packages/triton_model_tools/triton_model_tools/export/dali.py",
         "packages/triton_model_tools/triton_model_tools/benchmarks/fiftyone_export.py",
         "packages/triton_model_tools/triton_model_tools/cli/compare_visual.py",
         "**/node_modules",

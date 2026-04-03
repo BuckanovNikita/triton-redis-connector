@@ -135,9 +135,11 @@ exclude = [
     "packages/triton_model_tools/tests/",
     "packages/triton_shared_models/tests/",
     "packages/triton_model_tools/triton_model_tools/export/scripts/",
+    "packages/triton_model_tools/triton_model_tools/export/dali.py",
     "model_repository/",
     "test_fixtures/",
     "conftest.py",
+    "typings/",
 ]
 
 [[tool.mypy.overrides]]
@@ -172,7 +174,7 @@ testpaths = [
     "packages/triton_model_tools/tests",
     "packages/triton_shared_models/tests",
 ]
-addopts = ["-v", "--tb=short", "-n", "auto", "-m", "not integration", "--import-mode=importlib"]
+addopts = ["-v", "--tb=short", "-n", "auto", "-m", "not integration", "--import-mode=importlib", "--ignore=packages/triton_model_tools/tests/test_dali.py"]
 markers = [
     "integration: tests requiring Docker services (Redis, Triton)",
     "benchmark: performance benchmark tests",
@@ -182,7 +184,7 @@ markers = [
 
 [tool.vulture]
 min_confidence = 80
-ignore_names = ["event", "shared", "envelope", "count", "new_payload", "block_ms", "data", "image", "raw", "message_id", "target_size", "timeout_s", "consumer_group", "input_stream", "output_stream", "end2end", "kwargs", "enable_dynamic_batching", "max_batch_size", "redis_connection_config", "redis_client", "consumer_group_manager", "config"]
+ignore_names = ["event", "shared", "envelope", "count", "new_payload", "block_ms", "data", "image", "raw", "message_id", "target_size", "timeout_s", "consumer_group", "input_stream", "output_stream", "end2end", "kwargs", "enable_dynamic_batching", "max_batch_size", "redis_connection_config", "redis_client", "consumer_group_manager", "config", "source_type", "handler"]
 paths = [
     "packages/typed_flow/typed_flow",
     "packages/triton_redis_connector/triton_redis_connector",

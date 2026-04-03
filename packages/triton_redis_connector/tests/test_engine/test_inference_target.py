@@ -12,7 +12,6 @@ from triton_redis_connector.engine.events import (
     TritonRequest,
 )
 from triton_redis_connector.engine.shipped_processors import ClientPreprocessorNode
-from typed_flow.protocols.messaging import BaseEvent
 
 
 class RoutedImageEvent(InferenceTarget, ImagePayload):
@@ -22,11 +21,6 @@ class RoutedImageEvent(InferenceTarget, ImagePayload):
 
 class PlainImageEvent(ImagePayload):
     model_config = ConfigDict(frozen=True)
-    camera_id: str = "cam01"
-
-
-class PlainEvent(BaseEvent):
-    model_config = ConfigDict(frozen=True, strict=True)
     camera_id: str = "cam01"
 
 
@@ -102,79 +96,3 @@ class TestInferenceTargetRouting:
 
         assert isinstance(result, TritonRequest)
         assert result.model_name == "yolo11s"
-
-
-class TestAutoRedisSource:
-    def test_subclass_extracts_event_model(self) -> None:
-        from typed_flow.connectors.redis_stream import AutoRedisSource
-
-        class MySource(AutoRedisSource[PlainEvent]): ...
-
-        assert MySource._event_model is PlainEvent
-
-    def test_subclass_without_type_param_raises(self) -> None:
-        import pytest
-        from typed_flow.connectors.redis_stream import AutoRedisSource
-
-        with pytest.raises(TypeError, match="must specify a concrete BaseModel type"):
-
-            class BadSource(AutoRedisSource): ...  # type: ignore[type-arg]
-
-    def test_produces_deserialized_event(self) -> None:
-        from unittest.mock import MagicMock
-
-        from typed_flow.config.schema import SourceConfig
-        from typed_flow.connectors.redis_stream import (
-            AutoRedisSource,
-            RedisStreamInputConnector,
-        )
-        from typed_flow.protocols import Envelope
-
-        class MySource(AutoRedisSource[PlainEvent]): ...
-
-        connector = MagicMock(spec=RedisStreamInputConnector)
-        config = SourceConfig(
-            stream_name="stream:test",
-            consumer_group="workers",
-            consumer_name="c1",
-            event_model="PlainEvent",
-        )
-
-        source = MySource(connector, config, name="test_auto")
-
-        envelope = Envelope(
-            payload=b"",
-            source_stream="stream:test",
-            message_id="1-0",
-            original_fields={"camera_id": "cam99"},
-        )
-        connector.read_new.return_value = [envelope]
-
-        result = source()
-        assert isinstance(result, PlainEvent)
-        assert result.camera_id == "cam99"
-        assert result.flow_meta.source_stream == "stream:test"
-
-    def test_returns_none_when_no_messages(self) -> None:
-        from unittest.mock import MagicMock
-
-        from typed_flow.config.schema import SourceConfig
-        from typed_flow.connectors.redis_stream import (
-            AutoRedisSource,
-            RedisStreamInputConnector,
-        )
-
-        class MySource(AutoRedisSource[PlainEvent]): ...
-
-        connector = MagicMock(spec=RedisStreamInputConnector)
-        config = SourceConfig(
-            stream_name="stream:test",
-            consumer_group="workers",
-            consumer_name="c1",
-            event_model="PlainEvent",
-        )
-        source = MySource(connector, config)
-
-        connector.read_new.return_value = []
-        result = source()
-        assert result is None

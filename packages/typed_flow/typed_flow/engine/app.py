@@ -92,19 +92,19 @@ class _NodeStats:
 
     __slots__ = (
         "_errors",
+        "_interval_ms",
         "_lock",
         "_max_event_age_ms",
         "_prev_errors",
         "_prev_processed",
         "_processed",
-        "_total_ms",
     )
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._processed: int = 0
         self._errors: int = 0
-        self._total_ms: float = 0.0
+        self._interval_ms: float = 0.0
         self._max_event_age_ms: float = 0.0
         self._prev_processed: int = 0
         self._prev_errors: int = 0
@@ -112,7 +112,7 @@ class _NodeStats:
     def record_call(self, elapsed_ms: float, event_age_ms: float | None = None) -> None:
         with self._lock:
             self._processed += 1
-            self._total_ms += elapsed_ms
+            self._interval_ms += elapsed_ms
             if event_age_ms is not None and event_age_ms > self._max_event_age_ms:
                 self._max_event_age_ms = event_age_ms
 
@@ -125,10 +125,11 @@ class _NodeStats:
         with self._lock:
             interval_processed = self._processed - self._prev_processed
             interval_errors = self._errors - self._prev_errors
-            avg_ms = self._total_ms / self._processed if self._processed > 0 else 0.0
+            avg_ms = self._interval_ms / interval_processed if interval_processed > 0 else 0.0
             max_age = self._max_event_age_ms
             self._prev_processed = self._processed
             self._prev_errors = self._errors
+            self._interval_ms = 0.0
             self._max_event_age_ms = 0.0
             return interval_processed, interval_errors, avg_ms, max_age
 
@@ -322,17 +323,20 @@ class Application:
             total_errors += errs
             if processed == 0 and errs == 0:
                 continue
-            age_part = f" max_age={max_age:.0f}ms" if max_age > 0 else ""
+            age_part = f" max_age={int(max_age)}ms" if max_age > 0 else ""
             logger.info(
-                "[STATS] {} | processed={} errors={} avg_ms={:.2f}{}",
+                "[STATS] {} | processed={} errors={} avg={}ms{}",
                 name,
                 processed,
                 errs,
-                avg_ms,
+                int(avg_ms),
                 age_part,
             )
+        full_queues = self._queue_bus.full_queues()
+        if full_queues:
+            logger.error("[STATS] FULL queues (backpressure): {}", full_queues)
         queue_depths = self._queue_bus.queue_depths()
-        active_queues = {k: v for k, v in queue_depths.items() if v > 0}
+        active_queues = {k: v for k, v in queue_depths.items() if v > 0 and k not in full_queues}
         if active_queues:
             logger.info("[STATS] queues: {}", active_queues)
         logger.info(
@@ -394,6 +398,8 @@ class Application:
                     result = cast("object", node.instance())
                     if result is not None:
                         self._handle_source_result(node, result, recorder, stats)
+                    else:
+                        time.sleep(0.001)
                 elif node.variant in SINK_VARIANTS:
                     event = self._read_from_input_queue(node, timeout=0.1)
                     if event is not None:

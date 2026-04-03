@@ -100,6 +100,10 @@ class QueueBus:
         """Return approximate current depth of each managed queue."""
         return {name: q.qsize() for name, q in self._queues.items()}
 
+    def full_queues(self) -> dict[str, int]:
+        """Return queues at maxsize capacity: {name: depth}."""
+        return {name: q.qsize() for name, q in self._queues.items() if q.maxsize > 0 and q.qsize() >= q.maxsize}
+
     def drop_counts(self) -> dict[str, int]:
         """Return cumulative drop count per queue name."""
         return dict(self._drop_counts)

@@ -18,6 +18,7 @@ from loguru import logger
 from pydantic import BaseModel
 from typed_flow.errors.models import ConnectorError
 from typed_flow.protocols import BaseThreadProcessor, BaseThreadSink
+from typed_flow.protocols.metrics import TimeMetric
 
 from triton_redis_connector.engine.events import (
     ImagePayload,
@@ -83,7 +84,7 @@ class ClientPreprocessorNode[TIn: ImagePayload](
                     decoder_type="filesystem",
                     error_type=type(exc).__name__,
                     error_message=str(exc),
-                    timestamp_ms=int(time.time() * 1000),
+                    timestamp_ms=TimeMetric.now(),
                 )
         else:
             return None
@@ -96,7 +97,7 @@ class ClientPreprocessorNode[TIn: ImagePayload](
                 decoder_type="decode",
                 error_type="DecodeError",
                 error_message=str(exc),
-                timestamp_ms=int(time.time() * 1000),
+                timestamp_ms=TimeMetric.now(),
             )
 
         tensor, _scale, _pad_offset = self._preprocessor.preprocess(decoded)
@@ -164,7 +165,7 @@ class InferenceNode(
                 error_type=type(exc).__name__,
                 error_message=str(exc),
                 retry_count=0,
-                timestamp_ms=int(time.time() * 1000),
+                timestamp_ms=TimeMetric.now(),
             )
 
         if result is None:
@@ -174,10 +175,10 @@ class InferenceNode(
                 error_type="NullResult",
                 error_message=f"Triton returned None for model {event.model_name}",
                 retry_count=0,
-                timestamp_ms=int(time.time() * 1000),
+                timestamp_ms=TimeMetric.now(),
             )
 
-        elapsed_ms = (time.monotonic() - start) * 1000.0
+        elapsed = time.monotonic() - start
         output_arrays: dict[str, np.ndarray[Any, np.dtype[np.float32]]] = {
             name: np.asarray(result.as_numpy(name), dtype=np.float32) for name in event.output_names
         }
@@ -187,7 +188,7 @@ class InferenceNode(
             model_name=event.model_name,
             model_version=event.model_version,
             outputs=output_arrays,
-            inference_time_ms=elapsed_ms,
+            inference_time_ms=TimeMetric.from_seconds(elapsed),
         )
 
 

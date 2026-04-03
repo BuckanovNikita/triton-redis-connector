@@ -15,7 +15,6 @@ import argparse
 import random
 import signal
 import sys
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -26,6 +25,7 @@ from typed_flow.connectors import RedisThreadSink, RedisThreadSource
 from typed_flow.engine.app import Application
 from typed_flow.errors.models import PipelineError
 from typed_flow.protocols import BaseThreadProcessor, BaseThreadSink
+from typed_flow.protocols.metrics import TimeMetric
 
 from reference_implementation.models import (
     EnrichedHumidity,
@@ -70,7 +70,7 @@ class EnrichProcessor(
     """Enriches any sensor reading with random fields."""
 
     def __call__(self, event: SensorReading) -> EnrichedReading:  # noqa: D102
-        now = time.time()
+        now = TimeMetric.now()
         score = random.random()  # noqa: S311
 
         match event:

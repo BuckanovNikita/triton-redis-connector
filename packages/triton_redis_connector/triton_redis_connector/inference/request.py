@@ -12,6 +12,7 @@ import numpy as np  # noqa: TC002 — pydantic needs runtime access for model_re
 import numpy.typing as npt  # noqa: TC002
 from pydantic import ConfigDict
 from typed_flow.protocols.messaging import BaseEvent
+from typed_flow.protocols.metrics import TimeMetric  # noqa: TC002
 
 from triton_redis_connector.engine.events import TritonRequest
 
@@ -30,7 +31,7 @@ class InferenceOutput(BaseEvent):
     model_name: str
     model_version: str
     outputs: dict[str, npt.NDArray[np.float32]]
-    inference_time_ms: float
+    inference_time_ms: TimeMetric
 
 
 InferenceOutput.model_rebuild()

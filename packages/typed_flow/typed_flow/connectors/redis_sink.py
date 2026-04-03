@@ -7,6 +7,9 @@ If the event has a flow_meta field (HasFlowMeta), it is stripped before writing.
 
 from __future__ import annotations
 
+import time
+
+from loguru import logger
 from pydantic import BaseModel
 from redis import Redis
 
@@ -14,6 +17,9 @@ from typed_flow.config.schema import RedisConnectionConfig, SinkConfig  # noqa: 
 from typed_flow.connectors.redis_stream import RedisStreamOutputConnector
 from typed_flow.protocols import BaseProcessSink, BaseThreadSink
 from typed_flow.protocols.messaging import HasFlowMeta
+
+_FLUSH_INTERVAL_S = 0.05
+_MAX_BATCH_SIZE = 64
 
 
 def _build_output_connector(
@@ -30,20 +36,19 @@ def _build_output_connector(
     return RedisStreamOutputConnector(client=client, config=sink_cfg)
 
 
-def _serialize_event(event: BaseModel, connector: RedisStreamOutputConnector) -> None:
-    """Serialize a BaseModel event and write to Redis.
-
-    Strips flow_meta if the event satisfies HasFlowMeta.
-    """
+def _serialize_to_dict(event: BaseModel) -> dict[str, bytes]:
+    """Serialize a BaseModel event to a dict of bytes for Redis, stripping flow_meta."""
     exclude: set[str] = {"flow_meta"} if isinstance(event, HasFlowMeta) else set()
-    data: dict[str, bytes] = {}
-    for key, value in event.model_dump(exclude=exclude).items():
-        data[key] = str(value).encode()
-    connector.write(data)
+    return {key: str(value).encode() for key, value in event.model_dump(exclude=exclude).items()}
 
 
 class RedisThreadSink[T: BaseModel](BaseThreadSink[T]):
-    """Thread sink that eagerly connects to Redis on construction."""
+    """Thread sink that buffers events and flushes via Redis pipelining.
+
+    Events are buffered until either ``_MAX_BATCH_SIZE`` events accumulate
+    or ``_FLUSH_INTERVAL_S`` elapses since the last flush, then written
+    to Redis in a single pipeline roundtrip.
+    """
 
     def __init__(
         self,
@@ -56,10 +61,24 @@ class RedisThreadSink[T: BaseModel](BaseThreadSink[T]):
         super().__init__()
         self._connector = _build_output_connector(redis, sink)
         self.name = name or f"redis_thread_sink_{sink.stream_name}"
+        self._buffer: list[dict[str, bytes]] = []
+        self._last_flush = time.monotonic()
 
     def __call__(self, event: T) -> None:
-        """Serialize and write event to Redis."""
-        _serialize_event(event, self._connector)
+        """Buffer event and flush when batch is full or interval elapsed."""
+        self._buffer.append(_serialize_to_dict(event))
+        now = time.monotonic()
+        if len(self._buffer) >= _MAX_BATCH_SIZE or now - self._last_flush >= _FLUSH_INTERVAL_S:
+            self._flush()
+
+    def _flush(self) -> None:
+        if not self._buffer:
+            return
+        batch = self._buffer
+        self._buffer = []
+        self._last_flush = time.monotonic()
+        count = self._connector.write_batch(batch)
+        logger.trace("Flushed {} events to Redis", count)
 
 
 class RedisProcessSink[T: BaseModel](BaseProcessSink[T]):
@@ -87,4 +106,8 @@ class RedisProcessSink[T: BaseModel](BaseProcessSink[T]):
         """Lazily initialize connector, then serialize and write."""
         if self._connector is None:
             self._connector = _build_output_connector(self._redis_cfg, self._sink_cfg)
-        _serialize_event(event, self._connector)
+        exclude: set[str] = {"flow_meta"} if isinstance(event, HasFlowMeta) else set()
+        data: dict[str, bytes] = {}
+        for key, value in event.model_dump(exclude=exclude).items():
+            data[key] = str(value).encode()
+        self._connector.write(data)

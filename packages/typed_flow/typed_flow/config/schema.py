@@ -37,6 +37,7 @@ class SinkConfig(BaseModel):
     stream_name: str = Field(min_length=1)
     maxlen: int | None = Field(default=10_000, ge=1)
     approximate_maxlen: bool = True
+    block_ms: int = Field(default=0, ge=0)
 
 
 class QueueConfig(BaseModel):

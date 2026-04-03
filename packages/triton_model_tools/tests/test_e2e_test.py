@@ -136,7 +136,7 @@ class TestConnectorE2ETestHarness:
                         {
                             b"image_name": b"test1.jpg",
                             b"model_name": b"yolo11s",
-                            b"inference_time_ms": b"15.5",
+                            b"inference_time_ms": b"15",
                             b"detections": detections_json,
                         },
                     ),
@@ -153,7 +153,7 @@ class TestConnectorE2ETestHarness:
         assert isinstance(results[0], ImageDetectionResult)
         assert results[0].image_path == "test1.jpg"
         assert results[0].model_name == "yolo11s"
-        assert results[0].inference_time_ms == pytest.approx(15.5)
+        assert results[0].inference_time_ms == 15
         assert len(results[0].detections) == 1
         assert results[0].detections[0].confidence == pytest.approx(0.9)
 

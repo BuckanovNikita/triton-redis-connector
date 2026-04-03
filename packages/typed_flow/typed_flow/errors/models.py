@@ -9,9 +9,9 @@ PipelineError will receive errors from every node in the graph.
 
 from __future__ import annotations
 
-import time
-
 from pydantic import BaseModel, ConfigDict
+
+from typed_flow.protocols.metrics import TimeMetric
 
 
 class PipelineError(BaseModel):
@@ -26,7 +26,7 @@ class PipelineError(BaseModel):
     node_name: str
     error_type: str
     error_message: str
-    timestamp_ms: int
+    timestamp_ms: TimeMetric
 
 
 class ConnectorError(PipelineError):
@@ -61,6 +61,6 @@ def make_processing_error(
         node_name=node_name,
         error_type=type(exc).__name__,
         error_message=str(exc),
-        timestamp_ms=int(time.time() * 1000),
+        timestamp_ms=TimeMetric.now(),
         event_type=type(event).__name__,
     )

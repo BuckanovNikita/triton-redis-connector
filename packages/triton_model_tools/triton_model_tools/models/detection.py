@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 from triton_shared_models.detection import Detection
+from typed_flow.protocols.metrics import TimeMetric
 
 __all__ = ["Detection", "FolderInferenceResult", "ImageDetectionResult"]
 
@@ -16,7 +17,7 @@ class ImageDetectionResult(BaseModel):
     image_path: str
     model_name: str
     detections: list[Detection]
-    inference_time_ms: float = Field(ge=0.0)
+    inference_time_ms: TimeMetric = TimeMetric(0)
 
 
 class FolderInferenceResult(BaseModel):

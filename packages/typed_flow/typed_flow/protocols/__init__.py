@@ -44,6 +44,7 @@ from typed_flow.protocols.metrics import (
     Gauge,
     GroupBy,
     MetricRecorder,
+    TimeMetric,
 )
 
 __all__ = [
@@ -76,5 +77,6 @@ __all__ = [
     "ThreadProcessor",
     "ThreadSink",
     "ThreadSource",
+    "TimeMetric",
     "WrappedNode",
 ]

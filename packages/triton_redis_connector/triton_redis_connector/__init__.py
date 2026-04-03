@@ -9,7 +9,6 @@ from __future__ import annotations
 from typed_flow import (
     AppConfig,
     Application,
-    AutoRedisSource,
     BaseEvent,
     BaseProcessPoolProcessor,
     BaseProcessSink,
@@ -72,7 +71,6 @@ from triton_redis_connector.preprocessing.protocols import (
 __all__ = [
     "AppConfig",
     "Application",
-    "AutoRedisSource",
     "BaseEvent",
     "BaseProcessPoolProcessor",
     "BaseProcessSink",

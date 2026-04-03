@@ -6,7 +6,6 @@ Public API re-exports for the typed-flow package.
 from __future__ import annotations
 
 from typed_flow.config.schema import AppConfig
-from typed_flow.connectors.redis_stream import AutoRedisSource
 from typed_flow.engine.app import Application
 from typed_flow.engine.metric_aggregator import MetricAggregator, Tracked
 from typed_flow.engine.registry import (
@@ -39,13 +38,13 @@ from typed_flow.protocols import (
     ThreadProcessor,
     ThreadSink,
     ThreadSource,
+    TimeMetric,
     WrappedNode,
 )
 
 __all__ = [
     "AppConfig",
     "Application",
-    "AutoRedisSource",
     "BaseEvent",
     "BaseProcessPoolProcessor",
     "BaseProcessSink",
@@ -76,6 +75,7 @@ __all__ = [
     "ThreadProcessor",
     "ThreadSink",
     "ThreadSource",
+    "TimeMetric",
     "Tracked",
     "WrappedNode",
 ]

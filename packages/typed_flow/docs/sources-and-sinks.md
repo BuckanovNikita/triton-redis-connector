@@ -46,7 +46,7 @@ source = CameraSource(redis=redis_cfg, source=source_cfg)
 
 1. Источник создаёт `RedisStreamInputConnector` (обёртка над `XREADGROUP`)
 2. Каждый вызов `__call__` читает одно сообщение из Redis Stream
-3. Десериализует в `PipelineEvent[T, Unprocessed]` через Pydantic
+3. Десериализует в модель `T` через Pydantic и заполняет `flow_meta` (если `T` удовлетворяет `HasFlowMeta`)
 4. При ошибке валидации возвращает `ConnectorError` (не выбрасывает исключение)
 
 ### Thread vs Process
@@ -62,8 +62,8 @@ source = CameraSource(redis=redis_cfg, source=source_cfg)
 
 | Класс | Вариант исполнения |
 |-------|--------------------|
-| `RedisThreadSink[TCtx, TResult]` | Выделенный поток |
-| `RedisProcessSink[TCtx, TResult]` | Отдельный OS-процесс |
+| `RedisThreadSink[T]` | Выделенный поток |
+| `RedisProcessSink[T]` | Отдельный OS-процесс |
 
 ### Использование
 
@@ -76,18 +76,17 @@ sink_cfg = SinkConfig(
     maxlen=100_000,
 )
 
-sink = RedisThreadSink[FrameEvent, DetectionResult](redis=redis_cfg, sink=sink_cfg)
+sink = RedisThreadSink[DetectionResult](redis=redis_cfg, sink=sink_cfg)
 
 # Или процессный вариант
-sink = RedisProcessSink[FrameEvent, DetectionResult](redis=redis_cfg, sink=sink_cfg)
+sink = RedisProcessSink[DetectionResult](redis=redis_cfg, sink=sink_cfg)
 ```
 
 ### Сериализация
 
 Приёмник записывает в Redis Stream:
-- Все поля `context` (`TCtx`) как отдельные ключи хеша
-- `payload` (`TResult`) как JSON в поле `result`
-- Метаданные фреймворка (`fw`) **не записываются**
+- Все поля события `T` как отдельные ключи хеша
+- Поле `flow_meta` **исключается** из сериализации (если событие удовлетворяет `HasFlowMeta`)
 
 ---
 
@@ -97,22 +96,25 @@ sink = RedisProcessSink[FrameEvent, DetectionResult](redis=redis_cfg, sink=sink_
 
 ```python
 from typed_flow.protocols import BaseThreadSource
-from typed_flow.engine.events import PipelineEvent, Unprocessed
+from typed_flow.protocols.messaging import BaseEvent
 
-class FileSource(BaseThreadSource[PipelineEvent[MyEvent, Unprocessed]]):
+
+class MyEvent(BaseEvent):
+    data: str
+
+class FileSource(BaseThreadSource[MyEvent]):
     def __init__(self, path: str) -> None:
         super().__init__()
         self._lines = open(path).readlines()
         self._index = 0
         self.name = "file_source"
 
-    def __call__(self) -> PipelineEvent[MyEvent, Unprocessed] | None:
+    def __call__(self) -> MyEvent | None:
         if self._index >= len(self._lines):
             return None
         line = self._lines[self._index]
         self._index += 1
-        event = MyEvent.model_validate_json(line)
-        return PipelineEvent(context=event, payload=Unprocessed())
+        return MyEvent.model_validate_json(line)
 ```
 
 Требования:
@@ -123,11 +125,13 @@ class FileSource(BaseThreadSource[PipelineEvent[MyEvent, Unprocessed]]):
 ## Кастомные приёмники
 
 ```python
+from loguru import logger
 from typed_flow.protocols import BaseThreadSink
 
-class LogSink(BaseThreadSink[PipelineEvent[MyEvent, MyResult]]):
-    def __call__(self, event: PipelineEvent[MyEvent, MyResult]) -> None:
-        logger.info("Result: {}", event.payload)
+
+class LogSink(BaseThreadSink[MyResult]):
+    def __call__(self, event: MyResult) -> None:
+        logger.info("Result: {}", event)
 ```
 
 ---
@@ -138,6 +142,6 @@ class LogSink(BaseThreadSink[PipelineEvent[MyEvent, MyResult]]):
 
 - `AutoRedisSource[T]` — требует ручного создания `RedisStreamInputConnector`
 - `LiveRedisStreamSource[T]` — принимает явный `event_model` параметр
-- `TypedRedisStreamSink[TCtx, TResult]` — требует ручного создания `RedisStreamOutputConnector`
+- `TypedRedisStreamSink[T]` — требует ручного создания `RedisStreamOutputConnector`
 
 Рекомендуется использовать `RedisThreadSource` / `RedisThreadSink` вместо них.

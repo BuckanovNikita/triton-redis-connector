@@ -15,6 +15,7 @@ from triton_shared_models.classification import ClassificationPrediction  # noqa
 from triton_shared_models.detection import Detection  # noqa: TC002
 from typed_flow.protocols import Counter, Gauge
 from typed_flow.protocols.messaging import BaseEvent, FrameworkMeta
+from typed_flow.protocols.metrics import TimeMetric  # noqa: TC002
 
 
 class InferenceTarget(BaseModel):
@@ -55,7 +56,7 @@ class DetectionResult(BaseEvent):
 
     detections: tuple[Detection, ...]
     model_name: str
-    inference_time_ms: Annotated[float, Gauge("inference_time_ms")]
+    inference_time_ms: Annotated[TimeMetric, Gauge("inference_time_ms")]
 
 
 class ClassificationResult(BaseEvent):
@@ -65,7 +66,7 @@ class ClassificationResult(BaseEvent):
 
     predictions: tuple[ClassificationPrediction, ...]
     model_name: str
-    inference_time_ms: Annotated[float, Gauge("classification_inference_time_ms")]
+    inference_time_ms: Annotated[TimeMetric, Gauge("classification_inference_time_ms")]
 
 
 class TritonRequest(BaseEvent):

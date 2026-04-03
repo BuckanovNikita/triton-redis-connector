@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import cv2
 from loguru import logger
+from typed_flow.protocols.metrics import TimeMetric
 
 from triton_model_tools.models.detection import Detection, ImageDetectionResult
 
@@ -61,7 +62,7 @@ def load_detections_from_txt(
         image_path=image_path,
         model_name=model_name,
         detections=detections,
-        inference_time_ms=0.0,
+        inference_time_ms=TimeMetric(0),
     )
 
 

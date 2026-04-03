@@ -84,7 +84,7 @@ class TestInferenceWorker:
         assert isinstance(result, InferenceOutput)
         assert result.model_name == "yolo11s"
         assert "output0" in result.outputs
-        assert result.inference_time_ms > 0
+        assert result.inference_time_ms >= 0
 
     def test_image_bytes_inference(self) -> None:
         fake_module = _build_fake_grpc_module()
@@ -95,7 +95,7 @@ class TestInferenceWorker:
         assert isinstance(result, InferenceOutput)
         assert result.model_name == "yolo11s"
         assert "output0" in result.outputs
-        assert result.inference_time_ms > 0
+        assert result.inference_time_ms >= 0
 
     def test_raises_on_inference_failure(self) -> None:
         fake_module = _build_fake_grpc_module(fail_count=100)

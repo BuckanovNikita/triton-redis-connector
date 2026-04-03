@@ -7,14 +7,14 @@ Concurrency wrapping is handled by framework wrappers at assembly time.
 
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING, cast
 
 from pydantic import BaseModel, ValidationError
 
 from typed_flow.errors.models import ConnectorError
-from typed_flow.protocols import BaseThreadSink, BaseThreadSource, Envelope
+from typed_flow.protocols import Envelope
 from typed_flow.protocols.messaging import FrameworkMeta, HasFlowMeta
+from typed_flow.protocols.metrics import TimeMetric
 
 if TYPE_CHECKING:
     from redis import Redis
@@ -73,7 +73,8 @@ class RedisStreamOutputConnector:
     """Writes messages to a Redis Stream via XADD.
 
     Implements OutputConnectorProtocol. Applies maxlen trimming
-    as configured.
+    as configured. Single writes go directly; batch writes use
+    Redis pipelining for throughput.
     """
 
     def __init__(self, client: Redis[bytes], config: SinkConfig) -> None:
@@ -93,6 +94,19 @@ class RedisStreamOutputConnector:
             ),
         )
         return result.decode()
+
+    def write_batch(self, batch: list[dict[str, bytes]]) -> int:
+        """Write multiple messages in a single Redis pipeline roundtrip."""
+        pipe = self._client.pipeline(transaction=False)
+        for data in batch:
+            pipe.xadd(
+                name=self._config.stream_name,
+                fields=data,
+                maxlen=self._config.maxlen,
+                approximate=self._config.approximate_maxlen,
+            )
+        pipe.execute()
+        return len(batch)
 
 
 class RedisStreamSink:
@@ -139,7 +153,7 @@ def deserialize_envelope[T: BaseModel](
             message_id=envelope.message_id,
             error_type=type(exc).__name__,
             error_message=str(exc),
-            timestamp_ms=int(time.time() * 1000),
+            timestamp_ms=TimeMetric.now(),
         )
     fw = FrameworkMeta(
         source_stream=envelope.source_stream,
@@ -149,111 +163,3 @@ def deserialize_envelope[T: BaseModel](
     if isinstance(event, HasFlowMeta):
         return event.model_copy(update={"flow_meta": fw})
     return event
-
-
-class LiveRedisStreamSource[T: BaseModel](BaseThreadSource[T | ConnectorError]):
-    """Typed thread source that reads live (new) messages from a Redis Stream.
-
-    Always reads from the latest cursor (``>``). Deserializes raw bytes into
-    user model ``T`` and populates ``flow_meta`` on the result.
-    On deserialization failure returns ConnectorError.
-    """
-
-    def __init__(
-        self,
-        connector: RedisStreamInputConnector,
-        config: SourceConfig,
-        event_model: type[T],
-        *,
-        name: str = "",
-    ) -> None:
-        """Initialize live source with connector, config, and event model type."""
-        super().__init__()
-        self._connector = connector
-        self._config = config
-        self._event_model = event_model
-        self.name = name or f"live_source_{config.stream_name}"
-
-    def __call__(self) -> T | ConnectorError | None:
-        """Read the next live message, deserialize, and return."""
-        results = self._connector.read_new(count=1, block_ms=self._config.block_ms)
-        if not results:
-            return None
-        return deserialize_envelope(results[0], self._event_model, self.name, priority=0)
-
-
-class AutoRedisSource[T: BaseModel](BaseThreadSource[T | ConnectorError]):
-    """Redis stream source derived from config and event type annotation.
-
-    Users subclass with a type annotation only::
-
-        class MySource(AutoRedisSource[MyEvent]): ...
-
-    The event model ``T`` is extracted from the generic parameter at class
-    creation time via ``__orig_bases__``. Stream configuration comes from
-    the provided ``SourceConfig``.
-    """
-
-    _event_model: type[T]
-
-    def __init_subclass__(cls, **kwargs: object) -> None:  # noqa: D105
-        super().__init_subclass__(**kwargs)
-        for base in getattr(cls, "__orig_bases__", ()):
-            origin = getattr(base, "__origin__", None)
-            if origin is AutoRedisSource:
-                args = getattr(base, "__args__", ())
-                if args and isinstance(args[0], type):
-                    cls._event_model = args[0]
-                    return
-        msg = (
-            f"{cls.__name__} must specify a concrete BaseModel type parameter, "
-            f"e.g. class {cls.__name__}(AutoRedisSource[MyEvent]): ..."
-        )
-        raise TypeError(msg)
-
-    def __init__(
-        self,
-        connector: RedisStreamInputConnector,
-        config: SourceConfig,
-        *,
-        name: str = "",
-    ) -> None:
-        """Initialize from connector and config; event model is inferred from generic param."""
-        super().__init__()
-        self._connector = connector
-        self._config = config
-        self.name = name or f"auto_source_{config.stream_name}"
-
-    def __call__(self) -> T | ConnectorError | None:
-        """Read the next message, deserialize into ``T``, and return."""
-        results = self._connector.read_new(count=1, block_ms=self._config.block_ms)
-        if not results:
-            return None
-        return deserialize_envelope(results[0], self._event_model, self.name, priority=0)
-
-
-class TypedRedisStreamSink[T: BaseModel](BaseThreadSink[T]):
-    """Typed sink that serializes a BaseModel event to Redis Stream output.
-
-    If the event has a ``flow_meta`` field (satisfies HasFlowMeta), it is
-    excluded from serialization. All other fields are written to Redis.
-    """
-
-    def __init__(
-        self,
-        output_connector: RedisStreamOutputConnector,
-        *,
-        name: str = "",
-    ) -> None:
-        """Initialize typed sink with an output connector."""
-        super().__init__()
-        self._output = output_connector
-        self.name = name or "typed_sink"
-
-    def __call__(self, event: T) -> None:
-        """Serialize event and write to Redis, stripping flow_meta if present."""
-        exclude: set[str] = {"flow_meta"} if isinstance(event, HasFlowMeta) else set()
-        data: dict[str, bytes] = {}
-        for key, value in event.model_dump(exclude=exclude).items():
-            data[key] = str(value).encode()
-        self._output.write(data)

@@ -10,6 +10,7 @@ from typing import Annotated, ClassVar
 
 from typed_flow.protocols import Counter, Gauge, GroupBy
 from typed_flow.protocols.messaging import BaseEvent
+from typed_flow.protocols.metrics import TimeMetric  # noqa: TC002
 
 
 class TemperatureReading(BaseEvent):
@@ -63,7 +64,7 @@ class EnrichedTemperature(BaseEvent):
     location: str
     sensor_source: Annotated[str, GroupBy("events_by_source", window_s=60)]
     random_score: Annotated[float, Gauge("random_score")]
-    processed_at: float
+    processed_at: TimeMetric
 
 
 class EnrichedHumidity(BaseEvent):
@@ -76,7 +77,7 @@ class EnrichedHumidity(BaseEvent):
     zone: str
     sensor_source: Annotated[str, GroupBy("events_by_source", window_s=60)]
     random_score: Annotated[float, Gauge("random_score")]
-    processed_at: float
+    processed_at: TimeMetric
 
 
 class EnrichedPressure(BaseEvent):
@@ -89,7 +90,7 @@ class EnrichedPressure(BaseEvent):
     altitude_m: float
     sensor_source: Annotated[str, GroupBy("events_by_source", window_s=60)]
     random_score: Annotated[float, Gauge("random_score")]
-    processed_at: float
+    processed_at: TimeMetric
 
 
 class EnrichedWind(BaseEvent):
@@ -103,7 +104,7 @@ class EnrichedWind(BaseEvent):
     gust_mps: float
     sensor_source: Annotated[str, GroupBy("events_by_source", window_s=60)]
     random_score: Annotated[float, Gauge("random_score")]
-    processed_at: float
+    processed_at: TimeMetric
 
 
 SensorReading = TemperatureReading | HumidityReading | PressureReading | WindReading

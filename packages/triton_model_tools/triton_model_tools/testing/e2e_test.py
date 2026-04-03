@@ -11,6 +11,7 @@ import redis as redis_lib
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from tqdm import tqdm
+from typed_flow.protocols.metrics import TimeMetric
 
 from triton_model_tools.inference.detection_io import collect_image_paths
 from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
@@ -201,7 +202,7 @@ class ConnectorE2ETestHarness:
             image_path=image_name,
             model_name=model_name,
             detections=detections,
-            inference_time_ms=inference_time_ms,
+            inference_time_ms=TimeMetric(inference_time_ms),
         )
 
     def _parse_legacy_format(
@@ -229,7 +230,7 @@ class ConnectorE2ETestHarness:
             image_path=image_name,
             model_name=model_name,
             detections=detections,
-            inference_time_ms=inference_time_ms,
+            inference_time_ms=TimeMetric(inference_time_ms),
         )
 
     def run_through_connector(self, image_dir: Path) -> FolderInferenceResult:

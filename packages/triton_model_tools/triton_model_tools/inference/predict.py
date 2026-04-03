@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typed_flow.protocols.metrics import TimeMetric
 from ultralytics import YOLO  # type: ignore[attr-defined]
 
 from triton_model_tools.inference.detection_io import collect_image_paths, save_detections_to_txt
@@ -106,7 +107,7 @@ def run_ultralytics_predict(
             image_path=image_path.stem,
             model_name=config.model_path,
             detections=detections,
-            inference_time_ms=elapsed_ms,
+            inference_time_ms=TimeMetric(elapsed_ms),
         )
         results_list.append(img_result)
 

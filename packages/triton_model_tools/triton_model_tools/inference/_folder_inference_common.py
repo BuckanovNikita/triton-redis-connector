@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 from tqdm import tqdm
+from typed_flow.protocols.metrics import TimeMetric
 
 from triton_model_tools.inference.detection_io import load_image
 from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
@@ -76,7 +77,7 @@ def run_image_loop(  # noqa: PLR0913
                 image_path=str(image_path),
                 model_name=model_name,
                 detections=detections,
-                inference_time_ms=img_time_ms,
+                inference_time_ms=TimeMetric(img_time_ms),
             ),
         )
         logger.info(

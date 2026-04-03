@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dali = ["nvidia-dali-cuda120>=1.35.0"]
+dali = ["nvidia-dali-cuda130>=2.0.0"]
 
 [tool.uv.sources]
 triton-shared-models = { workspace = true }
