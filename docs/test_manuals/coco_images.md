@@ -2,13 +2,7 @@
 
 Two approaches to get the COCO val2017 dataset (5000 images) for model benchmarking.
 
-## Approach 1: Using the built-in CLI command (recommended)
-
-```bash
-uv run triton-model-tools download-coco --output-dir benchmarks/data/coco_val2017
-```
-
-## Approach 2: Using FiftyOne (for development)
+## Approach 1: Using FiftyOne (for development)
 
 ```bash
 pip install fiftyone
@@ -28,7 +22,7 @@ Copy them to your benchmark directory:
 cp -r ~/fiftyone/coco-2017/validation/data/* benchmarks/data/coco_val2017/
 ```
 
-## Approach 3: Direct download
+## Approach 2: Direct download (recommended)
 
 ```bash
 mkdir -p benchmarks/data

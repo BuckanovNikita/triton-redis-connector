@@ -114,7 +114,7 @@ packages/
       inference/                        — Triton gRPC client, pre/postprocessing, YoloPostProcessorBridge
       testing/                          — E2E test harness (Redis pipeline integration)
       benchmarks/                       — performance measurement, comparison, dataset tools
-      cli/                              — CLI subcommands (13 commands)
+      cli/                              — CLI subcommands (7 commands)
     tests/                              — tests (flat, not mirroring subpackage structure)
 ```
 
@@ -128,7 +128,7 @@ triton_model_tools -> triton_redis_connector -> triton_shared_models (leaf)
 
 **connector-layers** (triton_redis_connector internal):
 ```
-connectors | inference | preprocessing | metrics | routers -> engine -> config | errors -> protocols (leaf)
+connectors | inference | preprocessing | metrics -> engine -> config | errors -> protocols (leaf)
 ```
 
 **model-tools-layers** (triton_model_tools internal):
@@ -145,7 +145,7 @@ Modules within a `|` group are siblings at the same layer and must NOT cross-imp
 
 ### Domain Event Model
 
-All domain events inherit from `Event` (in `engine/events.py`), which carries `fw: FrameworkMeta` for source_stream and message_id. The `fw` field is set by `LiveRedisStreamSource` and stripped by `TypedRedisStreamSink` before writing to output.
+All domain events inherit from `Event` (in `engine/events.py`), which carries `fw: FrameworkMeta` for source_stream and message_id. The `fw` field is set by `LiveRedisStreamSource` and stripped by sinks before writing to output.
 
 `PipelineEvent[TCtx, TPayload]` is a typed composition of user context (an `Event` subclass) and a processing payload. Framework routes by exact generic match. This allows the original user event to travel alongside processing stages (preprocessing, inference, postprocessing) without being lost.
 
@@ -209,18 +209,12 @@ Run via `uv run triton-model-tools <command>`:
 | Command | Description |
 |---|---|
 | `convert` | Convert YOLO .pt to Triton format (ONNX/TensorRT) |
-| `infer` | Run YOLO inference on images via Triton |
-| `local-infer` | Local ONNX inference without Triton |
+| `infer` | Run YOLO inference on images via Triton (--local for ONNX) |
 | `predict` | Run ultralytics YOLO prediction, save txt results |
-| `benchmark` | Inference benchmark via Triton |
+| `benchmark` | Inference benchmark via Triton (--pipeline for E2E) |
 | `e2e-test` | E2E: push images to Redis, process via Triton, collect results |
-| `pipeline-predict` | Run images through Redis pipeline, save detection results |
-| `pipeline-benchmark` | Measure E2E Redis pipeline performance |
 | `compare-folders` | Compare detection results from two folders |
 | `compare-visual` | Visual drift comparison via FiftyOne |
-| `populate-stream` | Populate Redis Stream with test images |
-| `validate` | Validate Triton model repository structure and config.pbtxt |
-| `download-coco` | Download COCO val2017 for benchmarking |
 
 ### Infrastructure (.devcontainer/)
 

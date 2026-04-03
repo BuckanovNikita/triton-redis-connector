@@ -23,7 +23,7 @@ Four contracts enforced via `uv run lint-imports` (defined in root `pyproject.to
 Internal layer hierarchy of `triton_redis_connector`:
 
 ```
-connectors | inference | preprocessing | metrics | routers            <- domain siblings
+connectors | inference | preprocessing | metrics                      <- domain siblings
 engine                                                                <- orchestration
 config | errors                                                       <- shared
 protocols                                                             <- leaf
@@ -236,16 +236,6 @@ These are pure infrastructure parameters. The actual `event_model` type and `pos
 When `decoder: dali`, `build_application` sends raw image bytes to Triton for server-side decoding and preprocessing via a DALI ensemble pipeline. Client-side decoders (`opencv`, `turbojpeg`) read the file, decode, letterbox, and send the preprocessed tensor.
 
 Configured via `PreprocessingConfig.decoder` (default: `OPENCV`).
-
-## Per-Model Output Routing
-
-`OutputStreamRouter` (`connectors/output_router.py`) maps model names to output Redis streams.
-
-Configuration via `OutputRoutingConfig`:
-- `model_streams: dict[str, str]` -- explicit model-to-stream mapping
-- `default_stream: str | None` -- fallback for unmapped models
-
-The router lazily creates `RedisStreamOutputConnector` instances per stream. `validate_routing()` checks at startup that all known models are routable.
 
 ## TensorRT Acceleration
 
