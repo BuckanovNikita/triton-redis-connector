@@ -11,15 +11,6 @@ from triton_shared_models.preprocessing import (
     YOLO_NORMALIZE_DIVISOR,
     LetterBoxPreprocessor,
 )
-from triton_shared_models.triton_config import (
-    DynamicBatchingConfig,
-    EnsembleStep,
-    EnsembleStepMapping,
-    ModelWarmupConfig,
-    OptimizationConfig,
-    TritonModelConfig,
-    WarmupInputSpec,
-)
 from triton_shared_models.triton_types import (
     EXPORT_FORMAT_TO_FILENAME,
     EXPORT_FORMAT_TO_PLATFORM,
@@ -37,17 +28,10 @@ __all__ = [
     "CenterCropPreprocessor",
     "ClassificationPrediction",
     "Detection",
-    "DynamicBatchingConfig",
-    "EnsembleStep",
-    "EnsembleStepMapping",
     "ExportFormat",
     "LetterBoxPreprocessor",
-    "ModelWarmupConfig",
-    "OptimizationConfig",
     "TritonDataType",
     "TritonInstanceKind",
-    "TritonModelConfig",
     "TritonTensorSpec",
-    "WarmupInputSpec",
     "nms",
 ]

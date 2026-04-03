@@ -5122,7 +5122,6 @@ name = "triton-shared-models"
 version = "0.1.0"
 source = { editable = "packages/triton_shared_models" }
 dependencies = [
-    { name = "jinja2" },
     { name = "loguru" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-26-02' or extra != 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
@@ -5137,7 +5136,6 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "jinja2", specifier = ">=3.1.6,<4.0.0" },
     { name = "loguru", specifier = ">=0.7.3,<1.0.0" },
     { name = "numpy", specifier = ">=1.26.0,<3.0.0" },
     { name = "opencv-python-headless", specifier = ">=4.10.0,<5.0.0" },

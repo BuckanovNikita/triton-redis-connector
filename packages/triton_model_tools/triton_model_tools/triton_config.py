@@ -6,7 +6,6 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel
-
 from triton_shared_models.triton_types import (
     TritonDataType,
     TritonInstanceKind,

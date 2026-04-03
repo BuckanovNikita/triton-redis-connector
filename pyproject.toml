@@ -281,6 +281,7 @@ layers = [
     "triton_model_tools.testing",
     "triton_model_tools.inference | triton_model_tools.export",
     "triton_model_tools.models",
+    "triton_model_tools.triton_config",
 ]
 
 [tool.coverage.run]

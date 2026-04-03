@@ -564,7 +564,7 @@ Import directly — it must NOT import from either consumer package.
 ```python
 from triton_shared_models.preprocessing import LetterBoxPreprocessor, LETTERBOX_PAD_VALUE
 from triton_shared_models.triton_types import TritonDataType, ExportFormat, TritonTensorSpec
-from triton_shared_models.triton_config import TritonModelConfig, DynamicBatchingConfig
+from triton_model_tools.triton_config import TritonModelConfig, DynamicBatchingConfig
 ```
 
 `LetterBoxPreprocessor` has constructor-only API:

@@ -8,7 +8,7 @@ import time
 from typing import TYPE_CHECKING
 
 import pytest
-from triton_shared_models.triton_config import (
+from triton_model_tools.triton_config import (
     DynamicBatchingConfig,
     TritonModelConfig,
 )

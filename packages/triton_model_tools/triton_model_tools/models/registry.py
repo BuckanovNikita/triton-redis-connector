@@ -9,15 +9,6 @@ from typing import Any
 import yaml
 from loguru import logger
 from pydantic import BaseModel, field_validator
-from triton_shared_models.triton_config import (
-    DynamicBatchingConfig,
-    EnsembleStep,
-    EnsembleStepMapping,
-    ModelWarmupConfig,
-    OptimizationConfig,
-    TritonModelConfig,
-    WarmupInputSpec,
-)
 from triton_shared_models.triton_types import (
     EXPORT_FORMAT_TO_FILENAME,
     EXPORT_FORMAT_TO_PLATFORM,
@@ -25,6 +16,16 @@ from triton_shared_models.triton_types import (
     TritonDataType,
     TritonInstanceKind,
     TritonTensorSpec,
+)
+
+from triton_model_tools.triton_config import (
+    DynamicBatchingConfig,
+    EnsembleStep,
+    EnsembleStepMapping,
+    ModelWarmupConfig,
+    OptimizationConfig,
+    TritonModelConfig,
+    WarmupInputSpec,
 )
 
 __all__ = [
