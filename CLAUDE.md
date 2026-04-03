@@ -282,18 +282,22 @@ uv run pre-commit run --all-files
 
 ## Claude Code Hooks
 
-Automated hooks in `.claude/hooks/` enforce project conventions during Claude Code sessions.
+Automated hooks in `.claude/hooks/` enforce conventions and automate workflow.
 
 | Hook | Event | What it does |
 |------|-------|-------------|
 | `block-bare-tools.sh` | PreToolUse (Bash) | Blocks bare `python`/`pytest`/`ruff`/`mypy`/`.venv/bin/*` — must use `uv run` |
+| `block-no-verify.sh` | PreToolUse (git commit --no-verify) | Blocks skipping pre-commit hooks |
 | `validate-commit-msg.sh` | PreToolUse (git commit) | Blocks non-conventional commit messages |
+| `pre-commit-guard.sh` | PreToolUse (git commit) | Runs `uv run pre-commit run --all-files` before every commit |
+| `auto-ruff-format.sh` | PostToolUse (Write/Edit) | Auto-runs `ruff format` + `ruff check --fix` on saved `.py` files |
+| `inject-session-context.sh` | UserPromptSubmit (once) | Injects TRITON_VERSION, git branch, dirty state at session start |
 | `setup-worktree.sh` | WorktreeCreate | Copies `.env`, runs `uv sync` in new worktrees |
 
 ## Git / Commits
 
 - [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`
-- Always run `uv run pre-commit run --all-files` before committing
+- Pre-commit runs automatically before every commit (hook enforced)
 - SSH for push: `git@github.com:<org>/<repo>.git`
 - For multi-line commit messages, use unique temp files (`/tmp/COMMIT_MSG_<short_hash>`), then `git commit -F <path>`, then delete
 

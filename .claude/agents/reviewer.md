@@ -18,27 +18,16 @@ identify issues and provide specific, actionable feedback with file:line referen
 
 ## Review Workflow
 
-### Step 1: Run All Quality Checks
+### Step 1: Run Quality Checks
+
+Ruff format/fix runs automatically on every file save (hook). Pre-commit runs automatically before every commit (hook). For a full review, run manually:
 
 ```bash
 uv run pre-commit run --all-files
+uv run pytest --cov --cov-report=term-missing
 ```
 
-This runs in order: ruff format, ruff check, mypy, pyright, import-linter, vulture, pytest, uv lock.
-If any step fails, report the specific failure before reviewing code manually.
-
-### Step 2: Individual Tool Deep-Dive (when pre-commit passes)
-
-```bash
-uv run ruff check .                        # Lint
-uv run mypy .                              # Type check (mypy)
-uv run pyright                             # Type check (pyright)
-uv run lint-imports                        # Architecture layer contracts
-uv run vulture                             # Dead code (min_confidence=80)
-uv run pytest --cov --cov-report=term-missing  # Coverage with uncovered lines
-```
-
-### Step 3: Manual Code Review
+### Step 2: Manual Code Review
 
 Follow the checklist below, section by section.
 

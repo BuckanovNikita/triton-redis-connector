@@ -30,20 +30,11 @@ This file teaches you HOW to write correct code with this project's specific too
 
 ---
 
-## After Writing Code — ALWAYS Run
+## After Writing Code
 
-Run these in order. Fix all issues before considering the task done:
-
-```bash
-uv run ruff format .
-uv run ruff check .
-uv run mypy .
-uv run pyright
-uv run lint-imports
-uv run pytest
-```
-
-If ruff check reports fixable issues: `uv run ruff check --fix .` then re-run format.
+Ruff format + check --fix runs automatically on every file save (hook).
+Pre-commit runs automatically before every commit (hook).
+Run `uv run pre-commit run --all-files` manually to verify all checks pass early.
 
 ## Code Style (non-negotiable)
 

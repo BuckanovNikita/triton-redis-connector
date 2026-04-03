@@ -9,36 +9,20 @@ description: >
 
 # Commit Workflow
 
-## 1. Run ruff formatter and fix autofixable errors
-
-```bash
-uv run ruff format .
-uv run ruff check --fix .
-```
-
-## 2. Review changes
+## 1. Review changes
 
 Run `git diff --stat` and `git status` to understand what changed.
 
-## 3. Run all quality checks
+## 2. Fix any failures
+
+Ruff format/fix runs automatically on every file save (hook).
+Pre-commit runs automatically before every commit (hook).
+
+If you want to check early, run manually:
 
 ```bash
 uv run pre-commit run --all-files
 ```
-
-This runs in order: ruff format, ruff check, mypy, pyright, vulture, pytest, uv lock.
-
-If pre-commit fails because of unstaged changes, stash first:
-
-```bash
-git stash
-uv run pre-commit run --all-files
-git stash pop
-```
-
-If ruff format modified files, re-add them and re-run.
-
-## 4. Fix any failures
 
 - **ruff check** — try `uv run ruff check --fix .` first, then fix manually
 - **mypy** — this project uses `strict = true`; all code must be fully typed
@@ -46,13 +30,11 @@ If ruff format modified files, re-add them and re-run.
 - **vulture** — remove dead code or add whitelist entry if false positive
 - **pytest** — tests run in parallel (`-n auto`); fix failing tests before committing
 
-Re-run `uv run pre-commit run --all-files` until all hooks pass.
-
-## 5. Update documentation
+## 3. Update documentation
 
 Review changes and update all project documentation (README.md and all .md at root folder) files that need to be actualized with changes.
 
-## 6. Stage and commit
+## 4. Stage and commit
 
 ```bash
 git add -A
@@ -69,7 +51,9 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 
 Keep subject line concise. Use body for details when needed.
 
-## 7. Push via SSH
+Hooks auto-validate commit message format and run pre-commit before the commit executes.
+
+## 5. Push via SSH
 
 ```bash
 git push
@@ -80,7 +64,3 @@ Remote must use SSH format (`git@github.com:<org>/<repo>.git`). If remote is HTT
 ```bash
 git remote set-url origin git@github.com:<org>/<repo>.git
 ```
-
-## Important: use `--no-verify` only as a last resort
-
-Always prefer fixing the issue over skipping hooks.
