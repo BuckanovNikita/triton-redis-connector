@@ -18,7 +18,6 @@ from loguru import logger
 from pydantic import BaseModel
 
 from triton_redis_connector.engine.events import (
-    Event,
     ImagePayload,
     InferenceTarget,
     PipelineEvent,
@@ -44,7 +43,7 @@ class _PostprocessorCallable[TIn, TResult](Protocol):
     def __call__(self, event: TIn) -> TResult | None: ...
 
 
-class ClientPreprocessorNode[TCtx: Event, TPayload: ImagePayload](
+class ClientPreprocessorNode[TCtx: BaseModel, TPayload: ImagePayload](
     BaseThreadProcessor[PipelineEvent[TCtx, TPayload], PipelineEvent[TCtx, TritonRequest] | PreprocessingError],
 ):
     """PipelineEvent-aware client-side preprocessor.
@@ -85,7 +84,7 @@ class ClientPreprocessorNode[TCtx: Event, TPayload: ImagePayload](
                 raw_bytes = Path(payload.image_path).read_bytes()
             except (FileNotFoundError, PermissionError, OSError) as exc:
                 return PreprocessingError(
-                    message_id=event.context.fw.message_id,
+                    message_id=event.fw.message_id,
                     decoder_type="filesystem",
                     error_type=type(exc).__name__,
                     error_message=str(exc),
@@ -98,7 +97,7 @@ class ClientPreprocessorNode[TCtx: Event, TPayload: ImagePayload](
             decoded = self._decoder.decode(raw_bytes)
         except ValueError as exc:
             return PreprocessingError(
-                message_id=event.context.fw.message_id,
+                message_id=event.fw.message_id,
                 decoder_type="decode",
                 error_type="DecodeError",
                 error_message=str(exc),
@@ -122,10 +121,10 @@ class ClientPreprocessorNode[TCtx: Event, TPayload: ImagePayload](
             input_name=self._input_name,
             output_names=self._output_names,
         )
-        return PipelineEvent(context=event.context, payload=triton_req)
+        return PipelineEvent(fw=event.fw, context=event.context, payload=triton_req)
 
 
-class InferenceNode[TCtx: Event, TReq: TritonRequest, TOut: InferenceOutput](
+class InferenceNode[TCtx: BaseModel, TReq: TritonRequest, TOut: InferenceOutput](
     BaseThreadProcessor[PipelineEvent[TCtx, TReq], PipelineEvent[TCtx, TOut] | InferenceError],
 ):
     """PipelineEvent-aware Triton inference processor.
@@ -196,10 +195,10 @@ class InferenceNode[TCtx: Event, TReq: TritonRequest, TOut: InferenceOutput](
             outputs=output_arrays,
             inference_time_ms=elapsed_ms,
         )
-        return PipelineEvent(context=event.context, payload=inference_output)  # type: ignore[arg-type]
+        return PipelineEvent(fw=event.fw, context=event.context, payload=inference_output)  # type: ignore[arg-type]
 
 
-class PostProcessorNode[TCtx: Event, TIn: InferenceOutput, TResult: BaseModel](
+class PostProcessorNode[TCtx: BaseModel, TIn: InferenceOutput, TResult: BaseModel](
     BaseThreadProcessor[PipelineEvent[TCtx, TIn], PipelineEvent[TCtx, TResult]],
 ):
     """PipelineEvent-aware postprocessor wrapper.
@@ -222,7 +221,7 @@ class PostProcessorNode[TCtx: Event, TIn: InferenceOutput, TResult: BaseModel](
         result = self._postprocessor(event.payload)
         if result is None:
             return None
-        return PipelineEvent(context=event.context, payload=result)
+        return PipelineEvent(fw=event.fw, context=event.context, payload=result)
 
 
 class LogErrorSinkNode(

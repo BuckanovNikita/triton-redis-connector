@@ -8,12 +8,12 @@ Pipeline graph:
             -> InferenceNode  (shared merge point)
             -> PostProcessorNode  (shared merge point)
                 -> ModelResultRouter
-                  -> [even] EvenResultSink -> steel:even_results
-                  -> [odd]  OddResultSink  -> steel:odd_results
+                  -> [even] TypedRedisStreamSink -> steel:even_results
+                  -> [odd]  TypedRedisStreamSink -> steel:odd_results
                -> LogErrorSinkNode (InferenceError | PreprocessingError)
 
 Usage:
-    uv run python examples/dual_model_pipeline/run_pipeline.py
+    uv run python reference_implementation/run_pipeline.py
 """
 
 from __future__ import annotations
@@ -30,15 +30,22 @@ from redis import Redis
 from triton_model_tools.inference.yolo_bridge import YoloPostProcessorBridge
 from triton_redis_connector.config.schema import (
     AppConfig,
+    SinkConfig,
     SourceConfig,
 )
 from triton_redis_connector.connectors.consumer_group import ConsumerGroupManager
-from triton_redis_connector.connectors.redis_stream import RedisStreamInputConnector
+from triton_redis_connector.connectors.redis_stream import (
+    RedisStreamInputConnector,
+    RedisStreamOutputConnector,
+    TypedRedisStreamSink,
+)
 from triton_redis_connector.engine.app import Application
 from triton_redis_connector.engine.events import (
     DetectionResult,
     FrameworkMeta,
+    PipelineEvent,
     TritonRequest,
+    Unprocessed,
 )
 from triton_redis_connector.engine.shipped_processors import (
     ClientPreprocessorNode,
@@ -51,19 +58,19 @@ from triton_redis_connector.preprocessing.decoder import OpenCVDecoder, TurboJPE
 from triton_redis_connector.protocols import BaseThreadSource
 from triton_shared_models.preprocessing import LetterBoxPreprocessor
 
-from examples.dual_model_pipeline.events import (
+from reference_implementation.events import (
     EVEN_MODEL,
     ODD_MODEL,
+    EvenDetectionResult,
     EvenImagePayload,
+    OddDetectionResult,
     OddImagePayload,
     SteelInspectionInput,
     SteelMeta,
 )
-from examples.dual_model_pipeline.processors import (
+from reference_implementation.processors import (
     CameraBranchRouter,
-    EvenResultSink,
     ModelResultRouter,
-    OddResultSink,
 )
 
 if TYPE_CHECKING:
@@ -77,12 +84,15 @@ ODD_STREAM = "steel:odd_results"
 EVEN_TARGET_SIZE = (608, 960)
 ODD_TARGET_SIZE = (640, 640)
 
+CONF_THRESHOLD = 0.25
+IOU_THRESHOLD = 0.45
 
-class SteelInspectionSource(BaseThreadSource[SteelInspectionInput]):
+
+class SteelInspectionSource(BaseThreadSource[PipelineEvent[SteelInspectionInput, Unprocessed]]):
     """Reads SteelInspectionInput events from a Redis stream.
 
     Wraps the low-level RedisStreamInputConnector to produce typed
-    domain events with framework metadata (source_stream, message_id).
+    domain events with framework metadata on PipelineEvent.fw.
     """
 
     def __init__(self, connector: RedisStreamInputConnector, config: SourceConfig) -> None:
@@ -91,24 +101,25 @@ class SteelInspectionSource(BaseThreadSource[SteelInspectionInput]):
         self._connector = connector
         self._config = config
 
-    def __call__(self) -> SteelInspectionInput | None:
+    def __call__(self) -> PipelineEvent[SteelInspectionInput, Unprocessed] | None:
         """Read and deserialize the next steel inspection event from Redis."""
         envelopes = self._connector.read_new(count=self._config.batch_size, block_ms=self._config.block_ms)
         if not envelopes:
             return None
         envelope = envelopes[0]
         fields = envelope.original_fields
-        return SteelInspectionInput(
-            fw=FrameworkMeta(
-                source_stream=envelope.source_stream,
-                message_id=envelope.message_id,
-            ),
+        user_event = SteelInspectionInput(
             receipt_ts=float(fields.get("receipt_ts", "0")),
             camera_no=int(fields.get("camera_no", "0")),
             image_path=fields.get("image_path", ""),
             frame_counter=int(fields.get("frame_counter", "0")),
             metal_type=fields.get("metal_type"),
         )
+        fw = FrameworkMeta(
+            source_stream=envelope.source_stream,
+            message_id=envelope.message_id,
+        )
+        return PipelineEvent(fw=fw, context=user_event, payload=Unprocessed())
 
 
 def main() -> None:
@@ -130,6 +141,9 @@ def main() -> None:
     connector = RedisStreamInputConnector(redis_client, source_cfg, group_manager)
     source = SteelInspectionSource(connector, source_cfg)
 
+    even_sink_connector = RedisStreamOutputConnector(redis_client, SinkConfig(stream_name=EVEN_STREAM))
+    odd_sink_connector = RedisStreamOutputConnector(redis_client, SinkConfig(stream_name=ODD_STREAM))
+
     app = Application.build(
         config,
         processors=[
@@ -149,11 +163,21 @@ def main() -> None:
                 grpc_url=config.inference.grpc_url,
             ),
             PostProcessorNode[SteelMeta, InferenceOutput, DetectionResult](
-                postprocessor=YoloPostProcessorBridge(),  # type: ignore[arg-type]
+                postprocessor=YoloPostProcessorBridge(  # type: ignore[arg-type]
+                    conf_threshold=CONF_THRESHOLD,
+                    iou_threshold=IOU_THRESHOLD,
+                    end2end=False,
+                ),
             ),
             ModelResultRouter(),
-            EvenResultSink(redis_client, EVEN_STREAM),
-            OddResultSink(redis_client, ODD_STREAM),
+            TypedRedisStreamSink[SteelMeta, EvenDetectionResult](
+                output_connector=even_sink_connector,
+                name="even_result_sink",
+            ),
+            TypedRedisStreamSink[SteelMeta, OddDetectionResult](
+                output_connector=odd_sink_connector,
+                name="odd_result_sink",
+            ),
             LogErrorSinkNode(),
         ],
     )

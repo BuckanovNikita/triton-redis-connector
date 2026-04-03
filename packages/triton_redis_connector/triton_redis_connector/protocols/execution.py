@@ -100,6 +100,21 @@ class ThreadSink(Protocol[TIn_contra]):
         ...
 
 
+@runtime_checkable
+class ProcessSink(Protocol[TIn_contra]):
+    """Process sink. Runs in a dedicated OS process, owns input queue.
+
+    Same contract as ThreadSink but in a separate process.
+    stop is a multiprocessing.Event (duck-typed as threading.Event).
+    """
+
+    stop: threading.Event
+
+    def __call__(self, event: TIn_contra) -> Any | None:  # noqa: ANN401
+        """Consume an event and optionally return a metric event."""
+        ...
+
+
 class BaseThreadSource[TOut]:
     """Threaded source with dedicated thread. Subclass and override ``__call__``."""
 
@@ -196,6 +211,23 @@ class BaseThreadSink[TIn]:
     def variant(self) -> str:
         """Return the execution variant identifier."""
         return "thread_sink"
+
+    def __call__(self, event: TIn) -> Any | None:  # noqa: ANN401
+        """Consume an event and optionally return a metric event."""
+        raise NotImplementedError
+
+
+class BaseProcessSink[TIn]:
+    """Process sink with dedicated OS process. Subclass and override ``__call__``."""
+
+    def __init__(self) -> None:
+        """Initialize stop event for process lifecycle management."""
+        self.stop = threading.Event()
+
+    @property
+    def variant(self) -> str:
+        """Return the execution variant identifier."""
+        return "process_sink"
 
     def __call__(self, event: TIn) -> Any | None:  # noqa: ANN401
         """Consume an event and optionally return a metric event."""

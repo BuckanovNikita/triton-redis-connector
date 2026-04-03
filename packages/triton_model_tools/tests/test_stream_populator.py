@@ -177,20 +177,20 @@ class TestBaseModelSerialization:
         assert fields["metal_type"] == b"steel"
         assert fields["event_type"] == b"image"
 
-    def test_fw_field_excluded(self) -> None:
-        """Models with an ``fw`` field (Event subclasses) have it excluded."""
+    def test_all_fields_serialized(self) -> None:
+        """All fields on a user model are serialized to Redis."""
         mock_client = MagicMock()
         mock_client.xadd.return_value = b"1-0"
 
         class FakeEvent(BaseModel):
             model_config = ConfigDict(frozen=True)
-            fw: str = "framework-meta"
+            tag: str = "metadata"
             data: str = "payload"
 
         populate_stream(mock_client, "s", [FakeEvent()])
 
         fields = mock_client.xadd.call_args.kwargs["fields"]
-        assert "fw" not in fields
+        assert fields["tag"] == b"metadata"
         assert fields["data"] == b"payload"
 
     def test_model_without_fw_includes_all_fields(self) -> None:

@@ -14,11 +14,10 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 from triton_redis_connector.config.schema import AppConfig
 from triton_redis_connector.engine.app import Application
 from triton_redis_connector.engine.events import (
-    Event,
     FrameworkMeta,
     PipelineEvent,
 )
@@ -39,27 +38,30 @@ if TYPE_CHECKING:
 
 
 class SimplePayload(BaseModel):
-    model_config = {"frozen": True}
+    model_config = ConfigDict(frozen=True)
     data: str = "test"
 
 
 class AnotherPayload(BaseModel):
-    model_config = {"frozen": True}
+    model_config = ConfigDict(frozen=True)
     number: int = 42
 
 
-class UserContext(Event):
+class UserContext(BaseModel):
+    model_config = ConfigDict(frozen=True)
     camera_id: str = "cam_01"
     location: str = "hall_a"
 
 
-class ContextWithShadowingNames(Event):
-    source_stream: str = "user_stream"  # type: ignore[assignment]
-    message_id: str = "user_msg_123"  # type: ignore[assignment]
+class ContextWithShadowingNames(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    source_stream: str = "user_stream"
+    message_id: str = "user_msg_123"
     created_at: float = 1234567890.0
 
 
-class ContextWithResultField(Event):
+class ContextWithResultField(BaseModel):
+    model_config = ConfigDict(frozen=True)
     result: str = "user_result"
 
 
@@ -148,19 +150,16 @@ class TestBuildValidationUnconnectedProcessor:
 
 
 class TestBuildValidationReservedResultField:
-    """TCtx with a field named 'result' must be caught by validation.
+    """TCtx with a field named 'result' collides with the sink serialization.
 
     The sink serializes the payload into a Redis hash entry named 'result',
     so a user context field with the same name would cause a collision.
-    This test documents the expected behavior: if no validation exists yet,
-    the test verifies the framework either rejects it or the collision
-    is visible.
     """
 
     def test_context_with_result_field_creates_collision_risk(self) -> None:
         ctx = ContextWithResultField()
         assert ctx.result == "user_result"
-        fields = ctx.model_dump(exclude={"fw"})
+        fields = ctx.model_dump()
         assert "result" in fields
 
 
@@ -257,38 +256,34 @@ class TestPreprocessingErrorMetrics:
 
 
 class TestPipelineEventPreservesUserContext:
-    def test_context_fw_separate_from_user_fields(self) -> None:
+    def test_fw_separate_from_user_context(self) -> None:
         fw = FrameworkMeta(source_stream="framework:stream", message_id="fw-001")
-        ctx = ContextWithShadowingNames.model_construct(
-            fw=fw,
+        ctx = ContextWithShadowingNames(
             source_stream="user_stream",
             message_id="user_msg_123",
             created_at=1234567890.0,
         )
         pe: PipelineEvent[ContextWithShadowingNames, SimplePayload] = PipelineEvent(
+            fw=fw,
             context=ctx,
             payload=SimplePayload(data="hello"),
         )
 
-        assert pe.context.fw.source_stream == "framework:stream"
-        assert pe.context.fw.message_id == "fw-001"
+        assert pe.fw.source_stream == "framework:stream"
+        assert pe.fw.message_id == "fw-001"
         assert pe.context.source_stream == "user_stream"
         assert pe.context.message_id == "user_msg_123"
         assert pe.context.created_at == 1234567890.0
 
-    def test_fw_can_be_stripped_while_user_fields_survive(self) -> None:
-        fw = FrameworkMeta(source_stream="fw:stream", message_id="fw-002")
-        ctx = UserContext.model_construct(
-            fw=fw,
-            camera_id="cam_07",
-            location="gate_b",
-        )
+    def test_user_fields_survive_without_fw(self) -> None:
+        ctx = UserContext(camera_id="cam_07", location="gate_b")
         pe: PipelineEvent[UserContext, SimplePayload] = PipelineEvent(
+            fw=FrameworkMeta(source_stream="fw:stream", message_id="fw-002"),
             context=ctx,
             payload=SimplePayload(data="world"),
         )
 
-        dumped = pe.context.model_dump(exclude={"fw"})
+        dumped = pe.context.model_dump()
         assert "fw" not in dumped
         assert dumped["camera_id"] == "cam_07"
         assert dumped["location"] == "gate_b"
@@ -301,6 +296,7 @@ class TestPipelineEventPreservesUserContext:
         )
 
         pe_output: PipelineEvent[UserContext, AnotherPayload] = PipelineEvent(
+            fw=pe_input.fw,
             context=pe_input.context,
             payload=AnotherPayload(number=99),
         )
@@ -314,13 +310,13 @@ class TestPipelineEventPreservesUserContext:
 class TestPipelineEventShadowedFieldsRoundTrip:
     def test_shadowed_names_serialization_round_trip(self) -> None:
         fw = FrameworkMeta(source_stream="fw:src", message_id="fw-msg-100")
-        ctx = ContextWithShadowingNames.model_construct(
-            fw=fw,
+        ctx = ContextWithShadowingNames(
             source_stream="user_source",
             message_id="user_msg",
             created_at=9999.9,
         )
         pe: PipelineEvent[ContextWithShadowingNames, SimplePayload] = PipelineEvent(
+            fw=fw,
             context=ctx,
             payload=SimplePayload(),
         )
@@ -328,8 +324,8 @@ class TestPipelineEventShadowedFieldsRoundTrip:
         json_str = pe.model_dump_json()
         restored = PipelineEvent[ContextWithShadowingNames, SimplePayload].model_validate_json(json_str)
 
-        assert restored.context.fw.source_stream == "fw:src"
-        assert restored.context.fw.message_id == "fw-msg-100"
+        assert restored.fw.source_stream == "fw:src"
+        assert restored.fw.message_id == "fw-msg-100"
         assert restored.context.source_stream == "user_source"
         assert restored.context.message_id == "user_msg"
         assert restored.context.created_at == 9999.9

@@ -145,9 +145,11 @@ Modules within a `|` group are siblings at the same layer and must NOT cross-imp
 
 ### Domain Event Model
 
-All domain events inherit from `Event` (in `engine/events.py`), which carries `fw: FrameworkMeta` for source_stream and message_id. The `fw` field is set by `LiveRedisStreamSource` and stripped by sinks before writing to output.
+User events are plain `BaseModel` subclasses — no framework base class required. Framework metadata lives on `PipelineEvent.fw`, not on user models.
 
-`PipelineEvent[TCtx, TPayload]` is a typed composition of user context (an `Event` subclass) and a processing payload. Framework routes by exact generic match. This allows the original user event to travel alongside processing stages (preprocessing, inference, postprocessing) without being lost.
+`PipelineEvent[TCtx: BaseModel, TPayload: BaseModel]` is a typed composition of framework metadata (`fw: FrameworkMeta`), user context, and processing payload. Sources produce `PipelineEvent[T, Unprocessed]` where `Unprocessed` is a sentinel payload. Framework routes by exact generic match.
+
+`FrameworkMeta` carries `source_stream`, `message_id`, `priority`. Set by source connectors, stripped by sinks. Can be subclassed to extend with stage-specific metadata.
 
 `ImagePayload` carries `image_path` or `image_bytes` for preprocessor consumption.
 
@@ -155,19 +157,7 @@ All domain events inherit from `Event` (in `engine/events.py`), which carries `f
 
 ### Shipped Processors
 
-Two generations of shipped processors coexist. Legacy processors are plain callables wrapped at assembly time. New Node classes inherit from Base* classes and use the `PipelineEvent` composition pattern.
-
-**Legacy shipped processors** (backward compatible, variant-agnostic):
-
-| Processor | Package | Purpose |
-|---|---|---|
-| `DaliTritonRequestBuilder` | connector | Wrap image bytes/path for DALI ensemble inference |
-| `ClientPreprocessor` | connector | Read file, decode, letterbox, wrap as TritonRequest |
-| `EventSerializer[T]` | connector | Serialize event to JSON bytes with original_fields passthrough |
-| `LogErrorSink` | connector | Log error events at error level via loguru |
-| `YoloPostProcessorBridge` | model_tools | YOLO postprocessing (NMS + confidence filter) into DetectionResult |
-
-**New Node classes** (PipelineEvent-aware, inherit Base* for variant declaration):
+Node classes use the `PipelineEvent` composition pattern. TCtx is any `BaseModel`, framework metadata accessed via `event.fw`.
 
 | Node | Package | Purpose |
 |---|---|---|
@@ -175,8 +165,10 @@ Two generations of shipped processors coexist. Legacy processors are plain calla
 | `InferenceNode[TCtx, TReq, TOut]` | connector | Send TritonRequest to Triton, returns PipelineEvent[TCtx, InferenceOutput] or InferenceError |
 | `PostProcessorNode[TCtx, TIn, TResult]` | connector | Delegate to user postprocessor, wraps result back into PipelineEvent |
 | `LogErrorSinkNode` | connector | Logs InferenceError, ConnectorError, PreprocessingError on a dedicated thread |
+| `TypedRedisStreamSink[TCtx, TResult]` | connector | Generic sink: serializes any PipelineEvent to Redis (context fields + result JSON) |
+| `YoloPostProcessorBridge` | model_tools | YOLO postprocessing (NMS + confidence filter) into DetectionResult |
 
-See: `engine/shipped_processors.py`, `triton_model_tools/inference/yolo_bridge.py`
+See: `engine/shipped_processors.py`, `connectors/redis_stream.py`, `triton_model_tools/inference/yolo_bridge.py`
 
 ### ModelBundle
 
@@ -196,10 +188,10 @@ Models are defined exclusively via `ModelBundle`. The `expand_bundle()` function
 
 ### Base Classes for User Processors
 
-Six base classes in `protocols.py` for explicit variant declaration (parallel variants only):
-`BaseThreadSource`, `BaseProcessSource`, `BaseThreadProcessor`, `BaseThreadPoolProcessor`, `BaseProcessPoolProcessor`, `BaseThreadSink`.
+Seven base classes in `protocols.py` for explicit variant declaration (parallel variants only):
+`BaseThreadSource`, `BaseProcessSource`, `BaseThreadProcessor`, `BaseThreadPoolProcessor`, `BaseProcessPoolProcessor`, `BaseThreadSink`, `BaseProcessSink`.
 
-All nodes run in dedicated threads. There are no inline variants. User processors inherit from base classes to declare variant. Shipped processors are either wrapped at registration time (legacy) or inherit from base classes (new Node classes).
+All nodes run in dedicated threads or processes. User processors inherit from base classes to declare variant. Shipped processors inherit from `BaseThreadProcessor` / `BaseThreadSink`.
 
 ### CLI Commands (triton-model-tools)
 

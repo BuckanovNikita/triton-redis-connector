@@ -16,12 +16,14 @@ from __future__ import annotations
 
 from triton_redis_connector.protocols.execution import (
     BaseProcessPoolProcessor,
+    BaseProcessSink,
     BaseProcessSource,
     BaseThreadPoolProcessor,
     BaseThreadProcessor,
     BaseThreadSink,
     BaseThreadSource,
     ProcessPoolProcessor,
+    ProcessSink,
     ProcessSource,
     ThreadPoolProcessor,
     ThreadProcessor,
@@ -50,6 +52,7 @@ from triton_redis_connector.protocols.metrics import (
 __all__ = [
     "AggregationRuleProtocol",
     "BaseProcessPoolProcessor",
+    "BaseProcessSink",
     "BaseProcessSource",
     "BaseThreadPoolProcessor",
     "BaseThreadProcessor",
@@ -63,6 +66,7 @@ __all__ = [
     "MetricRecorder",
     "ObserverProtocol",
     "ProcessPoolProcessor",
+    "ProcessSink",
     "ProcessSource",
     "ProcessorFactory",
     "Startable",

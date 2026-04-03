@@ -10,11 +10,10 @@ import threading
 import time
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from triton_redis_connector.config.schema import AppConfig
 from triton_redis_connector.engine.app import Application
 from triton_redis_connector.engine.events import (
-    Event,
     FrameworkMeta,
     PipelineEvent,
 )
@@ -29,16 +28,17 @@ from triton_redis_connector.protocols import (
 
 
 class PayloadA(BaseModel):
-    model_config = {"frozen": True}
+    model_config = ConfigDict(frozen=True)
     value: str = "a"
 
 
 class PayloadB(BaseModel):
-    model_config = {"frozen": True}
+    model_config = ConfigDict(frozen=True)
     value: str = "b"
 
 
-class MyCtx(Event):
+class MyCtx(BaseModel):
+    model_config = ConfigDict(frozen=True)
     camera_id: str = "cam_1"
 
 
@@ -103,22 +103,6 @@ class TestBuildValidationRejectsInvalidConfigs:
                 AppConfig(),
                 processors=[Src(), Proc(), Sink(), OrphanProc()],
             )
-
-
-class TestFrameworkMetaFieldCollision:
-    """Overriding ``fw`` on an Event subclass breaks the framework metadata contract.
-
-    Pydantic V2 allows field re-declaration in subclasses (no error at class
-    definition). This test documents that overriding ``fw`` silently loses the
-    FrameworkMeta struct — the sink cannot read source_stream / message_id.
-    """
-
-    def test_fw_override_loses_framework_meta(self) -> None:
-        class BadEvent(Event):
-            fw: str = "collision"  # type: ignore[assignment]
-
-        bad = BadEvent()
-        assert not isinstance(bad.fw, FrameworkMeta)
 
 
 class TestTypeMismatchDetection:
@@ -429,12 +413,12 @@ class TestRoutingTableExactMatch:
 
 
 class TestFrameworkMetaPreserved:
-    """FrameworkMeta travels through PipelineEvent.context.fw."""
+    """FrameworkMeta travels through PipelineEvent.fw."""
 
     def test_fw_accessible_through_pipeline_event(self) -> None:
         fw = FrameworkMeta(source_stream="stream:input", message_id="100-0", priority=1)
-        ctx = MyCtx.model_construct(fw=fw, camera_id="cam_1")
-        pe: PipelineEvent[MyCtx, PayloadA] = PipelineEvent(context=ctx, payload=PayloadA())
-        assert pe.context.fw.source_stream == "stream:input"
-        assert pe.context.fw.message_id == "100-0"
-        assert pe.context.fw.priority == 1
+        ctx = MyCtx(camera_id="cam_1")
+        pe: PipelineEvent[MyCtx, PayloadA] = PipelineEvent(fw=fw, context=ctx, payload=PayloadA())
+        assert pe.fw.source_stream == "stream:input"
+        assert pe.fw.message_id == "100-0"
+        assert pe.fw.priority == 1

@@ -45,7 +45,7 @@ class BenchmarkConfig(BaseModel):
     half: bool = False
     conf_threshold: float = Field(default=DEFAULT_CONFIDENCE_THRESHOLD, ge=0.0, le=1.0)
     iou_threshold: float = Field(default=DEFAULT_IOU_THRESHOLD, ge=0.0, le=1.0)
-    min_images: int = Field(default=5000, ge=0)
+    min_images: int = Field(default=100, ge=0)
 
 
 class BenchmarkResult(BaseModel):

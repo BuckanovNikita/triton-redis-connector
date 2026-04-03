@@ -24,7 +24,7 @@ from triton_redis_connector.protocols import Counter, Gauge
 class InferenceTarget(BaseModel):
     """Mixin for user events that carry per-event model routing info.
 
-    When a user event inherits from both ``Event`` and ``InferenceTarget``,
+    When a user event inherits from ``InferenceTarget``,
     the ``ClientPreprocessorNode`` will use ``target_model`` instead of the
     pipeline-default model name (if non-empty). This enables dynamic model
     routing on a per-event basis.
@@ -37,10 +37,11 @@ class InferenceTarget(BaseModel):
 
 
 class FrameworkMeta(BaseModel):
-    """Framework-owned metadata carried through the pipeline on Event.fw.
+    """Framework-owned metadata carried through the pipeline on PipelineEvent.fw.
 
-    Set by LiveRedisStreamSource from the Redis envelope. Stripped by
-    TypedRedisStreamSink before writing to the output stream.
+    Set by source connectors from the Redis envelope. Stripped by
+    sinks before writing to the output stream. Subclass to extend
+    with processing-stage-specific metadata.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -50,30 +51,30 @@ class FrameworkMeta(BaseModel):
     priority: int = 0
 
 
-class Event(BaseModel):
-    """Base marker for all domain events in the processing graph.
+class Unprocessed(BaseModel):
+    """Sentinel payload for events that have not entered the processing pipeline.
 
-    All user-defined events should inherit from this model.
-    Frozen for immutability, strict to prevent silent coercion.
-    The ``fw`` field carries framework metadata (source_stream, message_id)
-    and is NOT serialized to Redis output.
-    """
-
-    model_config = ConfigDict(frozen=True, strict=True)
-
-    fw: FrameworkMeta = FrameworkMeta()
-
-
-class PipelineEvent[TCtx: Event, TPayload: BaseModel](BaseModel):
-    """Typed composition of user context and processing payload.
-
-    Carries the original user event (context) alongside the current
-    processing stage payload. Framework routes by exact generic match
-    on ``PipelineEvent[ConcreteCtx, ConcretePayload]``.
+    Sources produce ``PipelineEvent[T, Unprocessed]`` to carry framework
+    metadata alongside raw user events before routing.
     """
 
     model_config = ConfigDict(frozen=True)
 
+
+class PipelineEvent[TCtx: BaseModel, TPayload: BaseModel](BaseModel):
+    """Typed composition of framework metadata, user context, and processing payload.
+
+    Carries framework metadata (fw), the original user event (context),
+    and the current processing stage payload. Framework routes by exact
+    generic match on ``PipelineEvent[ConcreteCtx, ConcretePayload]``.
+
+    The ``fw`` field is NOT serialized to Redis output — sinks write
+    only context and payload fields.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    fw: FrameworkMeta = FrameworkMeta()
     context: TCtx
     payload: TPayload
 

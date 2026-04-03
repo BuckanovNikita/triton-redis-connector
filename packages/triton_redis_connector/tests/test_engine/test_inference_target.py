@@ -5,25 +5,28 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import numpy as np
+from pydantic import BaseModel, ConfigDict
 from triton_redis_connector.engine.events import (
-    Event,
     ImagePayload,
     InferenceTarget,
     PipelineEvent,
     TritonRequest,
+    Unprocessed,
 )
 from triton_redis_connector.engine.shipped_processors import ClientPreprocessorNode
 
 
-class RoutedEvent(InferenceTarget, Event):
+class RoutedEvent(InferenceTarget):
+    model_config = ConfigDict(frozen=True)
     camera_id: str = "cam01"
 
 
-class PlainEvent(Event):
+class PlainEvent(BaseModel):
+    model_config = ConfigDict(frozen=True, strict=True)
     camera_id: str = "cam01"
 
 
-def _make_node(model_name: str = "yolo11s") -> ClientPreprocessorNode[Event, ImagePayload]:
+def _make_node(model_name: str = "yolo11s") -> ClientPreprocessorNode[BaseModel, ImagePayload]:
     decoder = MagicMock()
     decoder.decode.return_value = np.zeros((640, 640, 3), dtype=np.uint8)
 
@@ -111,7 +114,7 @@ class TestAutoRedisSource:
         import pytest
         from triton_redis_connector.connectors.redis_stream import AutoRedisSource
 
-        with pytest.raises(TypeError, match="must specify a concrete Event type"):
+        with pytest.raises(TypeError, match="must specify a concrete BaseModel type"):
 
             class BadSource(AutoRedisSource): ...  # type: ignore[type-arg]
 
@@ -146,9 +149,10 @@ class TestAutoRedisSource:
         connector.read_new.return_value = [envelope]
 
         result = source()
-        assert isinstance(result, PlainEvent)
-        assert result.camera_id == "cam99"
+        assert isinstance(result, PipelineEvent)
+        assert result.context.camera_id == "cam99"
         assert result.fw.source_stream == "stream:test"
+        assert isinstance(result.payload, Unprocessed)
 
     def test_returns_none_when_no_messages(self) -> None:
         from unittest.mock import MagicMock

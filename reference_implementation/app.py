@@ -6,19 +6,15 @@ Pipeline graph:
       -> [detect]   ClientPreprocessorNode[TaskMeta, DetectionImagePayload]
                       -> InferenceNode[TaskMeta, TritonRequest, InferenceOutput]  (shared)
                       -> PostProcessorNode (YOLO postprocessor)
-                      -> DetectionResultSink -> task:detection_results
+                      -> TypedRedisStreamSink -> task:detection_results
       -> [classify] ClientPreprocessorNode[TaskMeta, ClassificationImagePayload]
                       -> InferenceNode  (shared merge point)
                       -> PostProcessorNode (classification postprocessor)
-                      -> ClassificationResultSink -> task:classification_results
+                      -> TypedRedisStreamSink -> task:classification_results
       -> LogErrorSinkNode (InferenceError | PreprocessingError)
 
-Two ModelBundles demonstrate multi-model routing where each branch
-has its own preprocessor, postprocessor, and sink while sharing the
-inference node.
-
 Usage:
-    uv run python examples/multi_task_pipeline/run_pipeline.py
+    uv run python reference_implementation/app.py
 """
 
 from __future__ import annotations
@@ -36,17 +32,24 @@ from triton_model_tools.inference.classification_postprocessing import Classific
 from triton_model_tools.inference.yolo_bridge import YoloPostProcessorBridge
 from triton_redis_connector.config.schema import (
     AppConfig,
+    SinkConfig,
     SourceConfig,
 )
 from triton_redis_connector.connectors.consumer_group import ConsumerGroupManager
-from triton_redis_connector.connectors.redis_stream import RedisStreamInputConnector
+from triton_redis_connector.connectors.redis_stream import (
+    RedisStreamInputConnector,
+    RedisStreamOutputConnector,
+    TypedRedisStreamSink,
+)
 from triton_redis_connector.engine.app import Application
 from triton_redis_connector.engine.bundle import ModelBundle, expand_bundle
 from triton_redis_connector.engine.events import (
     ClassificationResult,
     DetectionResult,
     FrameworkMeta,
+    PipelineEvent,
     TritonRequest,
+    Unprocessed,
 )
 from triton_redis_connector.engine.shipped_processors import (
     ClientPreprocessorNode,
@@ -60,7 +63,7 @@ from triton_redis_connector.protocols import BaseThreadSource
 from triton_shared_models.classification import ClassificationPrediction
 from triton_shared_models.preprocessing import LetterBoxPreprocessor
 
-from examples.multi_task_pipeline.events import (
+from reference_implementation.events import (
     CLASSIFICATION_MODEL,
     CLASSIFICATION_TARGET_SIZE,
     DETECTION_MODEL,
@@ -70,11 +73,7 @@ from examples.multi_task_pipeline.events import (
     ImageTaskInput,
     TaskMeta,
 )
-from examples.multi_task_pipeline.processors import (
-    ClassificationResultSink,
-    DetectionResultSink,
-    TaskRouter,
-)
+from reference_implementation.processors import TaskRouter
 
 if TYPE_CHECKING:
     import types
@@ -84,13 +83,14 @@ CONFIG_DIR = Path(__file__).resolve().parent
 DETECTION_STREAM = "task:detection_results"
 CLASSIFICATION_STREAM = "task:classification_results"
 
+CONF_THRESHOLD = 0.25
+IOU_THRESHOLD = 0.45
+
 
 class ClassificationBridge:
     """Bridges ClassificationPostprocessor into the pipeline as a callable processor.
 
     Wraps raw InferenceOutput into a typed ClassificationResult.
-    Inline bridge for the multi-task example (the full bridge lives
-    in triton_model_tools.inference.classification_bridge).
     """
 
     def __init__(self, *, top_k: int = 5, apply_softmax: bool = True) -> None:
@@ -115,11 +115,11 @@ class ClassificationBridge:
         )
 
 
-class ImageTaskSource(BaseThreadSource[ImageTaskInput]):
+class ImageTaskSource(BaseThreadSource[PipelineEvent[ImageTaskInput, Unprocessed]]):
     """Reads ImageTaskInput events from a Redis stream.
 
     Deserializes Redis hash fields into typed domain events
-    with framework metadata (source_stream, message_id).
+    wrapped in PipelineEvent with framework metadata.
     """
 
     def __init__(self, connector: RedisStreamInputConnector, config: SourceConfig) -> None:
@@ -128,23 +128,24 @@ class ImageTaskSource(BaseThreadSource[ImageTaskInput]):
         self._connector = connector
         self._config = config
 
-    def __call__(self) -> ImageTaskInput | None:
+    def __call__(self) -> PipelineEvent[ImageTaskInput, Unprocessed] | None:
         """Read and deserialize the next image task event from Redis."""
         envelopes = self._connector.read_new(count=self._config.batch_size, block_ms=self._config.block_ms)
         if not envelopes:
             return None
         envelope = envelopes[0]
         fields = envelope.original_fields
-        return ImageTaskInput(
-            fw=FrameworkMeta(
-                source_stream=envelope.source_stream,
-                message_id=envelope.message_id,
-            ),
+        user_event = ImageTaskInput(
             task_type=fields.get("task_type", "detect"),
             image_path=fields.get("image_path", ""),
             source_id=fields.get("source_id", ""),
             priority=int(fields.get("priority", "0")),
         )
+        fw = FrameworkMeta(
+            source_stream=envelope.source_stream,
+            message_id=envelope.message_id,
+        )
+        return PipelineEvent(fw=fw, context=user_event, payload=Unprocessed())
 
 
 def main() -> None:
@@ -166,6 +167,11 @@ def main() -> None:
     connector = RedisStreamInputConnector(redis_client, source_cfg, group_manager)
     source = ImageTaskSource(connector, source_cfg)
 
+    detection_sink_connector = RedisStreamOutputConnector(redis_client, SinkConfig(stream_name=DETECTION_STREAM))
+    classification_sink_connector = RedisStreamOutputConnector(
+        redis_client, SinkConfig(stream_name=CLASSIFICATION_STREAM)
+    )
+
     detection_bundle = ModelBundle(
         name="detection",
         preprocessor=ClientPreprocessorNode[TaskMeta, DetectionImagePayload](
@@ -177,9 +183,16 @@ def main() -> None:
             grpc_url=config.inference.grpc_url,
         ),
         postprocessor=PostProcessorNode[TaskMeta, InferenceOutput, DetectionResult](
-            postprocessor=YoloPostProcessorBridge(),  # type: ignore[arg-type]
+            postprocessor=YoloPostProcessorBridge(  # type: ignore[arg-type]
+                conf_threshold=CONF_THRESHOLD,
+                iou_threshold=IOU_THRESHOLD,
+                end2end=False,
+            ),
         ),
-        sink=DetectionResultSink(redis_client, DETECTION_STREAM),
+        sink=TypedRedisStreamSink[TaskMeta, DetectionResult](
+            output_connector=detection_sink_connector,
+            name="detection_sink",
+        ),
     )
 
     classification_bundle = ModelBundle(
@@ -195,7 +208,10 @@ def main() -> None:
         postprocessor=PostProcessorNode[TaskMeta, InferenceOutput, ClassificationResult](
             postprocessor=ClassificationBridge(),  # type: ignore[arg-type]
         ),
-        sink=ClassificationResultSink(redis_client, CLASSIFICATION_STREAM),
+        sink=TypedRedisStreamSink[TaskMeta, ClassificationResult](
+            output_connector=classification_sink_connector,
+            name="classification_sink",
+        ),
     )
 
     app = Application.build(

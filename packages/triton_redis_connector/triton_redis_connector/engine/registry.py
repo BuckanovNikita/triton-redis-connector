@@ -25,12 +25,14 @@ from triton_redis_connector.engine.metric_aggregator import (
 )
 from triton_redis_connector.protocols import (
     BaseProcessPoolProcessor,
+    BaseProcessSink,
     BaseProcessSource,
     BaseThreadPoolProcessor,
     BaseThreadProcessor,
     BaseThreadSink,
     BaseThreadSource,
     ProcessPoolProcessor,
+    ProcessSink,
     ProcessSource,
     ThreadPoolProcessor,
     ThreadProcessor,
@@ -49,6 +51,7 @@ class ExecutionVariant(StrEnum):
     THREAD_POOL_PROCESSOR = auto()
     PROCESS_POOL_PROCESSOR = auto()
     THREAD_SINK = auto()
+    PROCESS_SINK = auto()
 
 
 SOURCE_VARIANTS = {
@@ -58,6 +61,7 @@ SOURCE_VARIANTS = {
 
 SINK_VARIANTS = {
     ExecutionVariant.THREAD_SINK,
+    ExecutionVariant.PROCESS_SINK,
 }
 
 _BASE_CLASS_TO_VARIANT: dict[type, ExecutionVariant] = {
@@ -67,11 +71,12 @@ _BASE_CLASS_TO_VARIANT: dict[type, ExecutionVariant] = {
     BaseThreadPoolProcessor: ExecutionVariant.THREAD_POOL_PROCESSOR,
     BaseProcessPoolProcessor: ExecutionVariant.PROCESS_POOL_PROCESSOR,
     BaseThreadSink: ExecutionVariant.THREAD_SINK,
+    BaseProcessSink: ExecutionVariant.PROCESS_SINK,
 }
 
 _SOURCE_BASE_CLASSES = frozenset({BaseThreadSource, BaseProcessSource})
 _PROCESSOR_BASE_CLASSES = frozenset({BaseThreadProcessor, BaseThreadPoolProcessor, BaseProcessPoolProcessor})
-_SINK_BASE_CLASSES = frozenset({BaseThreadSink})
+_SINK_BASE_CLASSES = frozenset({BaseThreadSink, BaseProcessSink})
 
 
 class GraphNode:
@@ -316,6 +321,7 @@ class PipelineRegistry:
         (ProcessPoolProcessor, ExecutionVariant.PROCESS_POOL_PROCESSOR),
         (ThreadPoolProcessor, ExecutionVariant.THREAD_POOL_PROCESSOR),
         (ThreadProcessor, ExecutionVariant.THREAD_PROCESSOR),
+        (ProcessSink, ExecutionVariant.PROCESS_SINK),
         (ThreadSink, ExecutionVariant.THREAD_SINK),
     ]
 
@@ -341,7 +347,7 @@ class PipelineRegistry:
             f"Cannot detect execution variant for {type(node).__name__}: "
             f"node must implement WrappedNode or a parallel protocol "
             f"(ThreadSource, ProcessSource, ThreadProcessor, ThreadPoolProcessor, "
-            f"ProcessPoolProcessor, ThreadSink)"
+            f"ProcessPoolProcessor, ThreadSink, ProcessSink)"
         )
         raise TypeError(msg)
 

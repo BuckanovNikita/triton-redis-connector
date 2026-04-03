@@ -54,12 +54,11 @@ class InspectionStreamEntry(BaseModel):
 def _serialize_model(model: BaseModel) -> StreamFields:
     """Serialize a pydantic model to Redis stream fields.
 
-    Excludes ``fw`` (framework metadata). Preserves ``bytes`` values as-is,
-    stringifies everything else.
+    Preserves ``bytes`` values as-is, stringifies everything else.
+    User models are pure BaseModel (no framework metadata to exclude).
     """
-    exclude = {"fw"} if hasattr(model, "fw") else set()
     fields: StreamFields = {}
-    for key, value in model.model_dump(exclude=exclude).items():
+    for key, value in model.model_dump().items():
         if isinstance(value, bytes):
             fields[key] = value
         else:

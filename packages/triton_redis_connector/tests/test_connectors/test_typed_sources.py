@@ -13,15 +13,17 @@ from triton_redis_connector.connectors.redis_stream import (
     TypedRedisStreamSink,
 )
 from triton_redis_connector.engine.events import (
-    Event,
     FrameworkMeta,
     PipelineEvent,
+    Unprocessed,
 )
 from triton_redis_connector.errors.models import ConnectorError
 from triton_redis_connector.protocols import Envelope
 
 
-class SampleEvent(Event):
+class SampleEvent(BaseModel):
+    model_config = ConfigDict(frozen=True, strict=True)
+
     camera_id: str
     image_path: str = ""
 
@@ -82,12 +84,13 @@ class TestLiveRedisStreamSource:
         source = LiveRedisStreamSource(connector, config, SampleEvent)
         result = source()
 
-        assert isinstance(result, SampleEvent)
-        assert result.camera_id == "cam01"
-        assert result.image_path == "/img/1.jpg"
+        assert isinstance(result, PipelineEvent)
+        assert result.context.camera_id == "cam01"
+        assert result.context.image_path == "/img/1.jpg"
         assert result.fw.source_stream == "stream:test"
         assert result.fw.message_id == "1-0"
         assert result.fw.priority == 0
+        assert isinstance(result.payload, Unprocessed)
 
     def test_returns_connector_error_on_validation_failure(self) -> None:
         connector = MagicMock(spec=RedisStreamInputConnector)
@@ -131,13 +134,13 @@ class TestTypedRedisStreamSink:
             name="test_sink",
         )
 
-        ctx = SampleEvent(
-            camera_id="cam01",
-            image_path="/img/1.jpg",
-            fw=FrameworkMeta(source_stream="stream:input", message_id="5-0"),
-        )
+        ctx = SampleEvent(camera_id="cam01", image_path="/img/1.jpg")
         payload = SampleResult(score=0.95, label="cat")
-        event = PipelineEvent(context=ctx, payload=payload)
+        event: PipelineEvent[SampleEvent, SampleResult] = PipelineEvent(
+            fw=FrameworkMeta(source_stream="stream:input", message_id="5-0"),
+            context=ctx,
+            payload=payload,
+        )
 
         sink(event)
 
@@ -149,7 +152,7 @@ class TestTypedRedisStreamSink:
         assert "camera_id" in call_fields
         assert "result" in call_fields
 
-    def test_fw_stripped_from_output(self) -> None:
+    def test_fw_not_in_output(self) -> None:
         mock_redis = MagicMock()
         mock_redis.xadd.return_value = b"1-0"
 
@@ -162,12 +165,13 @@ class TestTypedRedisStreamSink:
             output_connector=output_connector,
         )
 
-        ctx = SampleEvent(
-            camera_id="cam01",
-            fw=FrameworkMeta(source_stream="s", message_id="1-0"),
-        )
+        ctx = SampleEvent(camera_id="cam01")
         payload = SampleResult(score=0.5, label="dog")
-        event = PipelineEvent(context=ctx, payload=payload)
+        event: PipelineEvent[SampleEvent, SampleResult] = PipelineEvent(
+            fw=FrameworkMeta(source_stream="s", message_id="1-0"),
+            context=ctx,
+            payload=payload,
+        )
 
         sink(event)
 
@@ -193,7 +197,10 @@ class TestTypedRedisStreamSink:
 
         ctx = SampleEvent(camera_id="cam99", image_path="/data/test.jpg")
         payload = SampleResult(score=0.99, label="person")
-        event = PipelineEvent(context=ctx, payload=payload)
+        event: PipelineEvent[SampleEvent, SampleResult] = PipelineEvent(
+            context=ctx,
+            payload=payload,
+        )
 
         sink(event)
 
@@ -222,7 +229,10 @@ class TestTypedRedisStreamSink:
 
         ctx = SampleEvent(camera_id="cam01")
         payload = SampleResult(score=0.75, label="bicycle")
-        event = PipelineEvent(context=ctx, payload=payload)
+        event: PipelineEvent[SampleEvent, SampleResult] = PipelineEvent(
+            context=ctx,
+            payload=payload,
+        )
 
         sink(event)
 

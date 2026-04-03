@@ -12,11 +12,11 @@ from triton_redis_connector.engine.bundle import ModelBundle, expand_bundle
 from triton_redis_connector.engine.events import (
     ClassificationResult,
     DetectionResult,
-    Event,
     FrameworkMeta,
     ImagePayload,
     InferenceTarget,
     PipelineEvent,
+    Unprocessed,
 )
 from triton_redis_connector.engine.metric_aggregator import MetricAggregator, Tracked
 from triton_redis_connector.engine.registry import (
@@ -41,6 +41,7 @@ from triton_redis_connector.preprocessing.protocols import (
 )
 from triton_redis_connector.protocols import (
     BaseProcessPoolProcessor,
+    BaseProcessSink,
     BaseProcessSource,
     BaseThreadPoolProcessor,
     BaseThreadProcessor,
@@ -53,6 +54,7 @@ from triton_redis_connector.protocols import (
     MetricRecorder,
     ProcessorFactory,
     ProcessPoolProcessor,
+    ProcessSink,
     ProcessSource,
     ThreadPoolProcessor,
     ThreadProcessor,
@@ -66,6 +68,7 @@ __all__ = [
     "Application",
     "AutoRedisSource",
     "BaseProcessPoolProcessor",
+    "BaseProcessSink",
     "BaseProcessSource",
     "BaseThreadPoolProcessor",
     "BaseThreadProcessor",
@@ -75,7 +78,6 @@ __all__ = [
     "ClientPreprocessorNode",
     "Counter",
     "DetectionResult",
-    "Event",
     "ExecutionVariant",
     "FrameworkMeta",
     "Gauge",
@@ -97,6 +99,7 @@ __all__ = [
     "PipelineRegistry",
     "PostProcessorNode",
     "ProcessPoolProcessor",
+    "ProcessSink",
     "ProcessSource",
     "ProcessorFactory",
     "ThreadPoolProcessor",
@@ -105,6 +108,7 @@ __all__ = [
     "ThreadSource",
     "Tracked",
     "TurboJPEGDecoder",
+    "Unprocessed",
     "WrappedNode",
     "expand_bundle",
 ]

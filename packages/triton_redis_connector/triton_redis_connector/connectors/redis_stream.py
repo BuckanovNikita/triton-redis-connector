@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, cast
 
 from pydantic import BaseModel, ValidationError
 
-from triton_redis_connector.engine.events import Event, FrameworkMeta, PipelineEvent
+from triton_redis_connector.engine.events import FrameworkMeta, PipelineEvent, Unprocessed
 from triton_redis_connector.errors.models import ConnectorError
 from triton_redis_connector.protocols import BaseThreadSink, BaseThreadSource, Envelope
 
@@ -115,15 +115,17 @@ class RedisStreamSink:
         self._connector.write(data)
 
 
-def _deserialize_event(
+def _deserialize_event[T: BaseModel](
     envelope: Envelope[bytes],
-    event_model: type[Event],
+    event_model: type[T],
     connector_name: str,
     priority: int,
-) -> Event | ConnectorError:
-    """Deserialize an Envelope into a typed Event, setting FrameworkMeta fields.
+) -> PipelineEvent[T, Unprocessed] | ConnectorError:
+    """Deserialize an Envelope into a PipelineEvent wrapping a typed user model.
 
     On ValidationError, returns a ConnectorError instead of raising.
+    The user model T is a pure BaseModel — framework metadata lives
+    on the returned PipelineEvent.fw, not on the user model.
     """
     try:
         raw_fields = dict(envelope.original_fields)
@@ -144,15 +146,15 @@ def _deserialize_event(
         message_id=envelope.message_id,
         priority=priority,
     )
-    return event.model_copy(update={"fw": fw})
+    return PipelineEvent(fw=fw, context=event, payload=Unprocessed())
 
 
-class LiveRedisStreamSource[T: Event](BaseThreadSource[T | ConnectorError]):
+class LiveRedisStreamSource[T: BaseModel](BaseThreadSource[PipelineEvent[T, Unprocessed] | ConnectorError]):
     """Typed thread source that reads live (new) messages from a Redis Stream.
 
     Always reads from the latest cursor (``>``). Deserializes raw bytes into
-    event model ``T`` internally. On deserialization failure returns
-    ConnectorError.
+    user model ``T`` and wraps in ``PipelineEvent[T, Unprocessed]``.
+    On deserialization failure returns ConnectorError.
 
     Sets ``fw.priority = 0`` (highest) on all produced events.
     """
@@ -172,16 +174,16 @@ class LiveRedisStreamSource[T: Event](BaseThreadSource[T | ConnectorError]):
         self._event_model = event_model
         self.name = name or f"live_source_{config.stream_name}"
 
-    def __call__(self) -> T | ConnectorError | None:
+    def __call__(self) -> PipelineEvent[T, Unprocessed] | ConnectorError | None:
         """Read the next live message, deserialize, and return."""
         results = self._connector.read_new(count=1, block_ms=self._config.block_ms)
         if not results:
             return None
         envelope = results[0]
-        return _deserialize_event(envelope, self._event_model, self.name, priority=0)  # type: ignore[return-value]
+        return _deserialize_event(envelope, self._event_model, self.name, priority=0)
 
 
-class AutoRedisSource[T: Event](BaseThreadSource[T | ConnectorError]):
+class AutoRedisSource[T: BaseModel](BaseThreadSource[PipelineEvent[T, Unprocessed] | ConnectorError]):
     """Redis stream source derived from config and event type annotation.
 
     Users subclass with a type annotation only::
@@ -206,7 +208,7 @@ class AutoRedisSource[T: Event](BaseThreadSource[T | ConnectorError]):
                     cls._event_model = args[0]
                     return
         msg = (
-            f"{cls.__name__} must specify a concrete Event type parameter, "
+            f"{cls.__name__} must specify a concrete BaseModel type parameter, "
             f"e.g. class {cls.__name__}(AutoRedisSource[MyEvent]): ..."
         )
         raise TypeError(msg)
@@ -224,24 +226,24 @@ class AutoRedisSource[T: Event](BaseThreadSource[T | ConnectorError]):
         self._config = config
         self.name = name or f"auto_source_{config.stream_name}"
 
-    def __call__(self) -> T | ConnectorError | None:
+    def __call__(self) -> PipelineEvent[T, Unprocessed] | ConnectorError | None:
         """Read the next message, deserialize into ``T``, and return."""
         results = self._connector.read_new(count=1, block_ms=self._config.block_ms)
         if not results:
             return None
         envelope = results[0]
-        return _deserialize_event(envelope, self._event_model, self.name, priority=0)  # type: ignore[return-value]
+        return _deserialize_event(envelope, self._event_model, self.name, priority=0)
 
 
-class TypedRedisStreamSink[TCtx: Event, TResult: BaseModel](
+class TypedRedisStreamSink[TCtx: BaseModel, TResult: BaseModel](
     BaseThreadSink[PipelineEvent[TCtx, TResult]],
 ):
     """Typed sink that serializes PipelineEvent to Redis Stream output.
 
     Serialization is built into the sink:
-    - Context fields written as top-level Redis hash entries (matching TCtx fields)
+    - Context fields written as top-level Redis hash entries (all TCtx fields)
     - Payload written as a single ``result`` JSON field
-    - ``fw`` field stripped from output (framework-internal only)
+    - ``fw`` field is on PipelineEvent, not on context — never serialized
     """
 
     def __init__(
@@ -261,7 +263,7 @@ class TypedRedisStreamSink[TCtx: Event, TResult: BaseModel](
         result = event.payload
 
         data: dict[str, bytes] = {}
-        ctx_dict = ctx.model_dump(exclude={"fw"})
+        ctx_dict = ctx.model_dump()
         for key, value in ctx_dict.items():
             data[key] = str(value).encode()
 
