@@ -8,6 +8,7 @@ Resolved from the dishka container via EngineProvider, or via the
 
 from __future__ import annotations
 
+import os
 import queue
 import threading
 import time
@@ -129,6 +130,7 @@ class Application:
                 stream=config.metrics.output_stream,
                 interval_s=config.metrics.emit_interval_s,
                 known_metrics=registry.all_counter_names,
+                app_name=os.environ.get("APP_NAME", ""),
             )
 
         return cls(

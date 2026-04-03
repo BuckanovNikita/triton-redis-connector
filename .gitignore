@@ -36,6 +36,7 @@ Thumbs.db
 
 # Triton model repository artifacts
 model_repository/
+model_repository_offline/
 *.onnx
 *.plan
 *.engine
@@ -52,7 +53,6 @@ benchmarks/data/
 
 # Allow test fixture images (committed to git)
 !test_fixtures/images/*.jpg
-model_repository_offline/
 test_data/**
 e2e_results/**
 local

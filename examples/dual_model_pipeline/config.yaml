@@ -1,5 +1,3 @@
-app_name: dual-model-steel-inspection
-
 redis:
   host: ${oc.env:REDIS_HOST,redis}
   port: ${oc.env:REDIS_PORT,6379}

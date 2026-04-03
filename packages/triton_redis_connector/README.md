@@ -134,8 +134,6 @@ graph LR
 Конфигурация загружается через Hydra и валидируется Pydantic-моделями (`triton_redis_connector/config/schema.py`):
 
 ```yaml
-app_name: my-pipeline
-
 redis:
   host: ${oc.env:REDIS_HOST,redis}
   port: ${oc.env:REDIS_PORT,6379}

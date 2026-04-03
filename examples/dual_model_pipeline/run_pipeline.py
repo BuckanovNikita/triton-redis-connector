@@ -18,6 +18,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import signal
 import sys
 from pathlib import Path
@@ -112,7 +113,8 @@ def main() -> None:
     """Load config, build pipeline with Application.build(), run."""
     raw_cfg = OmegaConf.load(CONFIG_DIR / "config.yaml")
     config = AppConfig.model_validate(OmegaConf.to_container(raw_cfg, resolve=True))
-    logger.info("Starting {}", config.app_name)
+    app_name = os.environ.get("APP_NAME", "dual-model-steel-inspection")
+    logger.info("Starting {}", app_name)
 
     redis_client: Redis[bytes] = Redis(
         host=config.redis.host,

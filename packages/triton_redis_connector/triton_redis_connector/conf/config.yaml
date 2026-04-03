@@ -4,8 +4,6 @@ defaults:
   - metrics: default
   - _self_
 
-app_name: ${oc.env:APP_NAME,triton-connector}
-
 redis:
   host: ${oc.env:REDIS_HOST,localhost}
   port: ${oc.env:REDIS_PORT,6379}
@@ -15,8 +13,6 @@ redis:
 sources: []
 
 sinks: []
-
-nodes: []
 
 queues:
   maxsize: 1000

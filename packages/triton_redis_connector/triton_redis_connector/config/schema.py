@@ -142,7 +142,6 @@ class AppConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    app_name: str = "triton-connector"
     redis: RedisConnectionConfig = RedisConnectionConfig()
     sources: list[SourceConfig] = []
     sinks: list[SinkConfig] = []

@@ -717,7 +717,6 @@ cat examples/dual_model_pipeline/config.yaml
 ```
 
 Verify:
-- `app_name` is set
 - `redis.host` uses `${oc.env:REDIS_HOST,redis}`
 - `sources` has at least one entry with stream_name, consumer_group, event_model
 - `inference.grpc_url` uses `${oc.env:TRITON_GRPC_URL,triton:8001}`

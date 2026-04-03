@@ -22,9 +22,6 @@ This file teaches you HOW to write correct code with this project's specific too
 **GPU memory is limited — never overload it with models.**
 
 - `model_repository/` — **live**, mounted into Triton at `/models`. Models here are loaded on GPU.
-- `model_repository_offline/` — **storage/staging**. Models moved here are unloaded from GPU.
-- To load a model: copy/move from `model_repository_offline/` → `model_repository/`
-- To unload: move from `model_repository/` → `model_repository_offline/`
 - Triton runs in **explicit mode** (`--model-control-mode=explicit`) — no models loaded at startup.
 - To load: `curl -X POST http://localhost:8000/v2/repository/models/{name}/load`
 - To unload: `curl -X POST http://localhost:8000/v2/repository/models/{name}/unload`

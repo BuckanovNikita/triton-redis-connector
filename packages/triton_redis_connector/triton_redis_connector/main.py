@@ -6,6 +6,7 @@ and QueueBus, creates an Application, and runs the pipeline.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import redis as redis_lib
@@ -22,11 +23,13 @@ from triton_redis_connector.metrics.buffer import MetricBuffer
 from triton_redis_connector.metrics.emitter import MetricEmitter
 from triton_redis_connector.metrics.triton_collector import TritonMetricsCollector
 
+APP_NAME = os.environ.get("APP_NAME", "triton-connector")
+
 
 def _run_app(cfg: DictConfig) -> None:
     raw: dict[str, Any] = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)  # type: ignore[assignment]
     app_config = AppConfig.model_validate(raw)
-    logger.info("Starting {} with config: {}", app_config.app_name, app_config)
+    logger.info("Starting {} with config: {}", APP_NAME, app_config)
 
     registry = PipelineRegistry()
     queue_bus = QueueBus(config=app_config.queues)
@@ -56,7 +59,7 @@ def _run_app(cfg: DictConfig) -> None:
             stream=app_config.metrics.output_stream,
             interval_s=app_config.metrics.emit_interval_s,
             known_metrics=registry.all_counter_names,
-            app_name=app_config.app_name,
+            app_name=APP_NAME,
         )
 
     app = Application(
