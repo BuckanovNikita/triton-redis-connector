@@ -111,10 +111,10 @@ class TestConnectorE2ETestHarness:
         first_call = mock_client.xadd.call_args_list[0]
         assert first_call.kwargs["name"] == "camera_images"
         fields = first_call.kwargs["fields"]
-        assert fields[b"data"] == b"\xff\xd8\xff\xe0fake-jpg"
-        assert fields[b"image_name"] == b"test1.jpg"
-        assert fields[b"model_name"] == b"yolo11s"
-        assert b"request_id" in fields
+        assert fields["data"] == b"\xff\xd8\xff\xe0fake-jpg"
+        assert fields["image_name"] == b"test1.jpg"
+        assert fields["model_name"] == b"yolo11s"
+        assert "request_id" in fields
 
     @patch("redis.Redis.from_url")
     def test_collect_results_success(self, mock_from_url: MagicMock) -> None:

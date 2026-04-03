@@ -15,7 +15,7 @@ from triton_model_tools.benchmarks.stats import compute_statistics
 from triton_model_tools.inference.detection_io import collect_image_paths
 from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
 from triton_model_tools.testing.e2e_test import CONSUMER_NAME, POLL_INTERVAL_S, ensure_consumer_group
-from triton_model_tools.testing.stream_populator import StreamFields, populate_stream
+from triton_model_tools.testing.stream_populator import ImageStreamEntry, populate_stream
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -66,19 +66,19 @@ def _push_images(
 ) -> None:
     """Push images to Redis input stream."""
 
-    def _fields_gen() -> Iterator[StreamFields]:
+    def _entries() -> Iterator[ImageStreamEntry]:
         for image_path in image_paths:
-            yield {
-                b"data": image_path.read_bytes(),
-                b"request_id": uuid.uuid4().hex.encode(),
-                b"model_name": model_name.encode(),
-                b"image_name": image_path.name.encode(),
-            }
+            yield ImageStreamEntry(
+                data=image_path.read_bytes(),
+                request_id=uuid.uuid4().hex,
+                model_name=model_name,
+                image_name=image_path.name,
+            )
 
     populate_stream(
         redis_client,
         input_stream,
-        tqdm(_fields_gen(), total=len(image_paths), desc="Pushing images", unit="img"),
+        tqdm(_entries(), total=len(image_paths), desc="Pushing images", unit="img"),
     )
 
 

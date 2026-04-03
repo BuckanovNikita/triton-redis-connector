@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
+from pydantic import BaseModel, ConfigDict
 from triton_model_tools.testing.stream_populator import (
+    ImageStreamEntry,
+    InspectionStreamEntry,
     PopulateResult,
     StreamFields,
     populate_stream,
@@ -20,7 +23,7 @@ def _single_field() -> StreamFields:
 
 
 class TestPopulateStream:
-    def test_basic_flow(self) -> None:
+    def test_basic_flow_with_dicts(self) -> None:
         mock_client = MagicMock()
         mock_client.xadd.side_effect = [b"1-0", b"2-0", b"3-0"]
 
@@ -113,3 +116,95 @@ class TestPopulateStream:
         populate_stream(mock_client, "s", gen())
 
         assert call_order == ["yield-1", "yield-2"]
+
+
+class TestBaseModelSerialization:
+    def test_pydantic_model_serialized(self) -> None:
+        mock_client = MagicMock()
+        mock_client.xadd.return_value = b"1-0"
+
+        entry = ImageStreamEntry(
+            data=b"\xff\xd8image-data",
+            request_id="abc123",
+            model_name="yolo11s",
+            image_name="test.jpg",
+        )
+
+        populate_stream(mock_client, "s", [entry])
+
+        fields = mock_client.xadd.call_args.kwargs["fields"]
+        assert fields["data"] == b"\xff\xd8image-data"
+        assert fields["request_id"] == b"abc123"
+        assert fields["model_name"] == b"yolo11s"
+        assert fields["image_name"] == b"test.jpg"
+
+    def test_bytes_fields_preserved(self) -> None:
+        mock_client = MagicMock()
+        mock_client.xadd.return_value = b"1-0"
+        binary_data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+
+        entry = ImageStreamEntry(
+            data=binary_data,
+            request_id="id1",
+            model_name="m",
+            image_name="img.png",
+        )
+
+        populate_stream(mock_client, "s", [entry])
+
+        fields = mock_client.xadd.call_args.kwargs["fields"]
+        assert fields["data"] == binary_data
+        assert isinstance(fields["data"], bytes)
+
+    def test_non_bytes_fields_stringified(self) -> None:
+        mock_client = MagicMock()
+        mock_client.xadd.return_value = b"1-0"
+
+        entry = InspectionStreamEntry(
+            camera_no=3,
+            image_path="/data/img.jpg",
+            frame_counter=42,
+            receipt_ts=1234567890.123,
+            metal_type="steel",
+        )
+
+        populate_stream(mock_client, "s", [entry])
+
+        fields = mock_client.xadd.call_args.kwargs["fields"]
+        assert fields["camera_no"] == b"3"
+        assert fields["image_path"] == b"/data/img.jpg"
+        assert fields["frame_counter"] == b"42"
+        assert fields["metal_type"] == b"steel"
+        assert fields["event_type"] == b"image"
+
+    def test_fw_field_excluded(self) -> None:
+        """Models with an ``fw`` field (Event subclasses) have it excluded."""
+        mock_client = MagicMock()
+        mock_client.xadd.return_value = b"1-0"
+
+        class FakeEvent(BaseModel):
+            model_config = ConfigDict(frozen=True)
+            fw: str = "framework-meta"
+            data: str = "payload"
+
+        populate_stream(mock_client, "s", [FakeEvent()])
+
+        fields = mock_client.xadd.call_args.kwargs["fields"]
+        assert "fw" not in fields
+        assert fields["data"] == b"payload"
+
+    def test_model_without_fw_includes_all_fields(self) -> None:
+        mock_client = MagicMock()
+        mock_client.xadd.return_value = b"1-0"
+
+        entry = ImageStreamEntry(
+            data=b"img",
+            request_id="r",
+            model_name="m",
+            image_name="n",
+        )
+
+        populate_stream(mock_client, "s", [entry])
+
+        fields = mock_client.xadd.call_args.kwargs["fields"]
+        assert len(fields) == 4

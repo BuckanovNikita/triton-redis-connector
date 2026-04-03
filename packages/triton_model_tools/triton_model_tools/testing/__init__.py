@@ -7,6 +7,8 @@ from triton_model_tools.testing.preprocessing_verify import (
     verify_yolo_preprocessing,
 )
 from triton_model_tools.testing.stream_populator import (
+    ImageStreamEntry,
+    InspectionStreamEntry,
     PopulateResult,
     StreamFields,
     populate_stream,
@@ -15,6 +17,8 @@ from triton_model_tools.testing.stream_populator import (
 __all__ = [
     "ConnectorE2ETestHarness",
     "E2ETestConfig",
+    "ImageStreamEntry",
+    "InspectionStreamEntry",
     "PopulateResult",
     "PreprocessingResult",
     "StreamFields",

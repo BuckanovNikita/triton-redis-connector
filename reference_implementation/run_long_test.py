@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 import redis
 from loguru import logger
 from tqdm import tqdm
-from triton_model_tools.testing.stream_populator import StreamFields, populate_stream
+from triton_model_tools.testing.stream_populator import InspectionStreamEntry, populate_stream
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -95,29 +95,28 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _rate_limited_fields(
+def _rate_limited_entries(
     image_paths: list[Path],
     model_name: str,
     camera_count: int,
     duration_s: float,
     target_interval_s: float,
-) -> Iterator[StreamFields]:
-    """Yield field dicts at a controlled rate for the given duration."""
+) -> Iterator[InspectionStreamEntry]:
+    """Yield inspection entries at a controlled rate for the given duration."""
     image_cycle = itertools.cycle(image_paths)
     start_time = time.monotonic()
     total_pushed = 0
 
     while time.monotonic() - start_time < duration_s:
         image_path = next(image_cycle)
-        yield {
-            b"camera_no": str((total_pushed % camera_count) + 1).encode(),
-            b"image_path": str(image_path).encode(),
-            b"frame_counter": str(total_pushed + 1).encode(),
-            b"receipt_ts": str(time.time()).encode(),
-            b"metal_type": METAL_TYPES[total_pushed % len(METAL_TYPES)].encode(),
-            b"event_type": b"image",
-            b"model_name": model_name.encode(),
-        }
+        yield InspectionStreamEntry(
+            camera_no=(total_pushed % camera_count) + 1,
+            image_path=str(image_path),
+            frame_counter=total_pushed + 1,
+            receipt_ts=time.time(),
+            metal_type=METAL_TYPES[total_pushed % len(METAL_TYPES)],
+            model_name=model_name,
+        )
 
         total_pushed += 1
         expected_time = total_pushed * target_interval_s
@@ -153,7 +152,7 @@ def run_long_test(args: argparse.Namespace) -> None:
     logger.info("Redis connection established")
 
     total_expected = int(duration_s * args.images_per_second)
-    gen = _rate_limited_fields(image_paths, args.model_name, args.camera_count, duration_s, target_interval_s)
+    gen = _rate_limited_entries(image_paths, args.model_name, args.camera_count, duration_s, target_interval_s)
     progress = tqdm(gen, total=total_expected, desc="Pushing images", unit="img", dynamic_ncols=True)
 
     start_time = time.monotonic()

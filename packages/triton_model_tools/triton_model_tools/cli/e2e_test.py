@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from triton_model_tools.cli._types import SubParsers
 
 from triton_model_tools.cli._types import parse_image_size
-from triton_model_tools.testing.stream_populator import StreamFields, populate_stream
+from triton_model_tools.testing.stream_populator import InspectionStreamEntry, populate_stream
 
 _IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"})
 
@@ -160,21 +160,21 @@ def _push_images(
 ) -> list[str]:
     metal_types = _DEFAULT_METAL_TYPES
 
-    def _fields_gen() -> Iterator[StreamFields]:
+    def _entries() -> Iterator[InspectionStreamEntry]:
         for idx, image_path in enumerate(image_paths):
-            yield {
-                b"camera_no": str((idx % camera_count) + 1).encode(),
-                b"image_path": str(image_path.resolve()).encode(),
-                b"frame_counter": str(idx + 1).encode(),
-                b"receipt_ts": str(time.time()).encode(),
-                b"metal_type": metal_types[idx % len(metal_types)].encode(),
-                b"event_type": event_type.encode(),
-            }
+            yield InspectionStreamEntry(
+                camera_no=(idx % camera_count) + 1,
+                image_path=str(image_path.resolve()),
+                frame_counter=idx + 1,
+                receipt_ts=time.time(),
+                metal_type=metal_types[idx % len(metal_types)],
+                event_type=event_type,
+            )
 
     result = populate_stream(
         redis_client,
         stream,
-        _fields_gen(),
+        _entries(),
         maxlen=_XADD_MAXLEN,
     )
     return result.message_ids
