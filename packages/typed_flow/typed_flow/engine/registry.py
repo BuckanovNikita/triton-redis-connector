@@ -115,17 +115,91 @@ def _unwrap_annotated(annotation: object) -> type:
     return annotation  # type: ignore[return-value]
 
 
+def _build_typevar_map(cls: type) -> dict[typing.TypeVar, type]:
+    """Build a TypeVar -> concrete type mapping from the class hierarchy.
+
+    Walks ``__orig_bases__`` and matches generic parameters to their
+    concrete arguments at each subclass level.
+    """
+    tv_map: dict[typing.TypeVar, type] = {}
+    for klass in cls.__mro__:
+        for base in getattr(klass, "__orig_bases__", ()):
+            origin = typing.get_origin(base)
+            if origin is None:
+                continue
+            args = typing.get_args(base)
+            params: tuple[typing.TypeVar, ...] = getattr(origin, "__type_params__", ()) or getattr(
+                origin, "__parameters__", ()
+            )
+            tv_map.update(
+                {param: arg for param, arg in zip(params, args, strict=False) if not isinstance(arg, typing.TypeVar)}
+            )
+    return tv_map
+
+
+def _resolve_pydantic_generic(annotation: object, tv_map: dict[typing.TypeVar, type]) -> object | None:
+    """Substitute TypeVars in a Pydantic generic model via ``__pydantic_generic_metadata__``.
+
+    Returns the re-parametrized class if substitution happened, otherwise None.
+    """
+    pydantic_meta: dict[str, Any] | None = getattr(annotation, "__pydantic_generic_metadata__", None)
+    if pydantic_meta is None:
+        return None
+    pydantic_args: tuple[object, ...] = pydantic_meta.get("args", ())
+    pydantic_origin: type | None = pydantic_meta.get("origin")
+    if not pydantic_args or pydantic_origin is None:
+        return None
+    new_args = tuple(_substitute_typevars(a, tv_map) for a in pydantic_args)
+    if new_args == pydantic_args:
+        return None
+    return pydantic_origin[new_args]  # type: ignore[index,no-any-return]
+
+
+def _substitute_typevars(annotation: object, tv_map: dict[typing.TypeVar, type]) -> object:
+    """Recursively substitute TypeVars in a type annotation using the given map.
+
+    Handles standard typing generics (via ``get_origin``/``get_args``) and
+    Pydantic generic models (via ``_resolve_pydantic_generic``).
+    """
+    if isinstance(annotation, typing.TypeVar):
+        return tv_map.get(annotation, annotation)
+
+    origin = typing.get_origin(annotation)
+    args = typing.get_args(annotation)
+
+    if origin is None and not args:
+        return _resolve_pydantic_generic(annotation, tv_map) or annotation
+
+    if not args:
+        return annotation
+
+    new_args = tuple(_substitute_typevars(a, tv_map) for a in args)
+    if new_args == args:
+        return annotation
+
+    if origin is types.UnionType:
+        result: object = new_args[0]
+        for a in new_args[1:]:
+            result = result | a  # type: ignore[operator]
+        return result
+
+    return origin[new_args]  # type: ignore[index]
+
+
 def _extract_types_from_generics(node: object) -> tuple[set[type], set[type]]:
     """Extract (input_types, output_types) from a node's ``__orig_bases__``.
 
     Walks the class hierarchy to find the Base* class (BaseThreadSource,
     BaseThreadProcessor, etc.) and extracts its generic type parameters.
+    Resolves TypeVars using the concrete type arguments from subclasses.
 
     Sources: args[0] = output type (may be union)
     Processors: args[0] = input, args[1] = output (each may be union)
     Sinks: args[0] = input type (may be union)
     """
     cls = type(node)
+    tv_map = _build_typevar_map(cls)
+
     for klass in cls.__mro__:
         for base in getattr(klass, "__orig_bases__", ()):
             origin = typing.get_origin(base)
@@ -136,14 +210,16 @@ def _extract_types_from_generics(node: object) -> tuple[set[type], set[type]]:
                 continue
 
             if origin in _SOURCE_BASE_CLASSES:
-                return set(), set(_flatten_union(args[0]))
+                resolved = _substitute_typevars(args[0], tv_map)
+                return set(), set(_flatten_union(resolved))
 
             min_args_for_processor = 2
             if origin in _PROCESSOR_BASE_CLASSES and len(args) >= min_args_for_processor:
                 return set(_flatten_union(args[0])), set(_flatten_union(args[1]))
 
             if origin in _SINK_BASE_CLASSES:
-                return set(_flatten_union(args[0])), set()
+                resolved = _substitute_typevars(args[0], tv_map)
+                return set(_flatten_union(resolved)), set()
 
     return set(), set()
 

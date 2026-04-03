@@ -41,6 +41,23 @@ if TYPE_CHECKING:
     from typed_flow.engine.registry import GraphNode
 
 
+def _pydantic_generic_match(result_type: type, expected_type: type) -> bool:
+    """Compare Pydantic parametrized generic classes by their origin and args.
+
+    Pydantic's ``__class_getitem__`` cache is not thread-safe — calling
+    ``Model[T]`` from different threads may produce distinct class objects.
+    When ``is`` identity fails, this function compares via
+    ``__pydantic_generic_metadata__`` (origin + args) as a fallback.
+    """
+    result_meta: dict[str, object] | None = getattr(result_type, "__pydantic_generic_metadata__", None)
+    expected_meta: dict[str, object] | None = getattr(expected_type, "__pydantic_generic_metadata__", None)
+    if result_meta is None or expected_meta is None:
+        return False
+    return result_meta.get("origin") is expected_meta.get("origin") and result_meta.get("args") == expected_meta.get(
+        "args"
+    )
+
+
 class Application:
     """Main pipeline application.
 
@@ -330,7 +347,7 @@ class Application:
         result_type = type(result)
         routed = False
         for consumer_name, expected_type in consumer_pairs:
-            if result_type is expected_type:
+            if result_type is expected_type or _pydantic_generic_match(result_type, expected_type):
                 self._queue_bus.put(f"{consumer_name}:input", result)
                 routed = True
         if not routed:
