@@ -1,6 +1,6 @@
 """Application entry point with Hydra configuration composition.
 
-Composes the AppConfig from Hydra YAML files, builds a PipelineRegistry
+Composes the TritonAppConfig from Hydra YAML files, builds a PipelineRegistry
 and QueueBus, creates an Application, and runs the pipeline.
 """
 
@@ -14,13 +14,13 @@ import tritonclient.grpc as grpcclient
 from hydra import main as hydra_main
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
+from typed_flow.engine.app import Application
+from typed_flow.engine.queue_bus import QueueBus
+from typed_flow.engine.registry import PipelineRegistry
+from typed_flow.metrics.buffer import MetricBuffer
+from typed_flow.metrics.emitter import MetricEmitter
 
-from triton_redis_connector.config.schema import AppConfig
-from triton_redis_connector.engine.app import Application
-from triton_redis_connector.engine.queue_bus import QueueBus
-from triton_redis_connector.engine.registry import PipelineRegistry
-from triton_redis_connector.metrics.buffer import MetricBuffer
-from triton_redis_connector.metrics.emitter import MetricEmitter
+from triton_redis_connector.config.schema import TritonAppConfig
 from triton_redis_connector.metrics.triton_collector import TritonMetricsCollector
 
 APP_NAME = os.environ.get("APP_NAME", "triton-connector")
@@ -28,7 +28,7 @@ APP_NAME = os.environ.get("APP_NAME", "triton-connector")
 
 def _run_app(cfg: DictConfig) -> None:
     raw: dict[str, Any] = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)  # type: ignore[assignment]
-    app_config = AppConfig.model_validate(raw)
+    app_config = TritonAppConfig.model_validate(raw)
     logger.info("Starting {} with config: {}", APP_NAME, app_config)
 
     registry = PipelineRegistry()
@@ -42,7 +42,7 @@ def _run_app(cfg: DictConfig) -> None:
     triton_collector = TritonMetricsCollector(
         client=triton_client,
         buffer=metric_buffer,
-        poll_interval_s=app_config.metrics.triton_poll_interval_s,
+        poll_interval_s=app_config.inference.metrics_poll_interval_s,
     )
 
     metric_emitter: MetricEmitter | None = None
@@ -67,7 +67,7 @@ def _run_app(cfg: DictConfig) -> None:
         registry=registry,
         queue_bus=queue_bus,
         metric_buffer=metric_buffer,
-        triton_collector=triton_collector,
+        extra_service=triton_collector,
         metric_emitter=metric_emitter,
     )
     app.run()

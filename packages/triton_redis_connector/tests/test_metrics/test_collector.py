@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-from triton_redis_connector.metrics import MetricEvent
+from typed_flow.metrics import MetricEvent
 
 
 class TestMetricEvent:

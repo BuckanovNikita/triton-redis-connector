@@ -9,11 +9,13 @@ from pydantic import BaseModel, ConfigDict
 from triton_redis_connector.engine.events import (
     ImagePayload,
     InferenceTarget,
-    PipelineEvent,
     TritonRequest,
-    Unprocessed,
 )
 from triton_redis_connector.engine.shipped_processors import ClientPreprocessorNode
+from typed_flow.engine.events import (
+    PipelineEvent,
+    Unprocessed,
+)
 
 
 class RoutedEvent(InferenceTarget):
@@ -104,7 +106,7 @@ class TestInferenceTargetRouting:
 
 class TestAutoRedisSource:
     def test_subclass_extracts_event_model(self) -> None:
-        from triton_redis_connector.connectors.redis_stream import AutoRedisSource
+        from typed_flow.connectors.redis_stream import AutoRedisSource
 
         class MySource(AutoRedisSource[PlainEvent]): ...
 
@@ -112,7 +114,7 @@ class TestAutoRedisSource:
 
     def test_subclass_without_type_param_raises(self) -> None:
         import pytest
-        from triton_redis_connector.connectors.redis_stream import AutoRedisSource
+        from typed_flow.connectors.redis_stream import AutoRedisSource
 
         with pytest.raises(TypeError, match="must specify a concrete BaseModel type"):
 
@@ -121,12 +123,12 @@ class TestAutoRedisSource:
     def test_produces_deserialized_event(self) -> None:
         from unittest.mock import MagicMock
 
-        from triton_redis_connector.config.schema import SourceConfig
-        from triton_redis_connector.connectors.redis_stream import (
+        from typed_flow.config.schema import SourceConfig
+        from typed_flow.connectors.redis_stream import (
             AutoRedisSource,
             RedisStreamInputConnector,
         )
-        from triton_redis_connector.protocols import Envelope
+        from typed_flow.protocols import Envelope
 
         class MySource(AutoRedisSource[PlainEvent]): ...
 
@@ -157,8 +159,8 @@ class TestAutoRedisSource:
     def test_returns_none_when_no_messages(self) -> None:
         from unittest.mock import MagicMock
 
-        from triton_redis_connector.config.schema import SourceConfig
-        from triton_redis_connector.connectors.redis_stream import (
+        from typed_flow.config.schema import SourceConfig
+        from typed_flow.connectors.redis_stream import (
             AutoRedisSource,
             RedisStreamInputConnector,
         )

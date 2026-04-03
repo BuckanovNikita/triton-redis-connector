@@ -5,8 +5,8 @@ from __future__ import annotations
 import queue
 
 import pytest
-from triton_redis_connector.config.schema import QueueConfig
-from triton_redis_connector.engine.queue_bus import QueueBus, QueueOverflow
+from typed_flow.config.schema import QueueConfig
+from typed_flow.engine.queue_bus import QueueBus, QueueOverflow
 
 
 @pytest.fixture

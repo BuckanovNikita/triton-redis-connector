@@ -5,14 +5,14 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from triton_redis_connector.config.schema import SinkConfig, SourceConfig
-from triton_redis_connector.connectors.consumer_group import ConsumerGroupManager
-from triton_redis_connector.connectors.redis_stream import (
+from typed_flow.config.schema import SinkConfig, SourceConfig
+from typed_flow.connectors.consumer_group import ConsumerGroupManager
+from typed_flow.connectors.redis_stream import (
     RedisStreamInputConnector,
     RedisStreamOutputConnector,
     RedisStreamSink,
 )
-from triton_redis_connector.protocols import Envelope
+from typed_flow.protocols import Envelope
 
 
 @pytest.fixture

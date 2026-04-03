@@ -7,14 +7,14 @@ import time
 from unittest.mock import patch
 
 import pytest
-from triton_redis_connector.metrics.aggregation import (
+from typed_flow.metrics.aggregation import (
     AvgByRule,
     CountByRule,
     SumByRule,
     TimeWindowAggregator,
 )
-from triton_redis_connector.metrics.buffer import MetricBuffer
-from triton_redis_connector.metrics.collector import MetricEvent
+from typed_flow.metrics.buffer import MetricBuffer
+from typed_flow.metrics.collector import MetricEvent
 
 
 def _make_event(
@@ -96,7 +96,7 @@ class TestTimeWindowAggregator:
 
         aggregator(_make_event(measure="inference"))
 
-        with patch("triton_redis_connector.metrics.aggregation.time") as mock_time:
+        with patch("typed_flow.metrics.aggregation.time") as mock_time:
             mock_time.monotonic.return_value = time.monotonic() + 2.0
             mock_time.time.return_value = time.time()
             aggregator(_make_event(measure="inference"))

@@ -9,9 +9,9 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 from triton_redis_connector.config.schema import InferenceConfig
-from triton_redis_connector.engine.middleware import RetryMiddleware
 from triton_redis_connector.inference.request import InferenceOutput, TritonRequest
 from triton_redis_connector.inference.worker import InferenceWorker, InferenceWorkerFactory
+from typed_flow.engine.middleware import RetryMiddleware
 
 
 def _make_input(model_name: str = "yolo11s") -> TritonRequest:

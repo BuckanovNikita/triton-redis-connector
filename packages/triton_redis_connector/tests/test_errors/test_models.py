@@ -6,11 +6,11 @@ from typing import Any
 
 import pytest
 from pydantic import ValidationError
-from triton_redis_connector.errors import (
-    ConnectorError,
+from triton_redis_connector.errors.models import (
     InferenceError,
     PreprocessingError,
 )
+from typed_flow.errors.models import ConnectorError
 
 _VALID_INSTANCES: list[tuple[type, dict[str, Any]]] = [
     (

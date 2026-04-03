@@ -15,14 +15,15 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
-from triton_redis_connector.config.schema import AppConfig
-from triton_redis_connector.engine.app import Application
-from triton_redis_connector.engine.events import (
+from triton_redis_connector.errors.models import InferenceError, PreprocessingError
+from typed_flow.config.schema import AppConfig
+from typed_flow.engine.app import Application
+from typed_flow.engine.events import (
     FrameworkMeta,
     PipelineEvent,
 )
-from triton_redis_connector.errors.models import ConnectorError, InferenceError, PreprocessingError
-from triton_redis_connector.protocols import (
+from typed_flow.errors.models import ConnectorError
+from typed_flow.protocols import (
     BaseThreadProcessor,
     BaseThreadSink,
     BaseThreadSource,
@@ -244,7 +245,7 @@ class TestErrorEventFrozen:
 
 class TestPreprocessingErrorMetrics:
     def test_has_decode_failure_counter(self) -> None:
-        from triton_redis_connector.engine.metric_aggregator import extract_event_counters
+        from typed_flow.engine.metric_aggregator import extract_event_counters
 
         counters = extract_event_counters(PreprocessingError)
         assert any(c.name == "decode_failure" for c in counters)

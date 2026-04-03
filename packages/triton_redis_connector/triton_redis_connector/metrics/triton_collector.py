@@ -10,11 +10,10 @@ import threading
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
-
-from triton_redis_connector.metrics.collector import MetricEvent
+from typed_flow.metrics.collector import MetricEvent
 
 if TYPE_CHECKING:
-    from triton_redis_connector.metrics.buffer import MetricBuffer
+    from typed_flow.metrics.buffer import MetricBuffer
 
 NANOS_PER_MS = 1_000_000
 

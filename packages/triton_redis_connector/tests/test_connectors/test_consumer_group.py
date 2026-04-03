@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from redis.exceptions import ResponseError
-from triton_redis_connector.connectors.consumer_group import ConsumerGroupManager
+from typed_flow.connectors.consumer_group import ConsumerGroupManager
 
 
 @pytest.fixture

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from triton_redis_connector.protocols import Envelope
+from typed_flow.protocols import Envelope
 
 
 class TestEnvelopeCreation:

@@ -188,7 +188,7 @@ uv run python examples/dual_model_pipeline/run_pipeline.py
 - **Gauge**: `Annotated[float, Gauge("name")]` на поле события -- извлекает числовое значение
 - **GroupBy**: `Annotated[str, GroupBy("name", window_s=60)]` на поле события -- группировка по значению поля
 
-`Counter`, `Gauge`, `GroupBy` импортируются из `triton_redis_connector.protocols`.
+`Counter`, `Gauge`, `GroupBy` импортируются из `typed_flow.protocols`.
 `MetricEvent` содержит только 3 поля: `component_name`, `measure`, `value`.
 
 ### Queue метрики
@@ -216,7 +216,7 @@ uv run python examples/dual_model_pipeline/run_pipeline.py
 
 ```python
 from typing import Annotated
-from triton_redis_connector.engine.metric_aggregator import Tracked
+from typed_flow.engine.metric_aggregator import Tracked
 
 InferenceType = Annotated[InferenceWorker, Tracked("inference")]
 ```

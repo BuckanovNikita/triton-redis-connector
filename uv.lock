@@ -59,6 +59,7 @@ members = [
     "triton-redis-connector",
     "triton-redis-connector-workspace",
     "triton-shared-models",
+    "typed-flow",
 ]
 
 [[package]]
@@ -4929,11 +4930,11 @@ dependencies = [
     { name = "opencv-python-headless", version = "4.13.0.92", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-26-02' or extra != 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
     { name = "pydantic" },
     { name = "pyturbojpeg" },
-    { name = "redis" },
     { name = "triton-shared-models" },
     { name = "tritonclient", version = "2.55.0", source = { registry = "https://pypi.org/simple" }, extra = ["grpc"], marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
     { name = "tritonclient", version = "2.66.0", source = { registry = "https://pypi.org/simple" }, extra = ["grpc"], marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-26-02'" },
     { name = "tritonclient", version = "2.67.0", source = { registry = "https://pypi.org/simple" }, extra = ["grpc"], marker = "(extra == 'extra-32-triton-redis-connector-workspace-triton-25-03' and extra == 'extra-32-triton-redis-connector-workspace-triton-26-02') or (extra != 'extra-32-triton-redis-connector-workspace-triton-25-03' and extra != 'extra-32-triton-redis-connector-workspace-triton-26-02')" },
+    { name = "typed-flow" },
 ]
 
 [package.metadata]
@@ -4945,9 +4946,9 @@ requires-dist = [
     { name = "opencv-python-headless", specifier = ">=4.10.0,<5.0.0" },
     { name = "pydantic", specifier = ">=2.12.5,<3.0.0" },
     { name = "pyturbojpeg", specifier = ">=1.7.0,<2.0.0" },
-    { name = "redis", specifier = ">=5.2.0,<6.0.0" },
     { name = "triton-shared-models", editable = "packages/triton_shared_models" },
     { name = "tritonclient", extras = ["grpc"], specifier = ">=2.55.0,<3.0.0" },
+    { name = "typed-flow", editable = "packages/typed_flow" },
 ]
 
 [[package]]
@@ -4986,6 +4987,7 @@ dev = [
     { name = "triton-model-tools" },
     { name = "triton-redis-connector" },
     { name = "triton-shared-models" },
+    { name = "typed-flow" },
     { name = "types-antlr4-python3-runtime" },
     { name = "types-colorama" },
     { name = "types-defusedxml" },
@@ -5066,6 +5068,7 @@ dev = [
     { name = "triton-model-tools", editable = "packages/triton_model_tools" },
     { name = "triton-redis-connector", editable = "packages/triton_redis_connector" },
     { name = "triton-shared-models", editable = "packages/triton_shared_models" },
+    { name = "typed-flow", editable = "packages/typed_flow" },
     { name = "types-antlr4-python3-runtime", specifier = ">=4.13.0.20260402" },
     { name = "types-colorama", specifier = ">=0.4.15.20250801" },
     { name = "types-defusedxml", specifier = ">=0.7.0.20260402" },
@@ -5264,6 +5267,23 @@ grpc = [
     { name = "packaging", marker = "(extra == 'extra-32-triton-redis-connector-workspace-triton-25-03' and extra == 'extra-32-triton-redis-connector-workspace-triton-26-02') or (extra != 'extra-32-triton-redis-connector-workspace-triton-25-03' and extra != 'extra-32-triton-redis-connector-workspace-triton-26-02')" },
     { name = "protobuf", version = "6.33.6", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-32-triton-redis-connector-workspace-triton-25-03' and extra == 'extra-32-triton-redis-connector-workspace-triton-26-02') or (extra != 'extra-32-triton-redis-connector-workspace-triton-25-03' and extra != 'extra-32-triton-redis-connector-workspace-triton-26-02')" },
     { name = "python-rapidjson", marker = "(extra == 'extra-32-triton-redis-connector-workspace-triton-25-03' and extra == 'extra-32-triton-redis-connector-workspace-triton-26-02') or (extra != 'extra-32-triton-redis-connector-workspace-triton-25-03' and extra != 'extra-32-triton-redis-connector-workspace-triton-26-02')" },
+]
+
+[[package]]
+name = "typed-flow"
+version = "0.1.0"
+source = { editable = "packages/typed_flow" }
+dependencies = [
+    { name = "loguru" },
+    { name = "pydantic" },
+    { name = "redis" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "loguru", specifier = ">=0.7.3,<1.0.0" },
+    { name = "pydantic", specifier = ">=2.12.5,<3.0.0" },
+    { name = "redis", specifier = ">=5.2.0,<6.0.0" },
 ]
 
 [[package]]

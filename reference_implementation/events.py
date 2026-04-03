@@ -27,7 +27,7 @@ from triton_redis_connector.engine.events import (
     DetectionResult,
     ImagePayload,
 )
-from triton_redis_connector.protocols import Counter, GroupBy
+from typed_flow.protocols import Counter, GroupBy
 
 DETECTION_MODEL = "yolo26l"
 CLASSIFICATION_MODEL = "resnet18"

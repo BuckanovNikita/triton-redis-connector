@@ -5,20 +5,20 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from pydantic import BaseModel, ConfigDict
-from triton_redis_connector.config.schema import SourceConfig
-from triton_redis_connector.connectors.redis_stream import (
+from typed_flow.config.schema import SourceConfig
+from typed_flow.connectors.redis_stream import (
     LiveRedisStreamSource,
     RedisStreamInputConnector,
     RedisStreamOutputConnector,
     TypedRedisStreamSink,
 )
-from triton_redis_connector.engine.events import (
+from typed_flow.engine.events import (
     FrameworkMeta,
     PipelineEvent,
     Unprocessed,
 )
-from triton_redis_connector.errors.models import ConnectorError
-from triton_redis_connector.protocols import Envelope
+from typed_flow.errors.models import ConnectorError
+from typed_flow.protocols import Envelope
 
 
 class SampleEvent(BaseModel):
@@ -124,7 +124,7 @@ class TestTypedRedisStreamSink:
         mock_redis = MagicMock()
         mock_redis.xadd.return_value = b"1-0"
 
-        from triton_redis_connector.config.schema import SinkConfig
+        from typed_flow.config.schema import SinkConfig
 
         sink_config = SinkConfig(stream_name="stream:output")
         output_connector = RedisStreamOutputConnector(mock_redis, sink_config)
@@ -156,7 +156,7 @@ class TestTypedRedisStreamSink:
         mock_redis = MagicMock()
         mock_redis.xadd.return_value = b"1-0"
 
-        from triton_redis_connector.config.schema import SinkConfig
+        from typed_flow.config.schema import SinkConfig
 
         sink_config = SinkConfig(stream_name="stream:output")
         output_connector = RedisStreamOutputConnector(mock_redis, sink_config)
@@ -186,7 +186,7 @@ class TestTypedRedisStreamSink:
         mock_redis = MagicMock()
         mock_redis.xadd.return_value = b"1-0"
 
-        from triton_redis_connector.config.schema import SinkConfig
+        from typed_flow.config.schema import SinkConfig
 
         sink_config = SinkConfig(stream_name="stream:output")
         output_connector = RedisStreamOutputConnector(mock_redis, sink_config)
@@ -218,7 +218,7 @@ class TestTypedRedisStreamSink:
 
         import json
 
-        from triton_redis_connector.config.schema import SinkConfig
+        from typed_flow.config.schema import SinkConfig
 
         sink_config = SinkConfig(stream_name="stream:output")
         output_connector = RedisStreamOutputConnector(mock_redis, sink_config)

@@ -5,8 +5,8 @@ from __future__ import annotations
 import threading
 import time
 
-from triton_redis_connector.metrics.buffer import MetricBuffer
-from triton_redis_connector.metrics.collector import MetricEvent
+from typed_flow.metrics.buffer import MetricBuffer
+from typed_flow.metrics.collector import MetricEvent
 
 
 def _make_event(measure: str = "test", value: float = 1.0) -> MetricEvent:

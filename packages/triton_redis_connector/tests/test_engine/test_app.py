@@ -6,12 +6,12 @@ import threading
 import time
 
 import pytest
-from triton_redis_connector.config.schema import AppConfig, QueueConfig
-from triton_redis_connector.engine.app import Application
-from triton_redis_connector.engine.queue_bus import QueueBus
-from triton_redis_connector.engine.registry import PipelineRegistry
-from triton_redis_connector.metrics.buffer import MetricBuffer
-from triton_redis_connector.protocols import (
+from typed_flow.config.schema import AppConfig, QueueConfig
+from typed_flow.engine.app import Application
+from typed_flow.engine.queue_bus import QueueBus
+from typed_flow.engine.registry import PipelineRegistry
+from typed_flow.metrics.buffer import MetricBuffer
+from typed_flow.protocols import (
     BaseThreadProcessor,
     BaseThreadSink,
     BaseThreadSource,

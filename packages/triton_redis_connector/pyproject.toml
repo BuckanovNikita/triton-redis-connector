@@ -8,7 +8,8 @@ version = "0.1.0"
 description = "Redis Streams to Triton Inference Server connector"
 requires-python = ">=3.12"
 dependencies = [
-    "redis>=5.2.0,<6.0.0",
+    "typed-flow",
+    "triton-shared-models",
     "tritonclient[grpc]>=2.55.0,<3.0.0",
     "pydantic>=2.12.5,<3.0.0",
     "loguru>=0.7.3,<1.0.0",
@@ -17,8 +18,8 @@ dependencies = [
     "omegaconf>=2.3.0,<3.0.0",
     "opencv-python-headless>=4.10.0,<5.0.0",
     "PyTurboJPEG>=1.7.0,<2.0.0",
-    "triton-shared-models",
 ]
 
 [tool.uv.sources]
+typed-flow = { workspace = true }
 triton-shared-models = { workspace = true }

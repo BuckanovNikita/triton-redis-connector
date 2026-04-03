@@ -28,24 +28,10 @@ from loguru import logger
 from omegaconf import OmegaConf
 from redis import Redis
 from triton_model_tools.inference.yolo_bridge import YoloPostProcessorBridge
-from triton_redis_connector.config.schema import (
-    AppConfig,
-    SinkConfig,
-    SourceConfig,
-)
-from triton_redis_connector.connectors.consumer_group import ConsumerGroupManager
-from triton_redis_connector.connectors.redis_stream import (
-    RedisStreamInputConnector,
-    RedisStreamOutputConnector,
-    TypedRedisStreamSink,
-)
-from triton_redis_connector.engine.app import Application
+from triton_redis_connector.config.schema import TritonAppConfig
 from triton_redis_connector.engine.events import (
     DetectionResult,
-    FrameworkMeta,
-    PipelineEvent,
     TritonRequest,
-    Unprocessed,
 )
 from triton_redis_connector.engine.shipped_processors import (
     ClientPreprocessorNode,
@@ -55,8 +41,17 @@ from triton_redis_connector.engine.shipped_processors import (
 )
 from triton_redis_connector.inference.request import InferenceOutput
 from triton_redis_connector.preprocessing.decoder import OpenCVDecoder, TurboJPEGDecoder
-from triton_redis_connector.protocols import BaseThreadSource
 from triton_shared_models.preprocessing import LetterBoxPreprocessor
+from typed_flow.config.schema import SinkConfig, SourceConfig
+from typed_flow.connectors.consumer_group import ConsumerGroupManager
+from typed_flow.connectors.redis_stream import (
+    RedisStreamInputConnector,
+    RedisStreamOutputConnector,
+    TypedRedisStreamSink,
+)
+from typed_flow.engine.app import Application
+from typed_flow.engine.events import FrameworkMeta, PipelineEvent, Unprocessed
+from typed_flow.protocols import BaseThreadSource
 
 from reference_implementation.events import (
     EVEN_MODEL,
@@ -125,7 +120,7 @@ class SteelInspectionSource(BaseThreadSource[PipelineEvent[SteelInspectionInput,
 def main() -> None:
     """Load config, build pipeline with Application.build(), run."""
     raw_cfg = OmegaConf.load(CONFIG_DIR / "config.yaml")
-    config = AppConfig.model_validate(OmegaConf.to_container(raw_cfg, resolve=True))
+    config = TritonAppConfig.model_validate(OmegaConf.to_container(raw_cfg, resolve=True))
     app_name = os.environ.get("APP_NAME", "dual-model-steel-inspection")
     logger.info("Starting {}", app_name)
 

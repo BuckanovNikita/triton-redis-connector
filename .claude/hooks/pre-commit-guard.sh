@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 # PreToolUse hook: run pre-commit before allowing git commit
 # Blocks commit, runs pre-commit, blocks if it fails
@@ -20,14 +20,12 @@ esac
 
 cd "${CLAUDE_PROJECT_DIR:-.}"
 
-# Run pre-commit, capture output
-OUTPUT=$(uv run pre-commit run --all-files 2>&1) && RC=0 || RC=$?
+# Run pre-commit and check exit code directly
+uv run pre-commit run --all-files
+RC=$?
 
 if [ "$RC" -ne 0 ]; then
-    # Truncate output to last 80 lines to avoid flooding
-    TAIL=$(echo "$OUTPUT" | tail -80)
-    echo "pre-commit failed. Fix issues before committing:" >&2
-    echo "$TAIL" >&2
+    echo "pre-commit failed (exit code $RC). Fix issues before committing." >&2
     exit 2
 fi
 

@@ -1,29 +1,21 @@
-"""Configuration models for the connector pipeline."""
+"""Configuration models for the triton-redis-connector pipeline."""
 
 from __future__ import annotations
 
 from triton_redis_connector.config.schema import (
-    AppConfig,
     DecoderPoolType,
     DecoderType,
     InferenceConfig,
-    MetricsConfig,
+    PipelineConfig,
     PreprocessingConfig,
-    QueueConfig,
-    RedisConnectionConfig,
-    SinkConfig,
-    SourceConfig,
+    TritonAppConfig,
 )
 
 __all__ = [
-    "AppConfig",
     "DecoderPoolType",
     "DecoderType",
     "InferenceConfig",
-    "MetricsConfig",
+    "PipelineConfig",
     "PreprocessingConfig",
-    "QueueConfig",
-    "RedisConnectionConfig",
-    "SinkConfig",
-    "SourceConfig",
+    "TritonAppConfig",
 ]

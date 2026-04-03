@@ -64,6 +64,7 @@ test = [
     "pytest-asyncio>=1.1.0,<2.0.0",
 ]
 dev = [
+    "typed-flow",
     "triton-redis-connector",
     "triton-model-tools",
     "triton-shared-models",
@@ -74,6 +75,7 @@ dev = [
 ]
 
 [tool.uv.sources]
+typed-flow = { workspace = true }
 triton-redis-connector = { workspace = true }
 triton-model-tools = { workspace = true }
 triton-shared-models = { workspace = true }
@@ -121,11 +123,13 @@ warn_return_any = true
 warn_unused_configs = true
 explicit_package_bases = true
 mypy_path = [
+    "packages/typed_flow",
     "packages/triton_redis_connector",
     "packages/triton_model_tools",
     "packages/triton_shared_models",
 ]
 exclude = [
+    "packages/typed_flow/tests/",
     "packages/triton_redis_connector/tests/",
     "packages/triton_model_tools/tests/",
     "packages/triton_shared_models/tests/",
@@ -158,6 +162,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = [
+    "packages/typed_flow/tests",
     "packages/triton_redis_connector/tests",
     "packages/triton_model_tools/tests",
     "packages/triton_shared_models/tests",
@@ -174,6 +179,7 @@ markers = [
 min_confidence = 80
 ignore_names = ["event", "shared", "envelope", "count", "new_payload", "block_ms", "data", "image", "raw", "message_id", "target_size", "timeout_s", "consumer_group", "input_stream", "output_stream", "end2end", "kwargs", "enable_dynamic_batching", "max_batch_size"]
 paths = [
+    "packages/typed_flow/typed_flow",
     "packages/triton_redis_connector/triton_redis_connector",
     "packages/triton_model_tools/triton_model_tools",
     "packages/triton_shared_models/triton_shared_models",
@@ -185,42 +191,59 @@ paths = [
 
 [tool.importlinter]
 root_packages = [
+    "typed_flow",
     "triton_redis_connector",
     "triton_model_tools",
     "triton_shared_models",
 ]
 include_external_packages = false
 
-# Contract 1: Layer hierarchy inside triton_redis_connector
-# Layers ordered top-to-bottom; each may only import from layers below.
-# Enforces layer architecture: domain → engine → config/errors → protocols (leaf)
-# Parenthesized modules are optional (not yet created).
+# Contract 1: typed_flow internal layer hierarchy
+[[tool.importlinter.contracts]]
+id = "typed-flow-layers"
+name = "typed_flow layer architecture"
+type = "layers"
+layers = [
+    "(typed_flow.connectors) | (typed_flow.metrics)",
+    "(typed_flow.engine)",
+    "(typed_flow.config) | (typed_flow.errors)",
+    "(typed_flow.protocols)",
+]
+ignore_imports = [
+    "typed_flow.engine.metric_aggregator -> typed_flow.metrics.collector",
+    "typed_flow.engine.app -> typed_flow.metrics.buffer",
+    "typed_flow.engine.app -> typed_flow.metrics.emitter",
+]
+
+# Contract 2: typed_flow must not import triton_redis_connector or triton_model_tools
+[[tool.importlinter.contracts]]
+id = "typed-flow-independence"
+name = "typed_flow must not import triton packages"
+type = "forbidden"
+source_modules = [
+    "typed_flow",
+]
+forbidden_modules = [
+    "triton_redis_connector",
+    "triton_model_tools",
+]
+
+# Contract 3: triton_redis_connector internal layers
 [[tool.importlinter.contracts]]
 id = "connector-layers"
 name = "triton_redis_connector layer architecture"
 type = "layers"
 layers = [
-    "(triton_redis_connector.connectors) | (triton_redis_connector.inference) | (triton_redis_connector.preprocessing) | (triton_redis_connector.metrics)",
+    "(triton_redis_connector.inference) | (triton_redis_connector.preprocessing) | (triton_redis_connector.metrics)",
     "(triton_redis_connector.engine)",
     "(triton_redis_connector.config) | (triton_redis_connector.errors)",
-    "(triton_redis_connector.protocols)",
 ]
 ignore_imports = [
-    "triton_redis_connector.engine.metric_aggregator -> triton_redis_connector.metrics.collector",
-    "triton_redis_connector.engine.app -> triton_redis_connector.metrics.buffer",
-    "triton_redis_connector.engine.app -> triton_redis_connector.metrics.emitter",
     "triton_redis_connector.engine.shipped_processors -> triton_redis_connector.inference.request",
     "triton_redis_connector.engine.shipped_processors -> triton_redis_connector.errors.models",
 ]
 
-# Contract 2: Domain modules must not import each other.
-# connectors, inference, preprocessing, metrics communicate via engine/graph.
-# Uses pipe-delimited independent layer — import-linter enforces no
-# cross-imports between modules on the same layer line.
-# (Already enforced by connector-layers contract above. Explicit independence
-# contract will be added once these modules exist in the codebase.)
-
-# Contract 3: Package boundary — connector must not import model_tools
+# Contract 4: triton_redis_connector must not import model_tools
 [[tool.importlinter.contracts]]
 id = "connector-no-model-tools"
 name = "triton_redis_connector must not import triton_model_tools"
@@ -232,9 +255,7 @@ forbidden_modules = [
     "triton_model_tools",
 ]
 
-# Contract 4: (removed — model_tools now depends on connector)
-
-# Contract 5: Package boundary — shared_models must not import connector or model_tools
+# Contract 5: shared_models must not import any other workspace package
 [[tool.importlinter.contracts]]
 id = "shared-models-independence"
 name = "triton_shared_models must not import connector or model_tools"
@@ -243,12 +264,12 @@ source_modules = [
     "triton_shared_models",
 ]
 forbidden_modules = [
+    "typed_flow",
     "triton_redis_connector",
     "triton_model_tools",
 ]
 
 # Contract 6: model_tools internal layers
-# __main__ (CLI) → benchmarks → testing → inference/export → models (leaf)
 [[tool.importlinter.contracts]]
 id = "model-tools-layers"
 name = "triton_model_tools layer architecture"
@@ -263,7 +284,7 @@ layers = [
 ]
 
 [tool.coverage.run]
-source = ["triton_redis_connector", "triton_model_tools", "triton_shared_models"]
+source = ["typed_flow", "triton_redis_connector", "triton_model_tools", "triton_shared_models"]
 branch = true
 
 [tool.coverage.report]

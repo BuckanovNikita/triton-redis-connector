@@ -16,16 +16,17 @@ import numpy.typing as npt
 import tritonclient.grpc as grpcclient
 from loguru import logger
 from pydantic import BaseModel
+from typed_flow.engine.events import PipelineEvent
+from typed_flow.errors.models import ConnectorError
+from typed_flow.protocols import BaseThreadProcessor, BaseThreadSink
 
 from triton_redis_connector.engine.events import (
     ImagePayload,
     InferenceTarget,
-    PipelineEvent,
     TritonRequest,
 )
-from triton_redis_connector.errors.models import ConnectorError, InferenceError, PreprocessingError
+from triton_redis_connector.errors.models import InferenceError, PreprocessingError
 from triton_redis_connector.inference.request import InferenceOutput
-from triton_redis_connector.protocols import BaseThreadProcessor, BaseThreadSink
 
 
 class _DecoderProtocol(Protocol):

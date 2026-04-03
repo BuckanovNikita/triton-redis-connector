@@ -5,9 +5,9 @@ from __future__ import annotations
 import time
 from unittest.mock import MagicMock
 
-from triton_redis_connector.metrics.buffer import MetricBuffer
-from triton_redis_connector.metrics.collector import MetricEvent
-from triton_redis_connector.metrics.emitter import MetricEmitter
+from typed_flow.metrics.buffer import MetricBuffer
+from typed_flow.metrics.collector import MetricEvent
+from typed_flow.metrics.emitter import MetricEmitter
 
 
 def _make_event(measure: str = "test", value: float = 1.0) -> MetricEvent:

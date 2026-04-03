@@ -1,6 +1,5 @@
 output_stream: metrics
 emit_interval_s: 5.0
-triton_poll_interval_s: 10.0
 error_flush_interval_s: 30.0
 stats_log_interval_s: 60.0
 transit_time_enabled: true

@@ -28,7 +28,6 @@ queues:
 metrics:
   output_stream: metrics
   emit_interval_s: 5.0
-  triton_poll_interval_s: 10.0
 
 debug:
   mermaid_path: flow.md

@@ -5,12 +5,12 @@ from __future__ import annotations
 import threading
 import time
 
-from triton_redis_connector.errors.collector import ErrorCollector
 from triton_redis_connector.errors.models import (
-    ConnectorError,
     InferenceError,
     PreprocessingError,
 )
+from typed_flow.errors.collector import ErrorCollector
+from typed_flow.errors.models import ConnectorError
 
 
 def _connector_error(error_type: str = "ConnectionError") -> ConnectorError:

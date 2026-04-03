@@ -7,12 +7,9 @@ Custom sinks are replaced by generic TypedRedisStreamSink.
 from __future__ import annotations
 
 from loguru import logger
-from triton_redis_connector.engine.events import (
-    DetectionResult,
-    PipelineEvent,
-    Unprocessed,
-)
-from triton_redis_connector.protocols import BaseThreadProcessor
+from triton_redis_connector.engine.events import DetectionResult
+from typed_flow.engine.events import PipelineEvent, Unprocessed
+from typed_flow.protocols import BaseThreadProcessor
 
 from reference_implementation.events import (
     EVEN_MODEL,

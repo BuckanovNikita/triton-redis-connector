@@ -6,8 +6,8 @@ import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from triton_redis_connector.metrics.buffer import MetricBuffer
 from triton_redis_connector.metrics.triton_collector import TritonMetricsCollector
+from typed_flow.metrics.buffer import MetricBuffer
 
 
 def _build_triton_stats_response(  # noqa: PLR0913

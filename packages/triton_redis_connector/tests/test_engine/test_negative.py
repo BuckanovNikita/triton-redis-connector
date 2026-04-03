@@ -11,16 +11,17 @@ import time
 
 import pytest
 from pydantic import BaseModel, ConfigDict
-from triton_redis_connector.config.schema import AppConfig
-from triton_redis_connector.engine.app import Application
-from triton_redis_connector.engine.events import (
+from triton_redis_connector.errors.models import InferenceError, PreprocessingError
+from typed_flow.config.schema import AppConfig
+from typed_flow.engine.app import Application
+from typed_flow.engine.events import (
     FrameworkMeta,
     PipelineEvent,
 )
-from triton_redis_connector.engine.registry import PipelineRegistry
-from triton_redis_connector.engine.validation import validate_graph
-from triton_redis_connector.errors.models import ConnectorError, InferenceError, PreprocessingError
-from triton_redis_connector.protocols import (
+from typed_flow.engine.registry import PipelineRegistry
+from typed_flow.engine.validation import validate_graph
+from typed_flow.errors.models import ConnectorError
+from typed_flow.protocols import (
     BaseThreadProcessor,
     BaseThreadSink,
     BaseThreadSource,

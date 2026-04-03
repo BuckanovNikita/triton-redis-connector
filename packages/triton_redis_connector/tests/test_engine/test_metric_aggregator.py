@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from typing import Annotated
 
-from triton_redis_connector.engine.metric_aggregator import (
+from typed_flow.engine.metric_aggregator import (
     Counter,
     Gauge,
     MetricAggregator,

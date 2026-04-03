@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Annotated, ClassVar
 
 import pytest
-from triton_redis_connector.engine.registry import ExecutionVariant, PipelineRegistry
-from triton_redis_connector.protocols import (
+from typed_flow.engine.registry import ExecutionVariant, PipelineRegistry
+from typed_flow.protocols import (
     BaseProcessPoolProcessor,
     BaseProcessSource,
     BaseThreadPoolProcessor,
@@ -321,7 +321,7 @@ class TestAnnotatedMetricExtraction:
         assert registry.all_counter_names == set()
 
     def test_gauge_extracted_from_event_field(self, registry: PipelineRegistry) -> None:
-        from triton_redis_connector.engine.metric_aggregator import extract_field_gauges
+        from typed_flow.engine.metric_aggregator import extract_field_gauges
 
         gauges = extract_field_gauges(EventWithGaugeField)
         assert len(gauges) == 1

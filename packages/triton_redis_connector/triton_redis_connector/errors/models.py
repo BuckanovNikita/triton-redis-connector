@@ -1,7 +1,6 @@
-"""Typed error events that flow through the pipeline graph.
+"""Typed error events for Triton inference and preprocessing failures.
 
-Errors are never raised during normal operation. Instead, processors and sources
-return these typed error events, which the graph routes to error-handling sinks.
+These errors flow through the pipeline graph as events, never raised.
 """
 
 from __future__ import annotations
@@ -9,25 +8,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict
-
-from triton_redis_connector.protocols import Counter
-
-
-class ConnectorError(BaseModel):
-    """Error originating from a Redis connector (source or sink).
-
-    Covers connection failures, deserialization errors, and stream operation
-    failures. Routed to ErrorHandlerSink via graph type matching.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    connector_name: str
-    stream_name: str
-    message_id: str | None
-    error_type: str
-    error_message: str
-    timestamp_ms: int
+from typed_flow.protocols import Counter
 
 
 class InferenceError(BaseModel):
