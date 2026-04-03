@@ -29,12 +29,13 @@ sources:
     block_ms: 100
 
 sinks:
-  - stream_name: "sensor:merged"
+  - stream_name: "sensor:enriched"
     maxlen: 100000
     approximate_maxlen: true
 
 metrics:
-  output_stream: ""
+  output_stream: "metrics:reference"
+  emit_interval_s: 60.0
   stats_log_interval_s: 30.0
 
 debug:

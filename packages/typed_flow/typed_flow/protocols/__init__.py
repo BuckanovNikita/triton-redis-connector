@@ -29,6 +29,7 @@ from typed_flow.protocols.execution import (
 from typed_flow.protocols.factories import ProcessorFactory
 from typed_flow.protocols.framework import (
     AggregationRuleProtocol,
+    BucketStats,
     WrappedNode,
 )
 from typed_flow.protocols.lifecycle import (
@@ -55,6 +56,7 @@ __all__ = [
     "BaseThreadProcessor",
     "BaseThreadSink",
     "BaseThreadSource",
+    "BucketStats",
     "Counter",
     "Envelope",
     "FrameworkMeta",

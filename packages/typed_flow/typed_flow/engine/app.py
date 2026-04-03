@@ -19,6 +19,7 @@ import redis as redis_lib
 from loguru import logger
 
 from typed_flow.engine.diagram import generate_mermaid
+from typed_flow.engine.metric_aggregator import extract_and_record_metrics
 from typed_flow.engine.queue_bus import QueueBus
 from typed_flow.engine.registry import SINK_VARIANTS, SOURCE_VARIANTS, PipelineRegistry
 from typed_flow.engine.validation import validate_graph
@@ -53,9 +54,11 @@ def _pydantic_generic_match(result_type: type, expected_type: type) -> bool:
     expected_meta: dict[str, object] | None = getattr(expected_type, "__pydantic_generic_metadata__", None)
     if result_meta is None or expected_meta is None:
         return False
-    return result_meta.get("origin") is expected_meta.get("origin") and result_meta.get("args") == expected_meta.get(
-        "args"
-    )
+    result_origin = result_meta.get("origin")
+    expected_origin = expected_meta.get("origin")
+    if result_origin is None or expected_origin is None:
+        return False
+    return result_origin is expected_origin and result_meta.get("args") == expected_meta.get("args")
 
 
 class Application:
@@ -310,26 +313,49 @@ class Application:
         If a source or processor returns a list or tuple, each element
         is routed individually to downstream consumers.
         """
+        recorder = self._metric_buffer
         while not self._shutdown.is_set():
             try:
                 if node.variant in SOURCE_VARIANTS:
+                    t0 = time.perf_counter()
                     result = cast("object", node.instance())
                     if result is not None:
+                        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+                        self._record_event_metrics(result, recorder, node.name, elapsed_ms)
                         self._route_result(node, result)
                 elif node.variant in SINK_VARIANTS:
                     event = self._read_from_input_queue(node, timeout=0.1)
                     if event is not None:
+                        t0 = time.perf_counter()
                         node.instance(event)
+                        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+                        self._record_event_metrics(event, recorder, node.name, elapsed_ms)
                 else:
                     event = self._read_from_input_queue(node, timeout=0.1)
                     if event is not None:
+                        t0 = time.perf_counter()
                         result = cast("object", node.instance(event))
+                        elapsed_ms = (time.perf_counter() - t0) * 1000.0
                         if result is not None:
+                            self._record_event_metrics(result, recorder, node.name, elapsed_ms)
                             self._route_result(node, result)
             except (RuntimeError, ValueError, TypeError, OSError, LookupError, queue.Full):
                 logger.exception("Error in parallel node {}", node.name)
                 if not self._shutdown.is_set():
                     time.sleep(0.1)
+
+    def _record_event_metrics(
+        self,
+        event: object,
+        recorder: MetricRecorder | None,
+        node_name: str,
+        elapsed_ms: float,
+    ) -> None:
+        """Record Counter/Gauge/GroupBy metrics from an event and update stats."""
+        self._stats_processed += 1
+        self._stats_per_node[node_name] = self._stats_per_node.get(node_name, 0) + 1
+        if recorder is not None:
+            extract_and_record_metrics(event, recorder, node_name, elapsed_ms)
 
     def _route_result(self, node: GraphNode, result: object) -> None:
         """Route a result, unpacking list/tuple containers into individual events."""

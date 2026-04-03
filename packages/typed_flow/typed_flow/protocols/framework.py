@@ -6,9 +6,20 @@ AggregationRuleProtocol defines time-windowed event aggregation.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Protocol, TypeVar, runtime_checkable
 
 TEvent_contra = TypeVar("TEvent_contra", contravariant=True)
+
+
+@dataclass(frozen=True, slots=True)
+class BucketStats:
+    """Aggregated statistics for a single key within a time-window bucket."""
+
+    count: int
+    value_sum: float
+    value_min: float
+    value_max: float
 
 
 @runtime_checkable
@@ -47,6 +58,6 @@ class AggregationRuleProtocol(Protocol[TEvent_contra]):
         """Extract the grouping key from an event."""
         ...
 
-    def aggregate(self, count: int, value_sum: float) -> float:
-        """Compute the aggregate value from event count and accumulated sum."""
+    def aggregate(self, stats: BucketStats) -> float:
+        """Compute the aggregate value from bucket statistics."""
         ...

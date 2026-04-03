@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from typed_flow.metrics.collector import MetricEvent
+from typed_flow.protocols.framework import BucketStats
 
 if TYPE_CHECKING:
     from typed_flow.metrics.buffer import MetricBuffer
@@ -48,9 +49,9 @@ class CountByRule:
         """Extract the grouping key from a metric event."""
         return event.measure
 
-    def aggregate(self, count: int, _value_sum: float) -> float:
-        """Compute aggregate value from count and value sum."""
-        return float(count)
+    def aggregate(self, stats: BucketStats) -> float:
+        """Compute aggregate value from bucket statistics."""
+        return float(stats.count)
 
 
 class SumByRule:
@@ -79,9 +80,9 @@ class SumByRule:
         """Extract the grouping key from a metric event."""
         return event.measure
 
-    def aggregate(self, _count: int, value_sum: float) -> float:
-        """Compute aggregate value from count and value sum."""
-        return value_sum
+    def aggregate(self, stats: BucketStats) -> float:
+        """Compute aggregate value from bucket statistics."""
+        return stats.value_sum
 
 
 class AvgByRule:
@@ -110,27 +111,95 @@ class AvgByRule:
         """Extract the grouping key from a metric event."""
         return event.measure
 
-    def aggregate(self, count: int, value_sum: float) -> float:
-        """Compute aggregate value from count and value sum."""
-        return value_sum / count if count > 0 else 0.0
+    def aggregate(self, stats: BucketStats) -> float:
+        """Compute aggregate value from bucket statistics."""
+        return stats.value_sum / stats.count if stats.count > 0 else 0.0
+
+
+class MinByRule:
+    """Tracks the minimum value grouped by measure name."""
+
+    def __init__(
+        self,
+        metric_name: str,
+        window_seconds: int,
+    ) -> None:
+        """Initialize with metric name and aggregation window size."""
+        self._metric_name = metric_name
+        self._window_seconds = window_seconds
+
+    @property
+    def metric_name(self) -> str:
+        """Return the metric name for this rule."""
+        return self._metric_name
+
+    @property
+    def window_seconds(self) -> int:
+        """Return the time window in seconds."""
+        return self._window_seconds
+
+    def extract_key(self, event: MetricEvent) -> str:
+        """Extract the grouping key from a metric event."""
+        return event.measure
+
+    def aggregate(self, stats: BucketStats) -> float:
+        """Compute aggregate value from bucket statistics."""
+        return stats.value_min
+
+
+class MaxByRule:
+    """Tracks the maximum value grouped by measure name."""
+
+    def __init__(
+        self,
+        metric_name: str,
+        window_seconds: int,
+    ) -> None:
+        """Initialize with metric name and aggregation window size."""
+        self._metric_name = metric_name
+        self._window_seconds = window_seconds
+
+    @property
+    def metric_name(self) -> str:
+        """Return the metric name for this rule."""
+        return self._metric_name
+
+    @property
+    def window_seconds(self) -> int:
+        """Return the time window in seconds."""
+        return self._window_seconds
+
+    def extract_key(self, event: MetricEvent) -> str:
+        """Extract the grouping key from a metric event."""
+        return event.measure
+
+    def aggregate(self, stats: BucketStats) -> float:
+        """Compute aggregate value from bucket statistics."""
+        return stats.value_max
 
 
 class _WindowBucket:
     """Internal bucket tracking events within a time window.
 
-    Stores per-key counts and value sums for aggregation.
+    Stores per-key counts, value sums, minimums, and maximums for aggregation.
     """
 
-    __slots__ = ("counts", "sums", "window_start")
+    __slots__ = ("counts", "maxs", "mins", "sums", "window_start")
 
     def __init__(self, window_start: float) -> None:
         self.window_start = window_start
         self.counts: dict[str, int] = {}
         self.sums: dict[str, float] = {}
+        self.mins: dict[str, float] = {}
+        self.maxs: dict[str, float] = {}
 
     def record(self, key: str, value: float) -> None:
         self.counts[key] = self.counts.get(key, 0) + 1
         self.sums[key] = self.sums.get(key, 0.0) + value
+        if key not in self.mins or value < self.mins[key]:
+            self.mins[key] = value
+        if key not in self.maxs or value > self.maxs[key]:
+            self.maxs[key] = value
 
 
 class TimeWindowAggregator:
@@ -194,8 +263,13 @@ class TimeWindowAggregator:
             return
 
         for key, count in bucket.counts.items():
-            value_sum = bucket.sums.get(key, 0.0)
-            aggregate_value = rule.aggregate(count, value_sum)
+            stats = BucketStats(
+                count=count,
+                value_sum=bucket.sums.get(key, 0.0),
+                value_min=bucket.mins.get(key, 0.0),
+                value_max=bucket.maxs.get(key, 0.0),
+            )
+            aggregate_value = rule.aggregate(stats)
 
             self._buffer.record(
                 MetricEvent(

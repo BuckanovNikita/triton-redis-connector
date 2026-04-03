@@ -10,11 +10,14 @@ import pytest
 from typed_flow.metrics.aggregation import (
     AvgByRule,
     CountByRule,
+    MaxByRule,
+    MinByRule,
     SumByRule,
     TimeWindowAggregator,
 )
 from typed_flow.metrics.buffer import MetricBuffer
 from typed_flow.metrics.collector import MetricEvent
+from typed_flow.protocols.framework import BucketStats
 
 
 def _make_event(
@@ -50,11 +53,13 @@ class TestAvgByRule:
 
     def test_aggregate_returns_average(self) -> None:
         rule = AvgByRule(metric_name="avg_latency", window_seconds=60)
-        assert rule.aggregate(5, 25.0) == pytest.approx(5.0)
+        stats = BucketStats(count=5, value_sum=25.0, value_min=0.0, value_max=0.0)
+        assert rule.aggregate(stats) == pytest.approx(5.0)
 
     def test_aggregate_returns_zero_for_empty(self) -> None:
         rule = AvgByRule(metric_name="avg_latency", window_seconds=60)
-        assert rule.aggregate(0, 0.0) == 0.0
+        stats = BucketStats(count=0, value_sum=0.0, value_min=0.0, value_max=0.0)
+        assert rule.aggregate(stats) == 0.0
 
 
 class TestTimeWindowAggregator:
@@ -154,6 +159,36 @@ class TestTimeWindowAggregator:
         assert measures["count"] == 2.0
         assert measures["sum"] == pytest.approx(30.0)
 
+    def test_min_by_rule_aggregation(self) -> None:
+        buffer = MetricBuffer()
+        rule = MinByRule(metric_name="min_val", window_seconds=3600)
+        aggregator = TimeWindowAggregator(buffer=buffer, rules=[rule])
+
+        aggregator(_make_event(value=10.0, measure="latency"))
+        aggregator(_make_event(value=3.0, measure="latency"))
+        aggregator(_make_event(value=20.0, measure="latency"))
+
+        aggregator.flush_all()
+        flushed = buffer.flush()
+
+        assert len(flushed) == 1
+        assert flushed[0].value == pytest.approx(3.0)
+
+    def test_max_by_rule_aggregation(self) -> None:
+        buffer = MetricBuffer()
+        rule = MaxByRule(metric_name="max_val", window_seconds=3600)
+        aggregator = TimeWindowAggregator(buffer=buffer, rules=[rule])
+
+        aggregator(_make_event(value=10.0, measure="latency"))
+        aggregator(_make_event(value=3.0, measure="latency"))
+        aggregator(_make_event(value=20.0, measure="latency"))
+
+        aggregator.flush_all()
+        flushed = buffer.flush()
+
+        assert len(flushed) == 1
+        assert flushed[0].value == pytest.approx(20.0)
+
     def test_flush_all_empties_buckets(self) -> None:
         buffer = MetricBuffer()
         rule = CountByRule(metric_name="count", window_seconds=3600)
@@ -196,3 +231,27 @@ class TestTimeWindowAggregator:
 
         total_count = sum(e.value for e in flushed)
         assert total_count == num_threads * events_per_thread
+
+
+class TestMinByRule:
+    def test_extract_key_returns_measure(self) -> None:
+        rule = MinByRule(metric_name="min_latency", window_seconds=60)
+        event = _make_event(measure="latency_ms")
+        assert rule.extract_key(event) == "latency_ms"
+
+    def test_aggregate_returns_min(self) -> None:
+        rule = MinByRule(metric_name="min_latency", window_seconds=60)
+        stats = BucketStats(count=3, value_sum=30.0, value_min=5.0, value_max=15.0)
+        assert rule.aggregate(stats) == pytest.approx(5.0)
+
+
+class TestMaxByRule:
+    def test_extract_key_returns_measure(self) -> None:
+        rule = MaxByRule(metric_name="max_latency", window_seconds=60)
+        event = _make_event(measure="latency_ms")
+        assert rule.extract_key(event) == "latency_ms"
+
+    def test_aggregate_returns_max(self) -> None:
+        rule = MaxByRule(metric_name="max_latency", window_seconds=60)
+        stats = BucketStats(count=3, value_sum=30.0, value_min=5.0, value_max=15.0)
+        assert rule.aggregate(stats) == pytest.approx(15.0)

@@ -5,9 +5,9 @@ configurable interval via XADD. Supports a zero-value guarantee:
 registered metric names that are absent in a flush cycle are emitted
 with value 0.0 so monitoring dashboards always have data.
 
-Metric naming convention: all measure names are prefixed with
-``{app_name}_`` (preferred) or ``{hostname}_`` (fallback) at flush time.
-Only ``_`` separators are used.
+The ``component_name`` field is set to ``APP_NAME`` (env) or hostname
+at flush time. The ``measure`` field is the metric's own unique name
+without any app/host prefix.
 """
 
 from __future__ import annotations
@@ -40,8 +40,8 @@ class MetricEmitter:
     After flushing real events, emits zero-value MetricEvents for any
     known metric names not seen in this cycle.
 
-    All emitted measure names are prefixed with ``{prefix}_`` where prefix
-    is derived from ``app_name`` (if provided) or ``socket.gethostname()``.
+    The ``component_name`` is set to ``app_name`` or hostname at emit time.
+    Measure names are emitted as-is without prefixing.
     """
 
     def __init__(  # noqa: PLR0913
@@ -61,12 +61,12 @@ class MetricEmitter:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._known_metrics: set[str] = known_metrics.copy() if known_metrics is not None else set()
-        self._prefix = _sanitize_prefix(app_name) if app_name else _sanitize_prefix(socket.gethostname())
+        self._component_name = _sanitize_prefix(app_name) if app_name else _sanitize_prefix(socket.gethostname())
 
     @property
-    def prefix(self) -> str:
-        """Return the resolved metric name prefix."""
-        return self._prefix
+    def component_name(self) -> str:
+        """Return the resolved component name (APP_NAME or hostname)."""
+        return self._component_name
 
     def register_metric(self, name: str) -> None:
         """Register a metric name for zero-value guarantee."""
@@ -84,10 +84,10 @@ class MetricEmitter:
         )
         self._thread.start()
         logger.info(
-            "MetricEmitter started (interval={}s, stream={}, prefix={})",
+            "MetricEmitter started (interval={}s, stream={}, component={})",
             self._interval_s,
             self._stream,
-            self._prefix,
+            self._component_name,
         )
 
     def stop(self) -> None:
@@ -97,9 +97,6 @@ class MetricEmitter:
             self._thread.join(timeout=self._interval_s * 2)
             self._thread = None
         logger.info("MetricEmitter stopped")
-
-    def _prefixed_measure(self, measure: str) -> str:
-        return f"{self._prefix}_{measure}"
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -112,18 +109,18 @@ class MetricEmitter:
 
         for event in events:
             seen_this_cycle.add(event.measure)
-            prefixed = MetricEvent(
-                component_name=event.component_name,
-                measure=self._prefixed_measure(event.measure),
+            emitted = MetricEvent(
+                component_name=self._component_name,
+                measure=event.measure,
                 value=event.value,
             )
-            self._xadd_event(prefixed)
+            self._xadd_event(emitted)
 
         for name in self._known_metrics:
             if name not in seen_this_cycle:
                 zero_event = MetricEvent(
-                    component_name="system",
-                    measure=self._prefixed_measure(name),
+                    component_name=self._component_name,
+                    measure=name,
                     value=0.0,
                 )
                 self._xadd_event(zero_event)

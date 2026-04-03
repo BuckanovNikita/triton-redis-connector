@@ -1,8 +1,8 @@
-"""Multi-source merger pipeline: 4 sensor streams -> 1 merged output.
+"""Multi-source enrichment pipeline: 4 sensor streams -> 1 enriched output.
 
-Reads four different event types from four Redis streams, normalizes each
-into a common MergedReading, and writes to a single output stream.
-Demonstrates typed-flow's type-based routing with multiple sources.
+Reads four different event types from four Redis streams, enriches each
+with random fields, and writes to a single output stream via a union sink.
+Demonstrates typed-flow's type-based routing with multiple sources and metrics.
 
 Usage:
     PYTHONPATH=. uv run python reference_implementation/pipeline.py
@@ -12,8 +12,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import random
 import signal
 import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -26,9 +28,14 @@ from typed_flow.errors.models import ConnectorError
 from typed_flow.protocols import BaseThreadProcessor, BaseThreadSink
 
 from reference_implementation.models import (
+    EnrichedHumidity,
+    EnrichedPressure,
+    EnrichedReading,
+    EnrichedTemperature,
+    EnrichedWind,
     HumidityReading,
-    MergedReading,
     PressureReading,
+    SensorReading,
     TemperatureReading,
     WindReading,
 )
@@ -53,51 +60,60 @@ class WindSource(RedisThreadSource[WindReading]):
     """Reads WindReading from its Redis stream."""
 
 
-class MergedSink(RedisThreadSink[MergedReading]):
-    """Writes MergedReading events to the output Redis stream."""
+class EnrichedSink(RedisThreadSink[EnrichedReading]):
+    """Writes enriched events to the output Redis stream."""
 
 
-SensorReading = TemperatureReading | HumidityReading | PressureReading | WindReading
-
-
-class MergeProcessor(
-    BaseThreadProcessor[SensorReading, MergedReading],
+class EnrichProcessor(
+    BaseThreadProcessor[SensorReading, EnrichedReading],
 ):
-    """Normalizes any sensor reading into a unified MergedReading."""
+    """Enriches any sensor reading with random fields."""
 
-    def __call__(self, event: SensorReading) -> MergedReading:  # noqa: D102
+    def __call__(self, event: SensorReading) -> EnrichedReading:  # noqa: D102
+        now = time.time()
+        score = random.random()  # noqa: S311
+
         match event:
             case TemperatureReading():
-                return MergedReading(
+                return EnrichedTemperature(
                     flow_meta=event.flow_meta,
                     sensor_id=event.sensor_id,
-                    sensor_type="temperature",
-                    value=event.celsius,
-                    label=f"{event.location} ({event.celsius:.1f}°C)",
+                    celsius=event.celsius,
+                    location=event.location,
+                    sensor_source="temperature",
+                    random_score=score,
+                    processed_at=now,
                 )
             case HumidityReading():
-                return MergedReading(
+                return EnrichedHumidity(
                     flow_meta=event.flow_meta,
                     sensor_id=event.sensor_id,
-                    sensor_type="humidity",
-                    value=event.humidity_pct,
-                    label=f"{event.zone} ({event.humidity_pct:.1f}%)",
+                    humidity_pct=event.humidity_pct,
+                    zone=event.zone,
+                    sensor_source="humidity",
+                    random_score=score,
+                    processed_at=now,
                 )
             case PressureReading():
-                return MergedReading(
+                return EnrichedPressure(
                     flow_meta=event.flow_meta,
                     sensor_id=event.sensor_id,
-                    sensor_type="pressure",
-                    value=event.hpa,
-                    label=f"{event.altitude_m:.0f}m ({event.hpa:.1f} hPa)",
+                    hpa=event.hpa,
+                    altitude_m=event.altitude_m,
+                    sensor_source="pressure",
+                    random_score=score,
+                    processed_at=now,
                 )
             case WindReading():
-                return MergedReading(
+                return EnrichedWind(
                     flow_meta=event.flow_meta,
                     sensor_id=event.sensor_id,
-                    sensor_type="wind",
-                    value=event.speed_mps,
-                    label=f"{event.direction_deg}° @ {event.speed_mps:.1f} m/s (gust {event.gust_mps:.1f})",
+                    speed_mps=event.speed_mps,
+                    direction_deg=event.direction_deg,
+                    gust_mps=event.gust_mps,
+                    sensor_source="wind",
+                    random_score=score,
+                    processed_at=now,
                 )
 
 
@@ -123,8 +139,8 @@ def load_config(path: str) -> AppConfig:
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse CLI arguments for the merger pipeline."""
-    parser = argparse.ArgumentParser(description="Multi-source merger pipeline")
+    """Parse CLI arguments for the enrichment pipeline."""
+    parser = argparse.ArgumentParser(description="Multi-source enrichment pipeline")
     parser.add_argument(
         "--config",
         default="reference_implementation/config.yaml",
@@ -133,7 +149,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    """Build and run the multi-source merger pipeline from YAML config."""
+    """Build and run the multi-source enrichment pipeline from YAML config."""
     args = parse_args()
     config = load_config(args.config)
     redis_cfg = config.redis
@@ -149,11 +165,11 @@ def main() -> None:
     ]
 
     sink_cfg = config.sinks[0]
-    sink = MergedSink(redis=redis_cfg, sink=sink_cfg, name="merged_sink")
+    sink = EnrichedSink(redis=redis_cfg, sink=sink_cfg, name="enriched_sink")
 
     processors: list[object] = [
         *sources,
-        MergeProcessor(),
+        EnrichProcessor(),
         sink,
         ErrorSink(),
     ]
@@ -168,7 +184,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, handle_shutdown)
 
     stream_names = [s.stream_name for s in config.sources]
-    logger.info("Merger pipeline: {} -> {}", stream_names, sink_cfg.stream_name)
+    logger.info("Enrichment pipeline: {} -> {}", stream_names, sink_cfg.stream_name)
 
     try:
         app.run()

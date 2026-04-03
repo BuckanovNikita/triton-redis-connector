@@ -1,21 +1,28 @@
-"""Load generator: pushes sensor events to 4 Redis streams at controlled rate.
+"""Load generator: continuously pushes sensor events to 4 Redis streams.
 
 Standalone script using raw redis-py. No typed-flow dependency.
 Uses Redis pipelining in batches for high throughput.
+Runs until SIGINT/SIGTERM, respecting an optional max rate.
 
 Usage:
-    uv run python reference_implementation/load_generator.py --count 10000 --rate 0
-    uv run python reference_implementation/load_generator.py --count 5000 --rate 2000
+    uv run python reference_implementation/load_generator.py --rate 5000
+    uv run python reference_implementation/load_generator.py --rate 0 --maxlen 50000
 """
 
 from __future__ import annotations
 
 import argparse
 import math
+import signal
+import threading
 import time
+from typing import TYPE_CHECKING
 
 from loguru import logger
 from redis import Redis
+
+if TYPE_CHECKING:
+    import types
 
 STREAMS: list[str] = [
     "sensor:temperature",
@@ -26,8 +33,9 @@ STREAMS: list[str] = [
 
 LOCATIONS = ["roof", "basement", "lab-A", "lab-B", "outdoor"]
 ZONES = ["north", "south", "east", "west", "center"]
-XADD_MAXLEN = 100_000
+DEFAULT_MAXLEN = 100_000
 PIPELINE_BATCH = 500
+STATS_INTERVAL_S = 10.0
 
 
 def _temperature_fields(i: int) -> dict[str, str]:
@@ -68,17 +76,17 @@ FIELD_BUILDERS = [_temperature_fields, _humidity_fields, _pressure_fields, _wind
 
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for the load generator."""
-    parser = argparse.ArgumentParser(description="Multi-stream sensor load generator")
-    parser.add_argument("--count", type=int, default=10_000, help="Events per stream")
-    parser.add_argument("--rate", type=float, default=0.0, help="Events/sec total, 0=unlimited")
+    parser = argparse.ArgumentParser(description="Continuous multi-stream sensor load generator")
+    parser.add_argument("--rate", type=float, default=0.0, help="Max events/sec total, 0=unlimited")
     parser.add_argument("--batch", type=int, default=PIPELINE_BATCH, help="Redis pipeline batch size")
+    parser.add_argument("--maxlen", type=int, default=DEFAULT_MAXLEN, help="Max stream length per stream")
     parser.add_argument("--redis-host", default="localhost")
     parser.add_argument("--redis-port", type=int, default=6379)
     return parser.parse_args()
 
 
 def run_generator(args: argparse.Namespace) -> None:
-    """Push events to all 4 sensor Redis streams using pipelined batches."""
+    """Continuously push events to all 4 sensor Redis streams until shutdown."""
     client: Redis[bytes] = Redis(
         host=args.redis_host,
         port=args.redis_port,
@@ -86,42 +94,74 @@ def run_generator(args: argparse.Namespace) -> None:
         decode_responses=False,
     )
     client.ping()
-    total_events = args.count * len(STREAMS)
+
+    for stream in STREAMS:
+        client.delete(stream)
+    logger.info("Cleared all input streams")
+
+    rate_desc = f"{args.rate:.0f} events/sec" if args.rate > 0 else "unlimited"
     logger.info(
-        "Connected to Redis at {}:{}. Pushing {} events/stream ({} total) to {}",
+        "Connected to Redis at {}:{}. Generating to {} (rate={}, maxlen={}, batch={})",
         args.redis_host,
         args.redis_port,
-        args.count,
-        total_events,
         STREAMS,
+        rate_desc,
+        args.maxlen,
+        args.batch,
     )
 
-    target_interval = 1.0 / args.rate if args.rate > 0 else 0.0
+    shutdown = threading.Event()
+
+    def handle_signal(signum: int, _frame: types.FrameType | None) -> None:
+        logger.info("Received {}, stopping...", signal.Signals(signum).name)
+        shutdown.set()
+
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    events_per_batch = args.batch * len(STREAMS)
+    target_batch_time = events_per_batch / args.rate if args.rate > 0 else 0.0
+
     start = time.monotonic()
-    pushed = 0
+    total_pushed = 0
+    seq = 0
+    prev_stats_time = start
+    prev_stats_count = 0
 
-    while pushed < args.count:
-        batch_end = min(pushed + args.batch, args.count)
+    while not shutdown.is_set():
+        batch_start = time.monotonic()
         pipe = client.pipeline(transaction=False)
-        for i in range(pushed, batch_end):
+        for i in range(seq, seq + args.batch):
             for stream, builder in zip(STREAMS, FIELD_BUILDERS, strict=True):
-                pipe.xadd(stream, builder(i), maxlen=XADD_MAXLEN, approximate=True)
+                pipe.xadd(stream, builder(i), maxlen=args.maxlen, approximate=True)
         pipe.execute()
-        pushed = batch_end
+        seq += args.batch
+        total_pushed += events_per_batch
 
-        if target_interval > 0:
-            expected = pushed * len(STREAMS) * target_interval
-            elapsed = time.monotonic() - start
-            sleep_time = expected - elapsed
+        now = time.monotonic()
+        if now - prev_stats_time >= STATS_INTERVAL_S:
+            interval_events = total_pushed - prev_stats_count
+            interval_rate = interval_events / (now - prev_stats_time)
+            logger.info(
+                "[LOAD] total={} interval_rate={:.0f} events/sec elapsed={:.1f}s",
+                total_pushed,
+                interval_rate,
+                now - start,
+            )
+            prev_stats_time = now
+            prev_stats_count = total_pushed
+
+        if target_batch_time > 0:
+            elapsed_batch = time.monotonic() - batch_start
+            sleep_time = target_batch_time - elapsed_batch
             if sleep_time > 0:
-                time.sleep(sleep_time)
+                shutdown.wait(timeout=sleep_time)
 
     total_elapsed = time.monotonic() - start
-    actual_rate = total_events / total_elapsed if total_elapsed > 0 else 0.0
-
+    actual_rate = total_pushed / total_elapsed if total_elapsed > 0 else 0.0
     logger.info(
-        "Done: {} events across {} streams in {:.2f}s ({:.0f} events/sec)",
-        total_events,
+        "Stopped: {} events across {} streams in {:.2f}s ({:.0f} events/sec)",
+        total_pushed,
         len(STREAMS),
         total_elapsed,
         actual_rate,

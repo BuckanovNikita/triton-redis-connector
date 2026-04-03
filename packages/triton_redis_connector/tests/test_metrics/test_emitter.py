@@ -121,14 +121,15 @@ class TestMetricEmitter:
         xadd_call = client.xadd.call_args
         fields = xadd_call.kwargs["fields"]
         assert all(isinstance(v, str) for v in fields.values())
-        assert fields["measure"] == "testapp_test_field"
+        assert fields["measure"] == "test_field"
+        assert fields["component_name"] == "testapp"
         assert fields["value"] == "3.14"
 
-    def test_prefix_from_app_name(self) -> None:
+    def test_component_name_from_app_name(self) -> None:
         buffer = MetricBuffer()
         client = MagicMock()
         emitter = MetricEmitter(buffer=buffer, client=client, stream="metrics", interval_s=0.05, app_name="my-app")
-        assert emitter.prefix == "my_app"
+        assert emitter.component_name == "my_app"
 
         buffer.record(_make_event(measure="counter"))
 
@@ -138,18 +139,19 @@ class TestMetricEmitter:
 
         xadd_call = client.xadd.call_args
         fields = xadd_call.kwargs["fields"]
-        assert fields["measure"] == "my_app_counter"
+        assert fields["measure"] == "counter"
+        assert fields["component_name"] == "my_app"
 
-    def test_prefix_falls_back_to_hostname(self) -> None:
+    def test_component_name_falls_back_to_hostname(self) -> None:
         import socket
 
         buffer = MetricBuffer()
         client = MagicMock()
         emitter = MetricEmitter(buffer=buffer, client=client, stream="metrics", interval_s=0.05)
-        expected_prefix = "".join(c if c.isalnum() else "_" for c in socket.gethostname()).strip("_")
-        assert emitter.prefix == expected_prefix
+        expected_name = "".join(c if c.isalnum() else "_" for c in socket.gethostname()).strip("_")
+        assert emitter.component_name == expected_name
 
-    def test_zero_value_events_are_prefixed(self) -> None:
+    def test_zero_value_events_use_component_name(self) -> None:
         buffer = MetricBuffer()
         client = MagicMock()
         emitter = MetricEmitter(
@@ -167,5 +169,6 @@ class TestMetricEmitter:
 
         xadd_call = client.xadd.call_args
         fields = xadd_call.kwargs["fields"]
-        assert fields["measure"] == "testapp_idle_metric"
+        assert fields["measure"] == "idle_metric"
+        assert fields["component_name"] == "testapp"
         assert fields["value"] == "0.0"

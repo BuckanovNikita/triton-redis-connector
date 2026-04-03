@@ -35,8 +35,8 @@ class TestSanitizePrefix:
         assert _sanitize_prefix("worker-01.prod.us-east") == "worker_01_prod_us_east"
 
 
-class TestMetricEmitterPrefix:
-    def test_prefixes_measure_with_app_name(self) -> None:
+class TestMetricEmitterComponentName:
+    def test_sets_component_name_from_app_name(self) -> None:
         buffer = MetricBuffer()
         client: MagicMock = MagicMock()
         emitter = MetricEmitter(
@@ -54,7 +54,8 @@ class TestMetricEmitterPrefix:
 
         assert client.xadd.called
         fields = client.xadd.call_args.kwargs["fields"]
-        assert fields["measure"] == "detector_images_processed"
+        assert fields["measure"] == "images_processed"
+        assert fields["component_name"] == "detector"
 
     def test_hostname_fallback_when_app_name_empty(self) -> None:
         import socket
@@ -69,8 +70,8 @@ class TestMetricEmitterPrefix:
             app_name="",
         )
 
-        expected_prefix = _sanitize_prefix(socket.gethostname())
-        assert emitter.prefix == expected_prefix
+        expected_name = _sanitize_prefix(socket.gethostname())
+        assert emitter.component_name == expected_name
 
         buffer.record(_make_event(measure="counter"))
         emitter.start()
@@ -79,7 +80,8 @@ class TestMetricEmitterPrefix:
 
         assert client.xadd.called
         fields = client.xadd.call_args.kwargs["fields"]
-        assert fields["measure"] == f"{expected_prefix}_counter"
+        assert fields["measure"] == "counter"
+        assert fields["component_name"] == expected_name
 
     def test_hostname_fallback_when_app_name_not_provided(self) -> None:
         import socket
@@ -93,8 +95,8 @@ class TestMetricEmitterPrefix:
             interval_s=0.05,
         )
 
-        expected_prefix = _sanitize_prefix(socket.gethostname())
-        assert emitter.prefix == expected_prefix
+        expected_name = _sanitize_prefix(socket.gethostname())
+        assert emitter.component_name == expected_name
 
 
 class TestMetricEmitterAccumulation:
@@ -119,7 +121,7 @@ class TestMetricEmitterAccumulation:
 
         xadd_calls = client.xadd.call_args_list
         requests_values = [
-            float(c.kwargs["fields"]["value"]) for c in xadd_calls if c.kwargs["fields"]["measure"] == "app_requests"
+            float(c.kwargs["fields"]["value"]) for c in xadd_calls if c.kwargs["fields"]["measure"] == "requests"
         ]
 
         assert len(requests_values) >= 2
@@ -146,8 +148,8 @@ class TestMetricEmitterAccumulation:
 
         xadd_calls = client.xadd.call_args_list
         measures_emitted = {c.kwargs["fields"]["measure"] for c in xadd_calls}
-        assert "svc_latency_ms" in measures_emitted
-        assert "svc_throughput" in measures_emitted
+        assert "latency_ms" in measures_emitted
+        assert "throughput" in measures_emitted
 
 
 class TestMetricEmitterPeriodicResend:
@@ -194,7 +196,7 @@ class TestMetricEmitterPeriodicResend:
         zero_calls = [
             c
             for c in client.xadd.call_args_list
-            if c.kwargs["fields"]["measure"] == "app_idle_counter" and c.kwargs["fields"]["value"] == "0.0"
+            if c.kwargs["fields"]["measure"] == "idle_counter" and c.kwargs["fields"]["value"] == "0.0"
         ]
         assert len(zero_calls) >= 2
 
@@ -216,7 +218,7 @@ class TestMetricEmitterPeriodicResend:
         emitter.stop()
 
         all_calls = client.xadd.call_args_list
-        active_calls = [c for c in all_calls if c.kwargs["fields"]["measure"] == "app_active_metric"]
+        active_calls = [c for c in all_calls if c.kwargs["fields"]["measure"] == "active_metric"]
         assert len(active_calls) >= 1
 
         first_flush_value = float(active_calls[0].kwargs["fields"]["value"])
@@ -241,7 +243,7 @@ class TestMetricEmitterRegisterMetric:
         time.sleep(0.12)
         emitter.stop()
 
-        zero_calls = [c for c in client.xadd.call_args_list if c.kwargs["fields"]["measure"] == "app_new_metric"]
+        zero_calls = [c for c in client.xadd.call_args_list if c.kwargs["fields"]["measure"] == "new_metric"]
         assert len(zero_calls) >= 1
         assert zero_calls[0].kwargs["fields"]["value"] == "0.0"
 
@@ -271,8 +273,8 @@ class TestFlushToRedisDirectly:
         assert client.xadd.call_count == 1
         kwargs = client.xadd.call_args.kwargs
         assert kwargs["name"] == "s:metrics"
-        assert kwargs["fields"]["component_name"] == "worker-1"
-        assert kwargs["fields"]["measure"] == "myapp_queue_depth"
+        assert kwargs["fields"]["component_name"] == "myapp"
+        assert kwargs["fields"]["measure"] == "queue_depth"
         assert kwargs["fields"]["value"] == "15.0"
         assert kwargs["maxlen"] == 10_000
         assert kwargs["approximate"] is True
@@ -296,12 +298,12 @@ class TestFlushToRedisDirectly:
         assert client.xadd.call_count == 2
 
         emitted_measures = {c.kwargs["fields"]["measure"] for c in client.xadd.call_args_list}
-        assert "app_metric_a" in emitted_measures
-        assert "app_metric_b" in emitted_measures
+        assert "metric_a" in emitted_measures
+        assert "metric_b" in emitted_measures
 
-        metric_b_call = next(c for c in client.xadd.call_args_list if c.kwargs["fields"]["measure"] == "app_metric_b")
+        metric_b_call = next(c for c in client.xadd.call_args_list if c.kwargs["fields"]["measure"] == "metric_b")
         assert metric_b_call.kwargs["fields"]["value"] == "0.0"
-        assert metric_b_call.kwargs["fields"]["component_name"] == "system"
+        assert metric_b_call.kwargs["fields"]["component_name"] == "app"
 
     def test_flush_no_duplicates_when_known_metric_present(self) -> None:
         buffer = MetricBuffer()
@@ -321,5 +323,5 @@ class TestFlushToRedisDirectly:
 
         assert client.xadd.call_count == 1
         fields = client.xadd.call_args.kwargs["fields"]
-        assert fields["measure"] == "app_shared_metric"
+        assert fields["measure"] == "shared_metric"
         assert fields["value"] == "10.0"
