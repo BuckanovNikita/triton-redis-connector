@@ -146,7 +146,8 @@ def _deserialize_event[T: BaseModel](
         message_id=envelope.message_id,
         priority=priority,
     )
-    return PipelineEvent(fw=fw, context=event, payload=Unprocessed())
+    concrete_cls = PipelineEvent[event_model, Unprocessed]  # type: ignore[valid-type]
+    return concrete_cls(fw=fw, context=event, payload=Unprocessed())
 
 
 class LiveRedisStreamSource[T: BaseModel](BaseThreadSource[PipelineEvent[T, Unprocessed] | ConnectorError]):

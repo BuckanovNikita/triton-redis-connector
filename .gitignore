@@ -56,3 +56,4 @@ benchmarks/data/
 test_data/**
 e2e_results/**
 local
+.claude/worktrees

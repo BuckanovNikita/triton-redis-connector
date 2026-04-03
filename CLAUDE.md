@@ -9,27 +9,12 @@ Monorepo (`packages/`): **typed-flow** (event-streaming framework), **triton-sha
 **Language**: Python 3.12, strict typing (mypy strict + pyright strict).
 **Documentation**: Only README.md in Russian. All other docs in English.
 
-## Development Commands
-
-```bash
-uv run pytest                          # all tests, parallel
-uv run pytest -x                       # stop on first failure
-uv run pre-commit run --all-files      # all checks in order
-uv run ruff format . && uv run ruff check --fix .  # format + lint
-uv run mypy . && uv run pyright        # type check
-uv run lint-imports                    # architecture layer contracts
-uv run vulture                         # dead code detection
-```
-
-Always run `uv run pytest` and pre-commit checks before considering work complete.
-
 ## Detailed Documentation (docs/)
 
 | Document | Contents |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | Package structure, import-linter contracts, execution variants, domain event model, shipped processors, ModelBundle, metrics system, infrastructure |
 | [docs/parallelism.md](docs/parallelism.md) | Execution variant decision guide, thread vs process selection |
-| [docs/conventions.md](docs/conventions.md) | Code style, metrics policy, testing policy |
 | [docs/triton-versions.md](docs/triton-versions.md) | Triton version matrix, switching versions, `.env`-driven management |
 | [docs/benchmark-results.md](docs/benchmark-results.md) | Performance measurement results |
 
@@ -44,6 +29,7 @@ Always run `uv run pytest` and pre-commit checks before considering work complet
 | `/using-triton-inference-server` | Triton config.pbtxt, tritonclient API, model repository |
 | `/using-nvidia-dali` | DALI GPU preprocessing pipelines |
 | `/using-ultralytics` | YOLO predict/export reference |
+| `/uv-package-manager` | uv commands, workspace, deps, lockfile management |
 
 ## Agent Team (`.claude/agents/`)
 
@@ -65,6 +51,8 @@ Always run `uv run pytest` and pre-commit checks before considering work complet
 
 Pipeline: ruff format -> ruff check -> mypy -> pyright -> import-linter -> vulture -> pytest -> uv lock
 
+Always run `uv run pytest` and `uv run pre-commit run --all-files` before considering work complete.
+
 Claude Code hooks in `.claude/hooks/`:
 - `block-bare-tools.sh` — blocks bare `python`/`pytest`/`ruff`/`mypy`, must use `uv run`
 - `block-no-verify.sh` — blocks `--no-verify` on commits
@@ -80,5 +68,42 @@ When using parallel agents or worktrees: (1) never commit from agents on main br
 
 ## Code Conventions
 
-Use Pydantic models for all serialization — never raw dicts. All serialization logic internal to utility functions.
-Project skills and config go in `.claude/` within the project directory, never in `~/.claude/`.
+### Code Style
+
+- **Logging**: always `loguru`, never `print`
+- **Configs/models**: always `pydantic` — never raw dicts for serialization
+- **Error handling**: never bare `except Exception` — catch specific types. Never silently swallow exceptions.
+- **No dynamic access**: avoid `getattr`/`hasattr`/`__dict__` unless wrapping opaque third-party SDKs (with a comment explaining why)
+- **Avoid comments in code**: use only as last resort for truly hard code. Improve names, extract functions instead.
+- **Avoid too short functions**: inline functions under 4 lines if used fewer than 4 times and deduplication would not make code fragile
+- **Imports**: top-level, never lazy — unless the dependency is truly optional (not in pyproject.toml) or it's a CLI subcommand handler in `__main__.py`
+- **Config file sync**: when moving/renaming files, update ALL config paths: mypy `exclude`, pyright `exclude`, vulture `paths`/`ignore_names`, import-linter contracts
+- **No custom IoU/NMS**: use `torchvision.ops.box_iou` / `torchvision.ops.nms`
+- **No re-export modules**: import from source package directly, never create proxy modules
+- **Explicit protocol inheritance**: processors/decoders must explicitly inherit protocol classes, not rely on structural typing
+- **Skill/config placement**: project skills and config go in `.claude/` within the project directory, never in `~/.claude/`
+
+### Metrics Policy
+
+App must be abstracted from domain metrics. No domain event types in `engine/app.py`.
+
+- **Counter on event classes**: `_metrics_ = [Counter("name")]` — counts occurrences
+- **Gauge on event fields**: `Annotated[float, Gauge("name")]` — extracts and emits values
+- **GroupBy on event fields**: `Annotated[str, GroupBy("name", window_s=60)]` — time-windowed per-key counting
+- **Counter/Gauge/GroupBy** live in `protocols.py` (leaf layer)
+- **Tracked on wrappers**: `Annotated[ProcessorType, Tracked("name")]` for per-call metrics
+- **MetricEvent**: only 3 fields — `component_name`, `measure`, `value`
+- **Zero-value guarantee**: `_log_stats` emits all registered Counter names even when idle
+- Update metrics table in `README.md` (section "Метрики") when adding new metrics
+
+### Testing Policy
+
+Only write tests for real logic and edge cases. Never test:
+- Framework-guaranteed behavior (frozen pydantic, enum literals, StrEnum coercion, dataclass defaults)
+- Simple construction/defaults, protocol isinstance checks, constant counts
+- Generated file content (pbtxt, scripts, configs) — only integration tests verify these
+- Pydantic/framework validation, download/network tools, simple file I/O
+
+E2E means real infrastructure (Triton, Redis), not mocks.
+Coverage target: 70% minimum. Exclude simple utility modules.
+Good tests verify: validation logic, algorithms, error paths, serialization roundtrips, edge cases, integration behavior.
