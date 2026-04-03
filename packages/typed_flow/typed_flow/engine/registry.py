@@ -23,6 +23,7 @@ from typed_flow.engine.metric_aggregator import (
     MetricAggregator,
     extract_event_counters,
 )
+from typed_flow.errors.models import PipelineError
 from typed_flow.protocols import (
     BaseProcessPoolProcessor,
     BaseProcessSink,
@@ -306,6 +307,9 @@ class PipelineRegistry:
             for in_type in input_types:
                 self._type_consumers.setdefault(in_type, []).append(name)
 
+        consumes_errors = any(issubclass(PipelineError, t) for t in input_types)
+        if not consumes_errors and PipelineError not in output_types:
+            output_types = output_types | {PipelineError}
         graph_node.output_types = output_types
         for out_type in output_types:
             self._type_producers.setdefault(out_type, []).append(name)

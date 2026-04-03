@@ -14,7 +14,7 @@ from typed_flow.engine.registry import (
     GraphNode,
     PipelineRegistry,
 )
-from typed_flow.errors.models import ConnectorError
+from typed_flow.errors.models import ConnectorError, PipelineError, ProcessingError
 from typed_flow.protocols import (
     BaseEvent,
     BaseProcessPoolProcessor,
@@ -65,10 +65,12 @@ __all__ = [
     "LifecycleService",
     "MetricAggregator",
     "MetricRecorder",
+    "PipelineError",
     "PipelineRegistry",
     "ProcessPoolProcessor",
     "ProcessSink",
     "ProcessSource",
+    "ProcessingError",
     "ProcessorFactory",
     "ThreadPoolProcessor",
     "ThreadProcessor",

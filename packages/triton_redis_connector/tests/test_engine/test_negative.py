@@ -15,7 +15,7 @@ from typed_flow.config.schema import AppConfig
 from typed_flow.engine.app import Application
 from typed_flow.engine.registry import PipelineRegistry
 from typed_flow.engine.validation import validate_graph
-from typed_flow.errors.models import ConnectorError
+from typed_flow.errors.models import ConnectorError, PipelineError
 from typed_flow.protocols import (
     BaseThreadProcessor,
     BaseThreadSink,
@@ -33,6 +33,11 @@ class EventY:
 
 class EventZ:
     pass
+
+
+class _ErrorSink(BaseThreadSink[PipelineError]):
+    def __call__(self, event: PipelineError) -> None:
+        pass
 
 
 class TestBuildValidationRejectsInvalidConfigs:
@@ -148,7 +153,7 @@ class TestProcessorResilienceOnException:
 
         app = Application.build(
             AppConfig(),
-            processors=[Src(), FailingProc(), CollectSink()],
+            processors=[Src(), FailingProc(), CollectSink(), _ErrorSink()],
         )
 
         run_thread = threading.Thread(target=app.run, daemon=True)
@@ -171,6 +176,7 @@ class TestErrorEventFields:
 
     def test_connector_error_has_all_fields(self) -> None:
         err = ConnectorError(
+            node_name="test_source",
             connector_name="redis_source",
             stream_name="input:stream",
             message_id="123-0",
@@ -219,6 +225,7 @@ class TestErrorEventFields:
         from pydantic import ValidationError
 
         err = ConnectorError(
+            node_name="test_source",
             connector_name="x",
             stream_name="s",
             message_id=None,
@@ -291,7 +298,7 @@ class TestBuildDeduplicatesNodeNames:
 
         app = Application.build(
             AppConfig(),
-            processors=[Src(), Proc(), Proc(), Sink()],
+            processors=[Src(), Proc(), Proc(), Sink(), _ErrorSink()],
         )
         node_names = list(app._registry.nodes.keys())  # pyright: ignore[reportPrivateUsage]
         assert "Proc" in node_names

@@ -6,6 +6,7 @@ from typing import Annotated, ClassVar
 
 import pytest
 from typed_flow.engine.registry import ExecutionVariant, PipelineRegistry
+from typed_flow.errors.models import PipelineError
 from typed_flow.protocols import (
     BaseProcessPoolProcessor,
     BaseProcessSource,
@@ -70,6 +71,11 @@ class ChainProcessor(BaseThreadProcessor[EventB, EventC]):
 class EventCSink(BaseThreadSink[EventC]):
     def __call__(self, event: EventC) -> None:
         return None
+
+
+class _ErrorSink(BaseThreadSink[PipelineError]):
+    def __call__(self, event: PipelineError) -> None:
+        pass
 
 
 @pytest.fixture
@@ -163,7 +169,7 @@ class TestUnionInputExtraction:
         node = registry.get_node("proc")
         assert node is not None
         assert node.input_types == {EventA, EventB, EventC}
-        assert node.output_types == {EventD}
+        assert EventD in node.output_types
 
     def test_sink_with_union_input_registers_all_types(self, registry: PipelineRegistry) -> None:
         class UnionSink(BaseThreadSink[EventA | EventB]):
@@ -192,6 +198,7 @@ class TestUnionInputExtraction:
         registry.register("src_b", SrcB())
         registry.register("merge", MergeProc())
         registry.register("sink", EventCSink())
+        registry.register("error_sink", _ErrorSink())
         errors = registry.validate()
         assert errors == []
 
@@ -233,6 +240,7 @@ class TestUnionInputExtraction:
         registry.register("src_d", SrcD())
         registry.register("merge", MergeAll())
         registry.register("sink", ResultSink())
+        registry.register("error_sink", _ErrorSink())
 
         errors = registry.validate()
         assert errors == []
@@ -274,6 +282,7 @@ class TestContainerTypeExtraction:
         registry.register("src", SimpleSource())
         registry.register("proc", BatchProc())
         registry.register("sink", SimpleSink())
+        registry.register("error_sink", _ErrorSink())
 
         errors = registry.validate()
         assert errors == []
@@ -290,6 +299,7 @@ class TestContainerTypeExtraction:
         registry.register("proc", MixedProc())
         registry.register("sink_b", SimpleSink())
         registry.register("sink_c", EventCSink())
+        registry.register("error_sink", _ErrorSink())
 
         errors = registry.validate()
         assert errors == []
@@ -328,6 +338,7 @@ class TestInheritanceRouting:
 
         registry.register("src", ChildSource())
         registry.register("sink", ParentSink())
+        registry.register("error_sink", _ErrorSink())
 
         errors = registry.validate()
         assert errors == []
@@ -361,6 +372,7 @@ class TestInheritanceRouting:
 
         registry.register("src", GrandChildSource())
         registry.register("sink", ParentSink())
+        registry.register("error_sink", _ErrorSink())
 
         errors = registry.validate()
         assert errors == []
@@ -388,6 +400,7 @@ class TestValidation:
         registry.register("src", SimpleSource())
         registry.register("proc", SimpleProcessor())
         registry.register("sink", SimpleSink())
+        registry.register("error_sink", _ErrorSink())
         errors = registry.validate()
         assert errors == []
 
@@ -429,6 +442,7 @@ class TestValidation:
 
         registry.register("sink_a", SinkA())
         registry.register("sink_b", SinkB())
+        registry.register("error_sink", _ErrorSink())
         errors = registry.validate()
         assert errors == []
 
@@ -437,6 +451,7 @@ class TestValidation:
         registry.register("proc1", SimpleProcessor())
         registry.register("proc2", ChainProcessor())
         registry.register("sink", EventCSink())
+        registry.register("error_sink", _ErrorSink())
         errors = registry.validate()
         assert errors == []
 

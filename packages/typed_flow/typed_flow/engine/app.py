@@ -23,10 +23,11 @@ from typed_flow.engine.metric_aggregator import extract_and_record_metrics
 from typed_flow.engine.queue_bus import QueueBus
 from typed_flow.engine.registry import SINK_VARIANTS, SOURCE_VARIANTS, PipelineRegistry
 from typed_flow.engine.validation import validate_graph
-from typed_flow.errors.models import ConnectorError
+from typed_flow.errors.models import make_processing_error
 from typed_flow.metrics.buffer import MetricBuffer
 from typed_flow.metrics.emitter import MetricEmitter
 from typed_flow.protocols import (
+    HasFlowMeta,
     LifecycleService,
     MetricRecorder,
     ProcessPoolProcessor,
@@ -61,11 +62,82 @@ def _pydantic_generic_match(result_type: type, expected_type: type) -> bool:
     return result_origin is expected_origin and result_meta.get("args") == expected_meta.get("args")
 
 
+def _extract_event_age_ms(event: object) -> float | None:
+    """Extract event age from Redis message ID timestamp in flow_meta.
+
+    Redis message IDs have format ``{ms_timestamp}-{seq}``. Returns
+    wall-clock age in ms, or None if not available.
+    """
+    if not isinstance(event, HasFlowMeta):
+        return None
+    msg_id = event.flow_meta.message_id
+    if not msg_id:
+        return None
+    dash = msg_id.find("-")
+    if dash <= 0:
+        return None
+    try:
+        created_ms = int(msg_id[:dash])
+    except ValueError:
+        return None
+    return time.time() * 1000.0 - created_ms
+
+
+class _NodeStats:
+    """Per-node statistics tracker with interval snapshot support.
+
+    Thread-safe via a lock. Tracks processed count, error count,
+    total processing time, and max event age per interval.
+    """
+
+    __slots__ = (
+        "_errors",
+        "_lock",
+        "_max_event_age_ms",
+        "_prev_errors",
+        "_prev_processed",
+        "_processed",
+        "_total_ms",
+    )
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._processed: int = 0
+        self._errors: int = 0
+        self._total_ms: float = 0.0
+        self._max_event_age_ms: float = 0.0
+        self._prev_processed: int = 0
+        self._prev_errors: int = 0
+
+    def record_call(self, elapsed_ms: float, event_age_ms: float | None = None) -> None:
+        with self._lock:
+            self._processed += 1
+            self._total_ms += elapsed_ms
+            if event_age_ms is not None and event_age_ms > self._max_event_age_ms:
+                self._max_event_age_ms = event_age_ms
+
+    def record_error(self) -> None:
+        with self._lock:
+            self._errors += 1
+
+    def snapshot_and_reset_interval(self) -> tuple[int, int, float, float]:
+        """Return (interval_processed, interval_errors, avg_ms, max_age_ms) and reset interval."""
+        with self._lock:
+            interval_processed = self._processed - self._prev_processed
+            interval_errors = self._errors - self._prev_errors
+            avg_ms = self._total_ms / self._processed if self._processed > 0 else 0.0
+            max_age = self._max_event_age_ms
+            self._prev_processed = self._processed
+            self._prev_errors = self._errors
+            self._max_event_age_ms = 0.0
+            return interval_processed, interval_errors, avg_ms, max_age
+
+
 class Application:
     """Main pipeline application.
 
     All nodes run as parallel variants in dedicated threads. The main
-    loop monitors variant health and handles graceful shutdown.
+    loop monitors variant health and manages graceful shutdown.
     """
 
     def __init__(  # noqa: PLR0913
@@ -91,11 +163,7 @@ class Application:
         self._metric_buffer = metric_buffer
         self._extra_service = extra_service
         self._metric_emitter = metric_emitter
-        self._stats_processed: int = 0
-        self._stats_in_progress: int = 0
-        self._stats_errors: int = 0
-        self._stats_per_node: dict[str, int] = {}
-        self._stats_sink_writes: dict[str, int] = {}
+        self._node_stats: dict[str, _NodeStats] = {}
         self._stats_timer: threading.Timer | None = None
         self._stats_interval: float = 0.0
         self._routing_table: dict[str, list[tuple[str, type]]] = {}
@@ -188,6 +256,10 @@ class Application:
 
         self._build_routing_table()
         self._wire_parallel_queues()
+
+        for name in self._registry.nodes:
+            self._node_stats[name] = _NodeStats()
+
         self._start_parallel_variants()
 
         if self._extra_service is not None:
@@ -216,26 +288,6 @@ class Application:
 
         self._stop_parallel_variants()
 
-    @runtime_checkable
-    class _HasErrorMessage(Protocol):
-        @property
-        def error_message(self) -> str: ...
-
-    def _log_error_event(self, event: object) -> None:
-        """Log error events in the main thread and optionally stop on error."""
-        if isinstance(event, ConnectorError):
-            logger.error("Connector error on {}: {}", event.stream_name, event.error_message)
-        elif isinstance(event, self._HasErrorMessage):
-            logger.error("Pipeline error: {}: {}", type(event).__name__, event.error_message)
-        else:
-            return
-
-        self._stats_errors += 1
-
-        if self._config.debug.stop_on_error:
-            logger.warning("debug.stop_on_error=true -- shutting down after error")
-            self.shutdown()
-
     def _start_stats_timer(self) -> None:
         """Start a repeating timer that logs stats periodically."""
         self._stats_interval = self._config.metrics.stats_log_interval_s
@@ -259,14 +311,34 @@ class Application:
             self._stats_timer = None
 
     def _log_stats(self) -> None:
-        """Log pipeline stats summary."""
-        per_node_summary = ", ".join(f"{k}={v}" for k, v in sorted(self._stats_per_node.items()))
+        """Log per-node stats: processed, errors, avg processing time, max event age."""
+        total_processed = 0
+        total_errors = 0
+        for name in sorted(self._node_stats):
+            stats = self._node_stats[name]
+            processed, errs, avg_ms, max_age = stats.snapshot_and_reset_interval()
+            total_processed += processed
+            total_errors += errs
+            if processed == 0 and errs == 0:
+                continue
+            age_part = f" max_age={max_age:.0f}ms" if max_age > 0 else ""
+            logger.info(
+                "[STATS] {} | processed={} errors={} avg_ms={:.2f}{}",
+                name,
+                processed,
+                errs,
+                avg_ms,
+                age_part,
+            )
+        queue_depths = self._queue_bus.queue_depths()
+        active_queues = {k: v for k, v in queue_depths.items() if v > 0}
+        if active_queues:
+            logger.info("[STATS] queues: {}", active_queues)
         logger.info(
-            "[STATS] processed={} in_progress={} errors={} | {}",
-            self._stats_processed,
-            self._stats_in_progress,
-            self._stats_errors,
-            per_node_summary,
+            "[STATS] total: processed={} errors={} restarts={}",
+            total_processed,
+            total_errors,
+            sum(self._restart_counts.values()),
         )
 
     def _build_routing_table(self) -> None:
@@ -310,52 +382,106 @@ class Application:
         - Processor variants: read from input queue, transform, route outputs
         - Sink variants: read from input queue, consume (side effects)
 
-        If a source or processor returns a list or tuple, each element
-        is routed individually to downstream consumers.
+        Tracks per-node stats (processed, errors, in_progress, timing, event age).
+        On processing errors, emits a ProcessingError to downstream error sinks.
         """
         recorder = self._metric_buffer
+        stats = self._node_stats.get(node.name)
         while not self._shutdown.is_set():
             try:
                 if node.variant in SOURCE_VARIANTS:
-                    t0 = time.perf_counter()
                     result = cast("object", node.instance())
                     if result is not None:
-                        elapsed_ms = (time.perf_counter() - t0) * 1000.0
-                        self._record_event_metrics(result, recorder, node.name, elapsed_ms)
-                        self._route_result(node, result)
+                        self._handle_source_result(node, result, recorder, stats)
                 elif node.variant in SINK_VARIANTS:
                     event = self._read_from_input_queue(node, timeout=0.1)
                     if event is not None:
-                        t0 = time.perf_counter()
-                        node.instance(event)
-                        elapsed_ms = (time.perf_counter() - t0) * 1000.0
-                        self._record_event_metrics(event, recorder, node.name, elapsed_ms)
+                        self._handle_sink_event(node, event, recorder, stats)
                 else:
                     event = self._read_from_input_queue(node, timeout=0.1)
                     if event is not None:
-                        t0 = time.perf_counter()
-                        result = cast("object", node.instance(event))
-                        elapsed_ms = (time.perf_counter() - t0) * 1000.0
-                        if result is not None:
-                            self._record_event_metrics(result, recorder, node.name, elapsed_ms)
-                            self._route_result(node, result)
-            except (RuntimeError, ValueError, TypeError, OSError, LookupError, queue.Full):
-                logger.exception("Error in parallel node {}", node.name)
+                        self._handle_processor_event(node, event, recorder, stats)
+            except Exception:  # noqa: BLE001
+                logger.exception("Fatal error in parallel node {}", node.name)
+                if stats is not None:
+                    stats.record_error()
                 if not self._shutdown.is_set():
                     time.sleep(0.1)
 
-    def _record_event_metrics(
+    def _handle_source_result(
         self,
+        node: GraphNode,
+        result: object,
+        recorder: MetricRecorder | None,
+        stats: _NodeStats | None,
+    ) -> None:
+        """Process a source result: track metrics, compute event age, route downstream."""
+        event_age = _extract_event_age_ms(result)
+        if recorder is not None:
+            extract_and_record_metrics(result, recorder, node.name, 0.0)
+        if stats is not None:
+            stats.record_call(0.0, event_age)
+        self._route_result(node, result)
+
+    def _handle_sink_event(
+        self,
+        node: GraphNode,
         event: object,
         recorder: MetricRecorder | None,
-        node_name: str,
-        elapsed_ms: float,
+        stats: _NodeStats | None,
     ) -> None:
-        """Record Counter/Gauge/GroupBy metrics from an event and update stats."""
-        self._stats_processed += 1
-        self._stats_per_node[node_name] = self._stats_per_node.get(node_name, 0) + 1
+        """Process a sink event: track timing, errors."""
+        event_age = _extract_event_age_ms(event)
+        t0 = time.perf_counter()
+        try:
+            node.instance(event)
+        except Exception as exc:  # noqa: BLE001
+            if stats is not None:
+                stats.record_error()
+            self._emit_processing_error(node, exc, event)
+            return
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
         if recorder is not None:
-            extract_and_record_metrics(event, recorder, node_name, elapsed_ms)
+            extract_and_record_metrics(event, recorder, node.name, elapsed_ms)
+        if stats is not None:
+            stats.record_call(elapsed_ms, event_age)
+
+    def _handle_processor_event(
+        self,
+        node: GraphNode,
+        event: object,
+        recorder: MetricRecorder | None,
+        stats: _NodeStats | None,
+    ) -> None:
+        """Process a processor event: track timing, errors, route result."""
+        t0 = time.perf_counter()
+        try:
+            result = cast("object", node.instance(event))
+        except Exception as exc:  # noqa: BLE001
+            if stats is not None:
+                stats.record_error()
+            self._emit_processing_error(node, exc, event)
+            return
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        if result is not None:
+            if recorder is not None:
+                extract_and_record_metrics(result, recorder, node.name, elapsed_ms)
+            if stats is not None:
+                stats.record_call(elapsed_ms)
+            self._route_result(node, result)
+        elif stats is not None:
+            stats.record_call(elapsed_ms)
+
+    def _emit_processing_error(self, node: GraphNode, exc: BaseException, event: object) -> None:
+        """Create a ProcessingError and route it via normal graph routing."""
+        error = make_processing_error(node.name, exc, event)
+        logger.warning(
+            "Processing error in {}: {} - {}",
+            node.name,
+            type(exc).__name__,
+            exc,
+        )
+        self._route_result(node, error)
 
     def _route_result(self, node: GraphNode, result: object) -> None:
         """Route a result, unpacking list/tuple containers into individual events."""

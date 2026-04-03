@@ -133,6 +133,7 @@ def deserialize_envelope[T: BaseModel](
         event = event_model.model_validate(raw_fields)
     except ValidationError as exc:
         return ConnectorError(
+            node_name=connector_name,
             connector_name=connector_name,
             stream_name=envelope.source_stream,
             message_id=envelope.message_id,

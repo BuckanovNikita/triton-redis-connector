@@ -144,6 +144,7 @@ class TestBuildValidationReservedResultField:
 class TestErrorEventCreation:
     def test_connector_error_creation(self) -> None:
         err = ConnectorError(
+            node_name="test_source",
             connector_name="redis_source",
             stream_name="input:stream",
             message_id="100-0",
@@ -181,6 +182,7 @@ class TestErrorEventCreation:
 class TestErrorEventFrozen:
     def test_connector_error_rejects_mutation(self) -> None:
         err = ConnectorError(
+            node_name="test_source",
             connector_name="x",
             stream_name="s",
             message_id=None,

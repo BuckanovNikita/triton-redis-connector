@@ -24,7 +24,7 @@ from loguru import logger
 from typed_flow.config.schema import AppConfig
 from typed_flow.connectors import RedisThreadSink, RedisThreadSource
 from typed_flow.engine.app import Application
-from typed_flow.errors.models import ConnectorError
+from typed_flow.errors.models import PipelineError
 from typed_flow.protocols import BaseThreadProcessor, BaseThreadSink
 
 from reference_implementation.models import (
@@ -117,11 +117,11 @@ class EnrichProcessor(
                 )
 
 
-class ErrorSink(BaseThreadSink[ConnectorError]):
-    """Logs deserialization errors from any source connector."""
+class ErrorSink(BaseThreadSink[PipelineError]):
+    """Logs all pipeline errors (connector, processing, etc.)."""
 
-    def __call__(self, event: ConnectorError) -> None:  # noqa: D102
-        logger.error("Connector error on {}: {}", event.stream_name, event.error_message)
+    def __call__(self, event: PipelineError) -> None:  # noqa: D102
+        logger.error("[{}] {}: {}", event.node_name, event.error_type, event.error_message)
 
 
 SOURCE_CLASSES: list[type[RedisThreadSource]] = [  # type: ignore[type-arg]

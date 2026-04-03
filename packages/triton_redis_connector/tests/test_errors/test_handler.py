@@ -15,6 +15,7 @@ from typed_flow.errors.models import ConnectorError
 
 def _connector_error() -> ConnectorError:
     return ConnectorError(
+        node_name="test_source",
         connector_name="redis-source",
         stream_name="stream:input",
         message_id=None,

@@ -2,7 +2,7 @@
 
 Produces a Mermaid flowchart from the PipelineRegistry, showing
 sources, processors, sinks, and event type edges between them.
-MetricEvent edges are excluded to keep the diagram readable.
+Error and metric edges are excluded to keep the diagram readable.
 """
 
 from __future__ import annotations
@@ -10,11 +10,19 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from typed_flow.engine.registry import SINK_VARIANTS, SOURCE_VARIANTS
+from typed_flow.errors.models import PipelineError
+from typed_flow.metrics.collector import MetricEvent
 
 if TYPE_CHECKING:
     from typed_flow.engine.registry import PipelineRegistry
 
-_METRIC_EVENT_NAMES = frozenset({"MetricEvent"})
+
+def _is_excluded_type(t: type) -> bool:
+    """Check if a type should be excluded from the diagram (errors, metrics)."""
+    try:
+        return issubclass(t, (PipelineError, MetricEvent))
+    except TypeError:
+        return False
 
 
 def _node_shape(node_name: str, variant_group: str) -> str:
@@ -50,9 +58,9 @@ def generate_mermaid(registry: PipelineRegistry) -> str:
     type_consumers = registry.type_consumers
     for name, node in sorted(nodes.items()):
         for out_type in sorted(node.output_types, key=lambda t: t.__name__):
-            type_name = out_type.__name__
-            if type_name in _METRIC_EVENT_NAMES:
+            if _is_excluded_type(out_type):
                 continue
+            type_name = out_type.__name__
             lines.extend(
                 f"    {name} -->|{type_name}| {consumer_name}"
                 for consumer_name in sorted(type_consumers.get(out_type, []))

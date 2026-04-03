@@ -63,6 +63,7 @@ class TestErrorModels:
 class TestConnectorError:
     def test_message_id_nullable(self) -> None:
         error = ConnectorError(
+            node_name="test_source",
             connector_name="redis-source",
             stream_name="stream:input",
             message_id=None,

@@ -218,6 +218,7 @@ ignore_imports = [
     "typed_flow.engine.metric_aggregator -> typed_flow.metrics.collector",
     "typed_flow.engine.app -> typed_flow.metrics.buffer",
     "typed_flow.engine.app -> typed_flow.metrics.emitter",
+    "typed_flow.engine.diagram -> typed_flow.metrics.collector",
 ]
 
 # Contract 2: typed_flow must not import triton_redis_connector or triton_model_tools
