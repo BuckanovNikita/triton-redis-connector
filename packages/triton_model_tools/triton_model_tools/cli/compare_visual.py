@@ -63,7 +63,7 @@ def _build_results_with_image_paths(
     Each txt file is matched to an image by stem name. If no matching image is
     found, the txt file is skipped with a warning.
     """
-    from triton_model_tools.inference.detection_io import (  # noqa: PLC0415
+    from triton_model_tools.inference.detection_io import (
         IMAGE_EXTENSIONS,
         TXT_EXTENSION,
         load_detections_from_txt,
@@ -107,14 +107,14 @@ def _build_results_with_image_paths(
 def run(args: argparse.Namespace) -> None:
     """Execute the ``compare-visual`` subcommand."""
     try:
-        import fiftyone  # noqa: PLC0415, F401
+        import fiftyone  # noqa: F401
     except ImportError:
         logger.error(
             "fiftyone is required for compare-visual. Install it with: pip install fiftyone",
         )
         raise SystemExit(1)  # noqa: B904
 
-    from triton_model_tools.benchmarks.fiftyone_export import (  # noqa: PLC0415
+    from triton_model_tools.benchmarks.fiftyone_export import (
         export_comparison_to_fiftyone,
     )
 
@@ -136,7 +136,7 @@ def run(args: argparse.Namespace) -> None:
     export_comparison_to_fiftyone(local_results, triton_results, dataset_name)
 
     if launch:
-        import fiftyone as fo  # noqa: PLC0415
+        import fiftyone as fo
 
         dataset: Any = fo.load_dataset(dataset_name)
         session: Any = fo.launch_app(dataset)

@@ -207,7 +207,8 @@ class YoloDetailedPostprocessor(YoloPostprocessor):
     models do not expose per-class scores in their output tensor.
     """
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
+        """Initialize with end2end=False for access to raw class scores."""
         super().__init__(end2end=False)
 
     def _postprocess_standard(

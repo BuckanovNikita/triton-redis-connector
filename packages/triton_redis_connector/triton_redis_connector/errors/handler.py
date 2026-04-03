@@ -24,11 +24,12 @@ class ErrorHandler:
     the configured flush interval.
     """
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         collector: ErrorCollector,
         flush_interval_s: float = 30.0,
     ) -> None:
+        """Initialize handler with error collector and flush interval."""
         self._collector = collector
         self._flush_interval_s = flush_interval_s
         self._stop = threading.Event()

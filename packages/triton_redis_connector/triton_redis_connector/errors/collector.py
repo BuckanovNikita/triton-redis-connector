@@ -25,7 +25,8 @@ class ErrorCollector:
     counts and flushes periodically for summary logging and metrics.
     """
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
+        """Initialize empty error buffer with thread lock."""
         self._lock = threading.Lock()
         self._errors: list[PipelineError] = []
         self._counts: Counter[str] = Counter()

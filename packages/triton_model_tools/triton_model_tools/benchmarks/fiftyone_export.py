@@ -94,7 +94,7 @@ def export_to_fiftyone(
 
     """
     try:
-        import fiftyone as fo  # noqa: PLC0415
+        import fiftyone as fo
     except ImportError as exc:
         raise ImportError(FIFTYONE_INSTALL_MSG) from exc
 
@@ -135,7 +135,7 @@ def export_comparison_to_fiftyone(
 
     """
     try:
-        import fiftyone as fo  # noqa: PLC0415
+        import fiftyone as fo
     except ImportError as exc:
         raise ImportError(FIFTYONE_INSTALL_MSG) from exc
 
@@ -198,7 +198,7 @@ def launch_fiftyone_app(
 
     """
     try:
-        import fiftyone as fo  # noqa: PLC0415
+        import fiftyone as fo
     except ImportError as exc:
         raise ImportError(FIFTYONE_INSTALL_MSG) from exc
 

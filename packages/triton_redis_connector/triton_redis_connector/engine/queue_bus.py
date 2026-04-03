@@ -7,7 +7,7 @@ via drop-and-log policy.
 from __future__ import annotations
 
 import queue
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
@@ -20,7 +20,8 @@ class QueueOverflow:
 
     __slots__ = ("queue_name",)
 
-    def __init__(self, queue_name: str) -> None:  # noqa: D107
+    def __init__(self, queue_name: str) -> None:
+        """Initialize with the name of the overflowed queue."""
         self.queue_name = queue_name
 
 
@@ -32,12 +33,13 @@ class QueueBus:
     returns a QueueOverflow indicator.
     """
 
-    def __init__(self, config: QueueConfig) -> None:  # noqa: D107
+    def __init__(self, config: QueueConfig) -> None:
+        """Initialize queue bus with queue configuration."""
         self._config = config
-        self._queues: dict[str, queue.Queue[Any]] = {}
+        self._queues: dict[str, queue.Queue[object]] = {}
         self._drop_counts: dict[str, int] = {}
 
-    def get_queue(self, name: str, maxsize: int | None = None) -> queue.Queue[Any]:
+    def get_queue(self, name: str, maxsize: int | None = None) -> queue.Queue[object]:
         """Get or create a named queue.
 
         If the queue already exists, returns it regardless of the
@@ -50,7 +52,7 @@ class QueueBus:
             logger.debug("Created queue {} with maxsize={}", name, effective_maxsize)
         return self._queues[name]
 
-    def put(self, name: str, item: Any) -> QueueOverflow | None:  # noqa: ANN401
+    def put(self, name: str, item: object) -> QueueOverflow | None:
         """Put an item on a named queue with backpressure handling.
 
         If the queue is full, drops the item and returns a
@@ -67,7 +69,7 @@ class QueueBus:
 
     MAX_TIMEOUT_S: float = 5.0
 
-    def get(self, name: str, timeout: float = 0.1) -> Any:  # noqa: ANN401
+    def get(self, name: str, timeout: float = 0.1) -> object:
         """Get an item from a named queue with bounded timeout.
 
         Timeout is capped at MAX_TIMEOUT_S to prevent deadlocks.
@@ -77,7 +79,7 @@ class QueueBus:
         bounded = min(timeout, self.MAX_TIMEOUT_S)
         return q.get(timeout=bounded)
 
-    def get_nowait(self, name: str) -> Any:  # noqa: ANN401
+    def get_nowait(self, name: str) -> object:
         """Get an item from a named queue without blocking.
 
         Raises queue.Empty if the queue is empty.

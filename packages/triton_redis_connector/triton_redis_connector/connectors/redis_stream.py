@@ -30,12 +30,13 @@ class RedisStreamInputConnector:
     messages, wrapping raw Redis data into Envelopes.
     """
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         client: Redis[bytes],
         config: SourceConfig,
         group_manager: ConsumerGroupManager,
     ) -> None:
+        """Initialize input connector with Redis client, config, and consumer group."""
         self._client = client
         self._config = config
         self._group_manager = group_manager
@@ -75,7 +76,8 @@ class RedisStreamOutputConnector:
     as configured.
     """
 
-    def __init__(self, client: Redis[bytes], config: SinkConfig) -> None:  # noqa: D107
+    def __init__(self, client: Redis[bytes], config: SinkConfig) -> None:
+        """Initialize output connector with Redis client and sink config."""
         self._client = client
         self._config = config
 
@@ -100,7 +102,8 @@ class RedisStreamSink:
     is handled by DetachedThreadSink at assembly time.
     """
 
-    def __init__(self, connector: RedisStreamOutputConnector) -> None:  # noqa: D107
+    def __init__(self, connector: RedisStreamOutputConnector) -> None:
+        """Initialize sink with an output connector."""
         self._connector = connector
 
     def __call__(self, event: Envelope[bytes]) -> None:
@@ -154,7 +157,7 @@ class LiveRedisStreamSource[T: Event](BaseThreadSource[T | ConnectorError]):
     Sets ``fw.priority = 0`` (highest) on all produced events.
     """
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         connector: RedisStreamInputConnector,
         config: SourceConfig,
@@ -162,6 +165,7 @@ class LiveRedisStreamSource[T: Event](BaseThreadSource[T | ConnectorError]):
         *,
         name: str = "",
     ) -> None:
+        """Initialize live source with connector, config, and event model type."""
         super().__init__()
         self._connector = connector
         self._config = config
@@ -170,6 +174,58 @@ class LiveRedisStreamSource[T: Event](BaseThreadSource[T | ConnectorError]):
 
     def __call__(self) -> T | ConnectorError | None:
         """Read the next live message, deserialize, and return."""
+        results = self._connector.read_new(count=1, block_ms=self._config.block_ms)
+        if not results:
+            return None
+        envelope = results[0]
+        return _deserialize_event(envelope, self._event_model, self.name, priority=0)  # type: ignore[return-value]
+
+
+class AutoRedisSource[T: Event](BaseThreadSource[T | ConnectorError]):
+    """Redis stream source derived from config and event type annotation.
+
+    Users subclass with a type annotation only::
+
+        class MySource(AutoRedisSource[MyEvent]): ...
+
+    The event model ``T`` is extracted from the generic parameter at class
+    creation time via ``__orig_bases__``. Stream configuration comes from
+    the provided ``SourceConfig``. This removes all boilerplate from
+    user-defined Redis sources.
+    """
+
+    _event_model: type[T]
+
+    def __init_subclass__(cls, **kwargs: object) -> None:  # noqa: D105
+        super().__init_subclass__(**kwargs)
+        for base in getattr(cls, "__orig_bases__", ()):
+            origin = getattr(base, "__origin__", None)
+            if origin is AutoRedisSource:
+                args = getattr(base, "__args__", ())
+                if args and isinstance(args[0], type):
+                    cls._event_model = args[0]
+                    return
+        msg = (
+            f"{cls.__name__} must specify a concrete Event type parameter, "
+            f"e.g. class {cls.__name__}(AutoRedisSource[MyEvent]): ..."
+        )
+        raise TypeError(msg)
+
+    def __init__(
+        self,
+        connector: RedisStreamInputConnector,
+        config: SourceConfig,
+        *,
+        name: str = "",
+    ) -> None:
+        """Initialize from connector and config; event model is inferred from generic param."""
+        super().__init__()
+        self._connector = connector
+        self._config = config
+        self.name = name or f"auto_source_{config.stream_name}"
+
+    def __call__(self) -> T | ConnectorError | None:
+        """Read the next message, deserialize into ``T``, and return."""
         results = self._connector.read_new(count=1, block_ms=self._config.block_ms)
         if not results:
             return None
@@ -188,12 +244,13 @@ class TypedRedisStreamSink[TCtx: Event, TResult: BaseModel](
     - ``fw`` field stripped from output (framework-internal only)
     """
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         output_connector: RedisStreamOutputConnector,
         *,
         name: str = "",
     ) -> None:
+        """Initialize typed sink with an output connector."""
         super().__init__()
         self._output = output_connector
         self.name = name or "typed_sink"

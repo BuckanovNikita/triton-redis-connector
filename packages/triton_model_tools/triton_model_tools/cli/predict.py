@@ -63,7 +63,7 @@ def build_parser(subparsers: SubParsers) -> None:
 
 def run(args: argparse.Namespace) -> None:
     """Execute the ``predict`` subcommand."""
-    from triton_model_tools.inference.predict import PredictConfig, run_ultralytics_predict  # noqa: PLC0415
+    from triton_model_tools.inference.predict import PredictConfig, run_ultralytics_predict
 
     image_dir: Path = args.image_dir.resolve()
     output_dir: Path = args.output_dir.resolve()

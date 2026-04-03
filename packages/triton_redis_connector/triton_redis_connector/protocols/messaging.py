@@ -9,14 +9,11 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
-
-T = TypeVar("T")
-U = TypeVar("U")
+from typing import Any
 
 
 @dataclass
-class Envelope(Generic[T]):  # noqa: UP046
+class Envelope[T]:
     """Generic event wrapper with timing and state tracking.
 
     Framework-internal only. Carries payload through the processing graph
@@ -29,9 +26,7 @@ class Envelope(Generic[T]):  # noqa: UP046
 
     payload: T
     created_at: float = field(default_factory=time.monotonic)
-    states: list[tuple[str, float]] = field(
-        default_factory=lambda: list[tuple[str, float]](),  # noqa: PLW0108
-    )
+    states: list[tuple[str, float]] = field(default_factory=list[tuple[str, float]])
     source_stream: str = ""
     message_id: str = ""
     original_fields: dict[str, str] = field(default_factory=dict)
@@ -44,7 +39,7 @@ class Envelope(Generic[T]):  # noqa: UP046
         """Return elapsed time in milliseconds since envelope creation."""
         return (time.monotonic() - self.created_at) * 1000.0
 
-    def derive(self, new_payload: U) -> Envelope[U]:
+    def derive[U](self, new_payload: U) -> Envelope[U]:
         """Create a new Envelope carrying a different payload type.
 
         Preserves source_stream, message_id, created_at, and copies the

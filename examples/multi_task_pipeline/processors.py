@@ -36,12 +36,14 @@ class TaskRouter(
     the appropriate typed payload for downstream preprocessors.
     """
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
+        """Initialize the task router."""
         super().__init__()
 
-    def __call__(  # noqa: D102
+    def __call__(
         self, event: ImageTaskInput
     ) -> PipelineEvent[TaskMeta, DetectionImagePayload] | PipelineEvent[TaskMeta, ClassificationImagePayload] | None:
+        """Route event to detection or classification branch based on task type."""
         try:
             task_type = TaskType(event.task_type)
         except ValueError:
@@ -77,13 +79,15 @@ class DetectionResultSink(
     Payload (DetectionResult) is serialized as a ``result`` JSON field.
     """
 
-    def __init__(self, client: Redis[bytes], stream: str, maxlen: int = 10_000) -> None:  # noqa: D107
+    def __init__(self, client: Redis[bytes], stream: str, maxlen: int = 10_000) -> None:
+        """Initialize sink with Redis client, stream name, and max length."""
         super().__init__()
         self._client = client
         self._stream = stream
         self._maxlen = maxlen
 
-    def __call__(self, event: PipelineEvent[TaskMeta, DetectionResult]) -> None:  # noqa: D102
+    def __call__(self, event: PipelineEvent[TaskMeta, DetectionResult]) -> None:
+        """Serialize and write detection result to Redis stream."""
         ctx = event.context
         fields: dict[str, str] = {
             "task_type": ctx.task_type.value,
@@ -106,13 +110,15 @@ class ClassificationResultSink(
     Payload (ClassificationResult) is serialized as a ``result`` JSON field.
     """
 
-    def __init__(self, client: Redis[bytes], stream: str, maxlen: int = 10_000) -> None:  # noqa: D107
+    def __init__(self, client: Redis[bytes], stream: str, maxlen: int = 10_000) -> None:
+        """Initialize sink with Redis client, stream name, and max length."""
         super().__init__()
         self._client = client
         self._stream = stream
         self._maxlen = maxlen
 
-    def __call__(self, event: PipelineEvent[TaskMeta, ClassificationResult]) -> None:  # noqa: D102
+    def __call__(self, event: PipelineEvent[TaskMeta, ClassificationResult]) -> None:
+        """Serialize and write classification result to Redis stream."""
         ctx = event.context
         fields: dict[str, str] = {
             "task_type": ctx.task_type.value,

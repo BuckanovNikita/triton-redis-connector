@@ -85,12 +85,14 @@ class SteelInspectionSource(BaseThreadSource[SteelInspectionInput]):
     domain events with framework metadata (source_stream, message_id).
     """
 
-    def __init__(self, connector: RedisStreamInputConnector, config: SourceConfig) -> None:  # noqa: D107
+    def __init__(self, connector: RedisStreamInputConnector, config: SourceConfig) -> None:
+        """Initialize source with Redis connector and config."""
         super().__init__()
         self._connector = connector
         self._config = config
 
-    def __call__(self) -> SteelInspectionInput | None:  # noqa: D102
+    def __call__(self) -> SteelInspectionInput | None:
+        """Read and deserialize the next steel inspection event from Redis."""
         envelopes = self._connector.read_new(count=self._config.batch_size, block_ms=self._config.block_ms)
         if not envelopes:
             return None

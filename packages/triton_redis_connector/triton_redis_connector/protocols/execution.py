@@ -103,11 +103,13 @@ class ThreadSink(Protocol[TIn_contra]):
 class BaseThreadSource[TOut]:
     """Threaded source with dedicated thread. Subclass and override ``__call__``."""
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
+        """Initialize stop event for thread lifecycle management."""
         self.stop = threading.Event()
 
     @property
-    def variant(self) -> str:  # noqa: D102
+    def variant(self) -> str:
+        """Return the execution variant identifier."""
         return "thread_source"
 
     def __call__(self) -> TOut | None:
@@ -118,11 +120,13 @@ class BaseThreadSource[TOut]:
 class BaseProcessSource[TOut]:
     """Process source with dedicated OS process. Subclass and override ``__call__``."""
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
+        """Initialize stop event for process lifecycle management."""
         self.stop = threading.Event()
 
     @property
-    def variant(self) -> str:  # noqa: D102
+    def variant(self) -> str:
+        """Return the execution variant identifier."""
         return "process_source"
 
     def __call__(self) -> TOut | None:
@@ -133,11 +137,13 @@ class BaseProcessSource[TOut]:
 class BaseThreadProcessor[TIn, TOut]:
     """Dedicated-thread processor. Subclass and override ``__call__``."""
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
+        """Initialize stop event for thread lifecycle management."""
         self.stop = threading.Event()
 
     @property
-    def variant(self) -> str:  # noqa: D102
+    def variant(self) -> str:
+        """Return the execution variant identifier."""
         return "thread_processor"
 
     def __call__(self, event: TIn) -> TOut | None:
@@ -148,11 +154,13 @@ class BaseThreadProcessor[TIn, TOut]:
 class BaseThreadPoolProcessor[TIn, TOut]:
     """Thread-pool processor (N workers, shared queue). Subclass and override ``__call__``."""
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
+        """Initialize stop event for thread lifecycle management."""
         self.stop = threading.Event()
 
     @property
-    def variant(self) -> str:  # noqa: D102
+    def variant(self) -> str:
+        """Return the execution variant identifier."""
         return "thread_pool_processor"
 
     def __call__(self, event: TIn) -> TOut | None:
@@ -163,11 +171,13 @@ class BaseThreadPoolProcessor[TIn, TOut]:
 class BaseProcessPoolProcessor[TIn, TOut]:
     """Process-pool processor (N workers, true OS parallelism). Subclass and override ``__call__``."""
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
+        """Initialize stop event for thread lifecycle management."""
         self.stop = threading.Event()
 
     @property
-    def variant(self) -> str:  # noqa: D102
+    def variant(self) -> str:
+        """Return the execution variant identifier."""
         return "process_pool_processor"
 
     def __call__(self, event: TIn) -> TOut | None:
@@ -178,11 +188,13 @@ class BaseProcessPoolProcessor[TIn, TOut]:
 class BaseThreadSink[TIn]:
     """Threaded sink with dedicated thread. Subclass and override ``__call__``."""
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
+        """Initialize stop event for thread lifecycle management."""
         self.stop = threading.Event()
 
     @property
-    def variant(self) -> str:  # noqa: D102
+    def variant(self) -> str:
+        """Return the execution variant identifier."""
         return "thread_sink"
 
     def __call__(self, event: TIn) -> Any | None:  # noqa: ANN401

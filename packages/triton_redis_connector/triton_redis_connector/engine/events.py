@@ -21,6 +21,21 @@ from triton_shared_models.detection import Detection  # noqa: TC002
 from triton_redis_connector.protocols import Counter, Gauge
 
 
+class InferenceTarget(BaseModel):
+    """Mixin for user events that carry per-event model routing info.
+
+    When a user event inherits from both ``Event`` and ``InferenceTarget``,
+    the ``ClientPreprocessorNode`` will use ``target_model`` instead of the
+    pipeline-default model name (if non-empty). This enables dynamic model
+    routing on a per-event basis.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    target_model: str = ""
+    target_model_version: str = ""
+
+
 class FrameworkMeta(BaseModel):
     """Framework-owned metadata carried through the pipeline on Event.fw.
 

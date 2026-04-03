@@ -21,11 +21,12 @@ class ModelVersionTracker:
     exits or when stop() is called.
     """
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         triton_client: Any,  # noqa: ANN401 — tritonclient has no type stubs
         poll_interval_s: float = 5.0,
     ) -> None:
+        """Initialize tracker with Triton client and poll interval."""
         self._client = triton_client
         self._poll_interval_s = poll_interval_s
 

@@ -54,7 +54,8 @@ class TurboJPEGDecoder(ImageDecoderProtocol):
     Uses thread-local TurboJPEG instances for thread safety in ThreadPoolProcessor.
     """
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
+        """Initialize thread-local storage for TurboJPEG instances."""
         self._local = threading.local()
 
     def _get_decoder(self) -> turbojpeg.TurboJPEG:

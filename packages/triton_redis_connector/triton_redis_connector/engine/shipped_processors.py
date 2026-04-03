@@ -9,24 +9,24 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Protocol
 
+import numpy as np
+import numpy.typing as npt
+import tritonclient.grpc as grpcclient
 from loguru import logger
 from pydantic import BaseModel
 
 from triton_redis_connector.engine.events import (
     Event,
     ImagePayload,
+    InferenceTarget,
     PipelineEvent,
     TritonRequest,
 )
 from triton_redis_connector.errors.models import ConnectorError, InferenceError, PreprocessingError
 from triton_redis_connector.inference.request import InferenceOutput
 from triton_redis_connector.protocols import BaseThreadProcessor, BaseThreadSink
-
-if TYPE_CHECKING:
-    import numpy as np
-    import numpy.typing as npt
 
 
 class _DecoderProtocol(Protocol):
@@ -54,7 +54,7 @@ class ClientPreprocessorNode[TCtx: Event, TPayload: ImagePayload](
     Returns ``PreprocessingError`` on failure instead of dropping.
     """
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         decoder: _DecoderProtocol,
         preprocessor: _PreprocessorProtocol,
@@ -63,6 +63,7 @@ class ClientPreprocessorNode[TCtx: Event, TPayload: ImagePayload](
         input_name: str = "images",
         output_names: tuple[str, ...] = ("output0",),
     ) -> None:
+        """Initialize preprocessor with decoder, letterbox, and model config."""
         super().__init__()
         self._decoder = decoder
         self._preprocessor = preprocessor
@@ -105,8 +106,18 @@ class ClientPreprocessorNode[TCtx: Event, TPayload: ImagePayload](
             )
 
         tensor, _scale, _pad_offset = self._preprocessor.preprocess(decoded)
+
+        model = self._model_name
+        version = ""
+        if isinstance(event.context, InferenceTarget):
+            if event.context.target_model:
+                model = event.context.target_model
+            if event.context.target_model_version:
+                version = event.context.target_model_version
+
         triton_req = TritonRequest(
-            model_name=self._model_name,
+            model_name=model,
+            model_version=version,
             raw_image=tensor,
             input_name=self._input_name,
             output_names=self._output_names,
@@ -124,10 +135,9 @@ class InferenceNode[TCtx: Event, TReq: TritonRequest, TOut: InferenceOutput](
     on failure.
     """
 
-    def __init__(self, grpc_url: str) -> None:  # noqa: D107
+    def __init__(self, grpc_url: str) -> None:
+        """Initialize with a Triton gRPC endpoint URL."""
         super().__init__()
-        import tritonclient.grpc as grpcclient  # noqa: PLC0415
-
         self._grpcclient = grpcclient
         self._client: grpcclient.InferenceServerClient = grpcclient.InferenceServerClient(url=grpc_url)
 
@@ -140,8 +150,6 @@ class InferenceNode[TCtx: Event, TReq: TritonRequest, TOut: InferenceOutput](
             input_tensor = self._grpcclient.InferInput(req.input_name, req.raw_image.shape, "FP32")
             input_tensor.set_data_from_numpy(req.raw_image)
         elif req.image_bytes is not None:
-            import numpy as np  # noqa: PLC0415
-
             data = np.frombuffer(req.image_bytes, dtype=np.uint8)
             input_tensor = self._grpcclient.InferInput(req.input_name, [len(data)], "UINT8")
             input_tensor.set_data_from_numpy(data)
@@ -177,8 +185,6 @@ class InferenceNode[TCtx: Event, TReq: TritonRequest, TOut: InferenceOutput](
                 timestamp_ms=int(time.time() * 1000),
             )
 
-        import numpy as np  # noqa: PLC0415
-
         elapsed_ms = (time.monotonic() - start) * 1000.0
         output_arrays: dict[str, np.ndarray[Any, np.dtype[np.float32]]] = {
             name: np.asarray(result.as_numpy(name), dtype=np.float32) for name in req.output_names
@@ -203,10 +209,11 @@ class PostProcessorNode[TCtx: Event, TIn: InferenceOutput, TResult: BaseModel](
     ``PipelineEvent[TCtx, TResult]``.
     """
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         postprocessor: _PostprocessorCallable[TIn, TResult],
     ) -> None:
+        """Initialize with a postprocessor callable."""
         super().__init__()
         self._postprocessor = postprocessor
 
@@ -223,7 +230,8 @@ class LogErrorSinkNode(
 ):
     """Logs all error event types at error level on a dedicated thread."""
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
+        """Initialize the error logging sink."""
         super().__init__()
 
     def __call__(self, event: InferenceError | ConnectorError | PreprocessingError) -> None:

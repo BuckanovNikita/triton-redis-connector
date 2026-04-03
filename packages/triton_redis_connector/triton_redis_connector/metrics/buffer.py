@@ -23,7 +23,8 @@ class MetricBuffer:
     instances via the MetricRecorder protocol without importing the type.
     """
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
+        """Initialize empty buffer with thread lock."""
         self._lock = threading.Lock()
         self._buffer: list[MetricEvent] = []
 

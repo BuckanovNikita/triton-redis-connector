@@ -93,10 +93,12 @@ class ClassificationBridge:
     in triton_model_tools.inference.classification_bridge).
     """
 
-    def __init__(self, *, top_k: int = 5, apply_softmax: bool = True) -> None:  # noqa: D107
+    def __init__(self, *, top_k: int = 5, apply_softmax: bool = True) -> None:
+        """Initialize with top-K and softmax config."""
         self._postprocessor = ClassificationPostprocessor(top_k=top_k, apply_softmax=apply_softmax)
 
-    def __call__(self, output: InferenceOutput) -> ClassificationResult | None:  # noqa: D102
+    def __call__(self, output: InferenceOutput) -> ClassificationResult | None:
+        """Run classification postprocessing on inference output."""
         raw_predictions = self._postprocessor.postprocess(outputs=output.outputs)
         shared_predictions = tuple(
             ClassificationPrediction(
@@ -120,12 +122,14 @@ class ImageTaskSource(BaseThreadSource[ImageTaskInput]):
     with framework metadata (source_stream, message_id).
     """
 
-    def __init__(self, connector: RedisStreamInputConnector, config: SourceConfig) -> None:  # noqa: D107
+    def __init__(self, connector: RedisStreamInputConnector, config: SourceConfig) -> None:
+        """Initialize source with Redis connector and config."""
         super().__init__()
         self._connector = connector
         self._config = config
 
-    def __call__(self) -> ImageTaskInput | None:  # noqa: D102
+    def __call__(self) -> ImageTaskInput | None:
+        """Read and deserialize the next image task event from Redis."""
         envelopes = self._connector.read_new(count=self._config.batch_size, block_ms=self._config.block_ms)
         if not envelopes:
             return None

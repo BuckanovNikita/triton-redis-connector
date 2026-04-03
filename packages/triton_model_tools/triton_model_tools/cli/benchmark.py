@@ -159,7 +159,7 @@ def build_parser(subparsers: SubParsers) -> None:
 
 
 def _collect_matrix_models(args: argparse.Namespace) -> list[str]:
-    from triton_model_tools.models import discover_models  # noqa: PLC0415
+    from triton_model_tools.models import discover_models
 
     model_names: list[str] = [args.model]
 
@@ -182,7 +182,7 @@ def _collect_matrix_models(args: argparse.Namespace) -> list[str]:
 
 
 def _save_results_json(results: object, output_path: Path) -> None:
-    import json  # noqa: PLC0415
+    import json
 
     resolved_output = output_path.resolve()
     resolved_output.parent.mkdir(parents=True, exist_ok=True)
@@ -192,7 +192,7 @@ def _save_results_json(results: object, output_path: Path) -> None:
 
 
 def _run_pipeline_benchmark(args: argparse.Namespace) -> None:
-    from triton_model_tools.benchmarks.pipeline_benchmark import (  # noqa: PLC0415
+    from triton_model_tools.benchmarks.pipeline_benchmark import (
         PipelineBenchmarkConfig,
         build_pipeline_matrix,
         run_pipeline_benchmark,
@@ -276,13 +276,13 @@ def _run_pipeline_benchmark(args: argparse.Namespace) -> None:
 
 
 def _run_triton_benchmark(args: argparse.Namespace) -> None:
-    from triton_model_tools.benchmarks.benchmark import (  # noqa: PLC0415
+    from triton_model_tools.benchmarks.benchmark import (
         BenchmarkConfig,
         BenchmarkSuite,
         run_benchmark,
         save_benchmark_output,
     )
-    from triton_model_tools.models import discover_models  # noqa: PLC0415
+    from triton_model_tools.models import discover_models
 
     image_dir: Path = args.image_dir.resolve()
     model_name: str = args.model

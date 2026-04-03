@@ -28,7 +28,8 @@ class InferenceWorker:
     Raises on transient failures — retry is handled by RetryMiddleware.
     """
 
-    def __init__(self, grpc_url: str) -> None:  # noqa: D107
+    def __init__(self, grpc_url: str) -> None:
+        """Initialize with a Triton gRPC endpoint URL."""
         self._client: grpcclient.InferenceServerClient = grpcclient.InferenceServerClient(url=grpc_url)
 
     def __call__(self, event: TritonRequest) -> InferenceOutput | InferenceError | None:
@@ -78,7 +79,8 @@ class InferenceWorkerFactory:
     create_processor(shared) creates a worker wrapped with RetryMiddleware.
     """
 
-    def __init__(self, config: InferenceConfig) -> None:  # noqa: D107
+    def __init__(self, config: InferenceConfig) -> None:
+        """Initialize factory with inference configuration."""
         self._config = config
 
     def create_shared(self) -> InferenceConfig:

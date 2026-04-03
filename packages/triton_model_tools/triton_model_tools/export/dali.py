@@ -536,11 +536,11 @@ def run_dali_preprocess(
         ImportError: If DALI is not installed.
 
     """
-    import cv2  # noqa: PLC0415
-    import numpy as np  # noqa: PLC0415
-    from nvidia.dali import fn, types  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
-    from nvidia.dali import math as dmath  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
-    from nvidia.dali.pipeline import Pipeline  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+    import cv2
+    import numpy as np
+    from nvidia.dali import fn, types  # pyright: ignore[reportMissingImports]
+    from nvidia.dali import math as dmath  # pyright: ignore[reportMissingImports]
+    from nvidia.dali.pipeline import Pipeline  # pyright: ignore[reportMissingImports]
 
     target_h, target_w = config.target_size
 

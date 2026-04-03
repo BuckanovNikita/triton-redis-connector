@@ -287,30 +287,30 @@ wheels = [
 
 [[package]]
 name = "boto3"
-version = "1.42.81"
+version = "1.42.82"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "botocore" },
     { name = "jmespath" },
     { name = "s3transfer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9d/4d/40029c26b535c41333a0b11573127cfc548fdcb1cbcd1798ea7046c56bab/boto3-1.42.81.tar.gz", hash = "sha256:e5c0d57229763007151be6d388319514a040ccdc922fbb27e37c3100a7fbc01a", size = 112785, upload-time = "2026-04-01T19:35:34.293Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/59/91/7aa096d8dd134cea02faca5594bb09f90dde403b342bfb0d63c64357039f/boto3-1.42.82.tar.gz", hash = "sha256:6df9ca0f5047c6afe6bd42244d8e059cde69e2cdb719ebd68d52c7d7beb529b2", size = 112768, upload-time = "2026-04-02T19:40:08.787Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/84/e5/a1a8e8bbaaa258645fe04bb6a39d7d57b6a12650312f880b8e9add638a56/boto3-1.42.81-py3-none-any.whl", hash = "sha256:216f43e308f1f65e69f57784e5042ffcb2eb6a45e370d118ea384510c148fde7", size = 140554, upload-time = "2026-04-01T19:35:32.71Z" },
+    { url = "https://files.pythonhosted.org/packages/e2/ec/f55dd9fedc4948d68e8d7880019e853c76d0fbf06057e894f10e95e910dd/boto3-1.42.82-py3-none-any.whl", hash = "sha256:804341c8197c556e8e7ceb82388ee120f319a4efbb9dc368f6059760a11cfc7d", size = 140556, upload-time = "2026-04-02T19:40:07.225Z" },
 ]
 
 [[package]]
 name = "botocore"
-version = "1.42.81"
+version = "1.42.82"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jmespath" },
     { name = "python-dateutil" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fa/5f/b0bb9a8768398fb131e1fe722c9cc5b18f74d21ca1970efe8576912b2c6e/botocore-1.42.81.tar.gz", hash = "sha256:48e6f6f52de1cc107a34810309b8ca998ea9bb719a3fe4c06f903a604b3138cb", size = 15129980, upload-time = "2026-04-01T19:35:23.439Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a8/b8/a9a58298f44fe0199b570204b37117e454b58a33bb1f3fe0b953338f83f3/botocore-1.42.82.tar.gz", hash = "sha256:a2bfe8537e95462ec06a46cc29c327f84746722bb4ce106491bfd3af8075ceed", size = 15140756, upload-time = "2026-04-02T19:39:56.59Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d7/33/c7a01649a6cb7219b233d2ed071ab925e52cdb64e15ce935024c0007376f/botocore-1.42.81-py3-none-any.whl", hash = "sha256:bcef8c93c20ebeba95e4f8b9edfbffbc78a0e11235425a92ee32e48fd8e03c37", size = 14807198, upload-time = "2026-04-01T19:35:20.437Z" },
+    { url = "https://files.pythonhosted.org/packages/9f/c1/28e7af5579a9869f6326b5eb0a3c705d3ccdb66a27e2b5c0bdaed12fa55e/botocore-1.42.82-py3-none-any.whl", hash = "sha256:824dbb58c99d894f193ed1dd75cf59650e25c1b5adb9d3a66b39fdede46f259b", size = 14817051, upload-time = "2026-04-02T19:39:53.498Z" },
 ]
 
 [[package]]
@@ -2213,6 +2213,67 @@ wheels = [
 ]
 
 [[package]]
+name = "numpy-typing-compat"
+version = "20251206.1.25"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform == 'darwin'",
+    "python_full_version == '3.13.*' and platform_machine != 's390x' and sys_platform == 'darwin'",
+    "python_full_version < '3.13' and platform_machine != 's390x' and sys_platform == 'darwin'",
+    "python_full_version >= '3.14' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "python_full_version == '3.13.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "(python_full_version >= '3.14' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version < '3.13' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version < '3.13' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform == 'darwin'",
+    "python_full_version == '3.13.*' and platform_machine == 's390x' and sys_platform == 'darwin'",
+    "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform == 'darwin'",
+    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform != 'darwin' and sys_platform != 'win32'",
+    "python_full_version == '3.13.*' and platform_machine == 's390x' and sys_platform != 'darwin' and sys_platform != 'win32'",
+    "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform != 'darwin' and sys_platform != 'win32'",
+]
+dependencies = [
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f9/63/f166333649396d083b9e95b5aa15feb56f9168f766a72540132206119937/numpy_typing_compat-20251206.1.25.tar.gz", hash = "sha256:27ff188fe70102312ea5e8553423897a4f3365eee15aa2a7ee1fcf6efc6fed12", size = 5060, upload-time = "2025-12-06T20:02:00.974Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b4/cb/99443f79c562466d128e3bf94d1507146fba386ec2ce85e97fe916225691/numpy_typing_compat-20251206.1.25-py3-none-any.whl", hash = "sha256:9be87412b68c1e9e193e7bfd996cae4ec07de5880c19d70bf81f890f51644e7f", size = 6354, upload-time = "2025-12-06T20:01:51.007Z" },
+]
+
+[[package]]
+name = "numpy-typing-compat"
+version = "20251206.2.4"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform != 'win32'",
+    "python_full_version == '3.13.*' and platform_machine != 's390x' and sys_platform != 'win32'",
+    "python_full_version < '3.13' and platform_machine != 's390x' and sys_platform != 'win32'",
+    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform != 'win32'",
+    "python_full_version == '3.13.*' and platform_machine == 's390x' and sys_platform != 'win32'",
+    "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform != 'win32'",
+]
+dependencies = [
+    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-26-02' or extra != 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/42/5f/29fd5f29b0a5d96e2def96ecba3112fc330ecd16e8c97c2b332563c5e201/numpy_typing_compat-20251206.2.4.tar.gz", hash = "sha256:59882d23aaff054a2536da80564012cdce33487657be4d79c5925bb8705fcabc", size = 5011, upload-time = "2025-12-06T20:02:04.942Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/63/7c/5c2892e6bc0628a2ccf4e938e1e2db22794657ccb374672d66e20d73839e/numpy_typing_compat-20251206.2.4-py3-none-any.whl", hash = "sha256:a82e723bd20efaa4cf2886709d4264c144f1f2b609bda83d1545113b7e47a5b5", size = 6300, upload-time = "2025-12-06T20:01:57.578Z" },
+]
+
+[[package]]
 name = "nvidia-cublas"
 version = "13.1.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -2948,6 +3009,26 @@ wheels = [
 ]
 
 [[package]]
+name = "optype"
+version = "0.17.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions", marker = "python_full_version < '3.13' or (extra == 'extra-32-triton-redis-connector-workspace-triton-25-03' and extra == 'extra-32-triton-redis-connector-workspace-triton-26-02')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/81/9f/3b13bab05debf685678b8af004e46b8c67c6f98ffa08eaf5d33bcf162c16/optype-0.17.0.tar.gz", hash = "sha256:31351a1e64d9eba7bf67e14deefb286e85c66458db63c67dd5e26dd72e4664e5", size = 53484, upload-time = "2026-03-08T23:03:12.594Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6b/44/dca78187415947d1bb90b2ee2a58e47d9573528331e8dc6196996b53612a/optype-0.17.0-py3-none-any.whl", hash = "sha256:8c2d88ff13149454bcf6eb47502f80d288bc542e7238fcc412ac4d222c439397", size = 65854, upload-time = "2026-03-08T23:03:11.425Z" },
+]
+
+[package.optional-dependencies]
+numpy = [
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
+    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-26-02' or extra != 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
+    { name = "numpy-typing-compat", version = "20251206.1.25", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
+    { name = "numpy-typing-compat", version = "20251206.2.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-26-02' or extra != 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
+]
+
+[[package]]
 name = "packaging"
 version = "25.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3103,6 +3184,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/e4/a5/2f6ed612056819de445a433ca1f2821ac3dab7f150d569a59e9cc105de1d/pandas-3.0.2-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:734be7551687c00fbd760dc0522ed974f82ad230d4a10f54bf51b80d44a08702", size = 11815274, upload-time = "2026-03-31T06:48:22.695Z" },
     { url = "https://files.pythonhosted.org/packages/00/2f/b622683e99ec3ce00b0854bac9e80868592c5b051733f2cf3a868e5fea26/pandas-3.0.2-cp314-cp314t-win_amd64.whl", hash = "sha256:57a07209bebcbcf768d2d13c9b78b852f9a15978dac41b9e6421a81ad4cdd276", size = 10888530, upload-time = "2026-03-31T06:48:25.806Z" },
     { url = "https://files.pythonhosted.org/packages/cb/2b/f8434233fab2bd66a02ec014febe4e5adced20e2693e0e90a07d118ed30e/pandas-3.0.2-cp314-cp314t-win_arm64.whl", hash = "sha256:5371b72c2d4d415d08765f32d689217a43227484e81b2305b52076e328f6f482", size = 9455341, upload-time = "2026-03-31T06:48:28.418Z" },
+]
+
+[[package]]
+name = "pandas-stubs"
+version = "3.0.0.260204"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
+    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-26-02' or extra != 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/27/1d/297ff2c7ea50a768a2247621d6451abb2a07c0e9be7ca6d36ebe371658e5/pandas_stubs-3.0.0.260204.tar.gz", hash = "sha256:bf9294b76352effcffa9cb85edf0bed1339a7ec0c30b8e1ac3d66b4228f1fbc3", size = 109383, upload-time = "2026-02-04T15:17:17.247Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7c/2f/f91e4eee21585ff548e83358332d5632ee49f6b2dcd96cb5dca4e0468951/pandas_stubs-3.0.0.260204-py3-none-any.whl", hash = "sha256:5ab9e4d55a6e2752e9720828564af40d48c4f709e6a2c69b743014a6fcb6c241", size = 168540, upload-time = "2026-02-04T15:17:15.615Z" },
 ]
 
 [[package]]
@@ -4310,6 +4404,18 @@ wheels = [
 ]
 
 [[package]]
+name = "scipy-stubs"
+version = "1.17.1.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "optype", extra = ["numpy"] },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a7/59/59c6cc3f9970154b9ed6b1aff42a0185cdd60cef54adc0404b9e77972221/scipy_stubs-1.17.1.3.tar.gz", hash = "sha256:5eb87a8d23d726706259b012ebe76a4a96a9ae9e141fc59bf55fc8eac2ed9e0f", size = 392185, upload-time = "2026-03-22T22:11:58.34Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2c/d4/94304532c0a75a55526119043dd44a9bd1541a21e14483cbb54261c527d2/scipy_stubs-1.17.1.3-py3-none-any.whl", hash = "sha256:7b91d3f05aa47da06fbca14eb6c5bb4c28994e9245fd250cc847e375bab31297", size = 597933, upload-time = "2026-03-22T22:11:56.525Z" },
+]
+
+[[package]]
 name = "setuptools"
 version = "81.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4761,6 +4867,7 @@ name = "triton-model-tools"
 version = "0.1.0"
 source = { editable = "packages/triton_model_tools" }
 dependencies = [
+    { name = "fiftyone" },
     { name = "jinja2" },
     { name = "loguru" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
@@ -4789,6 +4896,7 @@ dali = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fiftyone", specifier = ">=1.14.0" },
     { name = "jinja2", specifier = ">=3.1.6,<4.0.0" },
     { name = "loguru", specifier = ">=0.7.3,<1.0.0" },
     { name = "numpy", specifier = ">=1.26.0,<3.0.0" },
@@ -4846,9 +4954,6 @@ requires-dist = [
 name = "triton-redis-connector-workspace"
 version = "0.0.0"
 source = { virtual = "." }
-dependencies = [
-    { name = "fiftyone" },
-]
 
 [package.optional-dependencies]
 triton-25-03 = [
@@ -4869,6 +4974,7 @@ dev = [
     { name = "import-linter" },
     { name = "mypy" },
     { name = "nvitop" },
+    { name = "pandas-stubs" },
     { name = "pre-commit" },
     { name = "pyright" },
     { name = "pytest" },
@@ -4876,20 +4982,51 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
     { name = "ruff" },
+    { name = "scipy-stubs" },
     { name = "triton-model-tools" },
     { name = "triton-redis-connector" },
     { name = "triton-shared-models" },
+    { name = "types-antlr4-python3-runtime" },
+    { name = "types-colorama" },
+    { name = "types-defusedxml" },
+    { name = "types-gevent" },
+    { name = "types-networkx" },
+    { name = "types-openpyxl" },
+    { name = "types-protobuf" },
+    { name = "types-pycocotools", version = "2.0.0.20240806", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
+    { name = "types-pycocotools", version = "2.0.0.20260402", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-26-02' or extra != 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
+    { name = "types-pygments" },
+    { name = "types-python-dateutil" },
+    { name = "types-pywin32" },
     { name = "types-redis" },
+    { name = "types-tabulate" },
     { name = "types-tqdm" },
+    { name = "types-xlrd" },
     { name = "vulture" },
 ]
 lint = [
     { name = "import-linter" },
     { name = "mypy" },
+    { name = "pandas-stubs" },
     { name = "pyright" },
     { name = "ruff" },
+    { name = "scipy-stubs" },
+    { name = "types-antlr4-python3-runtime" },
+    { name = "types-colorama" },
+    { name = "types-defusedxml" },
+    { name = "types-gevent" },
+    { name = "types-networkx" },
+    { name = "types-openpyxl" },
+    { name = "types-protobuf" },
+    { name = "types-pycocotools", version = "2.0.0.20240806", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
+    { name = "types-pycocotools", version = "2.0.0.20260402", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-26-02' or extra != 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
+    { name = "types-pygments" },
+    { name = "types-python-dateutil" },
+    { name = "types-pywin32" },
     { name = "types-redis" },
+    { name = "types-tabulate" },
     { name = "types-tqdm" },
+    { name = "types-xlrd" },
     { name = "vulture" },
 ]
 test = [
@@ -4901,7 +5038,6 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fiftyone", specifier = ">=1.14.0" },
     { name = "numpy", marker = "extra == 'triton-25-03'", specifier = ">=1.26.0,<2.0.0" },
     { name = "numpy", marker = "extra == 'triton-26-02'", specifier = ">=2.4.0,<3.0.0" },
     { name = "torch", marker = "extra == 'triton-25-03'", specifier = ">=2.6.0,<2.7.0" },
@@ -4918,6 +5054,7 @@ dev = [
     { name = "import-linter", specifier = ">=2.11,<3.0.0" },
     { name = "mypy", specifier = ">=1.19.1,<2.0.0" },
     { name = "nvitop", specifier = ">=1.6.2" },
+    { name = "pandas-stubs", specifier = ">=3.0.0.260204" },
     { name = "pre-commit", specifier = ">=4.5.1,<5.0.0" },
     { name = "pyright", specifier = ">=1.1.408,<2.0.0" },
     { name = "pytest", specifier = ">=9.0.2,<10.0.0" },
@@ -4925,20 +5062,49 @@ dev = [
     { name = "pytest-cov", specifier = ">=7.1.0,<8.0.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0,<4.0.0" },
     { name = "ruff", specifier = ">=0.15.8,<1.0.0" },
+    { name = "scipy-stubs", specifier = ">=1.17.1.3" },
     { name = "triton-model-tools", editable = "packages/triton_model_tools" },
     { name = "triton-redis-connector", editable = "packages/triton_redis_connector" },
     { name = "triton-shared-models", editable = "packages/triton_shared_models" },
+    { name = "types-antlr4-python3-runtime", specifier = ">=4.13.0.20260402" },
+    { name = "types-colorama", specifier = ">=0.4.15.20250801" },
+    { name = "types-defusedxml", specifier = ">=0.7.0.20260402" },
+    { name = "types-gevent", specifier = ">=25.9.0.20260402" },
+    { name = "types-networkx", specifier = ">=3.6.1.20260402" },
+    { name = "types-openpyxl", specifier = ">=3.1.5.20260402" },
+    { name = "types-protobuf", specifier = ">=7.34.1.20260403" },
+    { name = "types-pycocotools", specifier = ">=2.0.0.20240806" },
+    { name = "types-pygments", specifier = ">=2.19.0.20260402" },
+    { name = "types-python-dateutil", specifier = ">=2.9.0.20260402" },
+    { name = "types-pywin32", specifier = ">=311.0.0.20260402" },
     { name = "types-redis", specifier = ">=4.6.0.20241004,<5.0.0" },
+    { name = "types-tabulate", specifier = ">=0.10.0.20260308" },
     { name = "types-tqdm", specifier = ">=4.66.0,<5.0.0" },
+    { name = "types-xlrd", specifier = ">=2.0.0.20251020" },
     { name = "vulture", specifier = ">=2.16,<3.0.0" },
 ]
 lint = [
     { name = "import-linter", specifier = ">=2.11,<3.0.0" },
     { name = "mypy", specifier = ">=1.19.1,<2.0.0" },
+    { name = "pandas-stubs", specifier = ">=3.0.0.260204" },
     { name = "pyright", specifier = ">=1.1.408,<2.0.0" },
     { name = "ruff", specifier = ">=0.15.8,<1.0.0" },
+    { name = "scipy-stubs", specifier = ">=1.17.1.3" },
+    { name = "types-antlr4-python3-runtime", specifier = ">=4.13.0.20260402" },
+    { name = "types-colorama", specifier = ">=0.4.15.20250801" },
+    { name = "types-defusedxml", specifier = ">=0.7.0.20260402" },
+    { name = "types-gevent", specifier = ">=25.9.0.20260402" },
+    { name = "types-networkx", specifier = ">=3.6.1.20260402" },
+    { name = "types-openpyxl", specifier = ">=3.1.5.20260402" },
+    { name = "types-protobuf", specifier = ">=7.34.1.20260403" },
+    { name = "types-pycocotools", specifier = ">=2.0.0.20240806" },
+    { name = "types-pygments", specifier = ">=2.19.0.20260402" },
+    { name = "types-python-dateutil", specifier = ">=2.9.0.20260402" },
+    { name = "types-pywin32", specifier = ">=311.0.0.20260402" },
     { name = "types-redis", specifier = ">=4.6.0.20241004,<5.0.0" },
+    { name = "types-tabulate", specifier = ">=0.10.0.20260308" },
     { name = "types-tqdm", specifier = ">=4.66.0,<5.0.0" },
+    { name = "types-xlrd", specifier = ">=2.0.0.20251020" },
     { name = "vulture", specifier = ">=2.16,<3.0.0" },
 ]
 test = [
@@ -5101,6 +5267,15 @@ grpc = [
 ]
 
 [[package]]
+name = "types-antlr4-python3-runtime"
+version = "4.13.0.20260402"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/42/54/f8f9c48e8070e9d05563dcec82d2672aea0670994c270b54d1a446c619fd/types_antlr4_python3_runtime-4.13.0.20260402.tar.gz", hash = "sha256:80bc7f38226453a2464689fdd25b00bd89f0af5c20b87c38aecad580a6d396c6", size = 25410, upload-time = "2026-04-02T04:18:44.18Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a3/7a/a454ffeee7055bba6735bf526c3717f8a3d0e1086577088f458bd7767b7a/types_antlr4_python3_runtime-4.13.0.20260402-py3-none-any.whl", hash = "sha256:8d535b97ab7ec8a528a9c32f374d86c8dbc7a4cb8de0da748f7e9355308824c4", size = 41420, upload-time = "2026-04-02T04:18:43.266Z" },
+]
+
+[[package]]
 name = "types-cffi"
 version = "2.0.0.20260316"
 source = { registry = "https://pypi.org/simple" }
@@ -5110,6 +5285,165 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/07/4c/805b40b094eb3fd60f8d17fa7b3c58a33781311a95d0e6a74da0751ce294/types_cffi-2.0.0.20260316.tar.gz", hash = "sha256:8fb06ed4709675c999853689941133affcd2250cd6121cc11fd22c0d81ad510c", size = 17399, upload-time = "2026-03-16T07:54:43.059Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/81/5e/9f1a709225ad9d0e1d7a6e4366ff285f0113c749e882d6cbeb40eab32e75/types_cffi-2.0.0.20260316-py3-none-any.whl", hash = "sha256:dd504698029db4c580385f679324621cc64d886e6a23e9821d52bc5169251302", size = 20096, upload-time = "2026-03-16T07:54:41.994Z" },
+]
+
+[[package]]
+name = "types-colorama"
+version = "0.4.15.20250801"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/99/37/af713e7d73ca44738c68814cbacf7a655aa40ddd2e8513d431ba78ace7b3/types_colorama-0.4.15.20250801.tar.gz", hash = "sha256:02565d13d68963d12237d3f330f5ecd622a3179f7b5b14ee7f16146270c357f5", size = 10437, upload-time = "2025-08-01T03:48:22.605Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/95/3a/44ccbbfef6235aeea84c74041dc6dfee6c17ff3ddba782a0250e41687ec7/types_colorama-0.4.15.20250801-py3-none-any.whl", hash = "sha256:b6e89bd3b250fdad13a8b6a465c933f4a5afe485ea2e2f104d739be50b13eea9", size = 10743, upload-time = "2025-08-01T03:48:21.774Z" },
+]
+
+[[package]]
+name = "types-defusedxml"
+version = "0.7.0.20260402"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d3/3c/8e1243dda2fef73be93081d896503352fb92e2351b0b17ac172bbdb70ebf/types_defusedxml-0.7.0.20260402.tar.gz", hash = "sha256:4cc91b225e77c7fcf88b3fb7d821a37fb4e14530727c790b6b8a19f2968d6074", size = 10604, upload-time = "2026-04-02T04:19:00.265Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ad/4e/68f85712dfbcc929c54d57e9b0e7503c198fa65896cae2f6337840ab1cc5/types_defusedxml-0.7.0.20260402-py3-none-any.whl", hash = "sha256:200f3cb340c3c576adeb28cf365399e9bb059b34662b86ad4617692284c98bdb", size = 13434, upload-time = "2026-04-02T04:18:59.263Z" },
+]
+
+[[package]]
+name = "types-docutils"
+version = "0.22.3.20260322"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/44/bb/243a87fc1605a4a94c2c343d6dbddbf0d7ef7c0b9550f360b8cda8e82c39/types_docutils-0.22.3.20260322.tar.gz", hash = "sha256:e2450bb997283c3141ec5db3e436b91f0aa26efe35eb9165178ca976ccb4930b", size = 57311, upload-time = "2026-03-22T04:08:44.064Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c6/4a/22c090cd4615a16917dff817cbe7c5956da376c961e024c241cd962d2c3d/types_docutils-0.22.3.20260322-py3-none-any.whl", hash = "sha256:681d4510ce9b80a0c6a593f0f9843d81f8caa786db7b39ba04d9fd5480ac4442", size = 91978, upload-time = "2026-03-22T04:08:43.117Z" },
+]
+
+[[package]]
+name = "types-gevent"
+version = "25.9.0.20260402"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "types-greenlet" },
+    { name = "types-psutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1c/2f/a2056079f14aeacf538b51b0e6585328c3584fa8e6f4758214c9773ea4b0/types_gevent-25.9.0.20260402.tar.gz", hash = "sha256:24297e6f5733e187a517f08dde6df7b2147e14f7de4d343148f410dffebb5381", size = 38270, upload-time = "2026-04-02T04:22:00.125Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9e/2f/995920b5cc58bc9041ded8ea2fda32719f6c513bc6e43a0c5234780936db/types_gevent-25.9.0.20260402-py3-none-any.whl", hash = "sha256:178ba12e426c987dd69ef0b8ce9f1095a965103a0d673294831f49f7127bc5ba", size = 55494, upload-time = "2026-04-02T04:21:59.144Z" },
+]
+
+[[package]]
+name = "types-greenlet"
+version = "3.3.0.20251206"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fc/d3/23f4ab29a5ce239935bb3c157defcf50df8648c16c65965fae03980d67f3/types_greenlet-3.3.0.20251206.tar.gz", hash = "sha256:3e1ab312ab7154c08edc2e8110fbf00d9920323edc1144ad459b7b0052063055", size = 8901, upload-time = "2025-12-06T03:01:38.634Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7c/8f/aabde1b6e49b25a6804c12a707829e44ba0f5520563c09271f05d3196142/types_greenlet-3.3.0.20251206-py3-none-any.whl", hash = "sha256:8d11041c0b0db545619e8c8a1266aa4aaa4ebeae8ae6b4b7049917a6045a5590", size = 8809, upload-time = "2025-12-06T03:01:37.651Z" },
+]
+
+[[package]]
+name = "types-networkx"
+version = "3.6.1.20260402"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
+    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-26-02' or extra != 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/76/0f/5520afe8510f497a2149a0bd66400796de09e503b30d6a47a055cbae918c/types_networkx-3.6.1.20260402.tar.gz", hash = "sha256:0134981a60c6725949ddaa9fc0d3b0bbaa553f0f81e43f15e282be1b75d2db00", size = 73790, upload-time = "2026-04-02T04:20:07.538Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9b/60/57fe0ebec42315a70f34920c325a803f4c069f33025043f45ac4a4266faf/types_networkx-3.6.1.20260402-py3-none-any.whl", hash = "sha256:2ea0075288632bf777e877b3c2a0d1d6991844a08a0b4a72d23c513436d64038", size = 162536, upload-time = "2026-04-02T04:20:06.375Z" },
+]
+
+[[package]]
+name = "types-openpyxl"
+version = "3.1.5.20260402"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6b/8f/d9daf094e0bb468b26e74c1bf9e0170e58c3f16e583d244e9f32078b6bcc/types_openpyxl-3.1.5.20260402.tar.gz", hash = "sha256:855ad28d47c0965048082dfca424d6ebd54d8861d72abcee9106ba5868899e7f", size = 101310, upload-time = "2026-04-02T04:17:37.6Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/58/ee/a0b22012076cf23b73fbb82d9c40843cbf6b1d228d7a2dc883da0a905a16/types_openpyxl-3.1.5.20260402-py3-none-any.whl", hash = "sha256:1d149989f0aad4e2074e96b87a045136399e27bc2a33cfefcd0eb4cad8ea5b4c", size = 166046, upload-time = "2026-04-02T04:17:36.162Z" },
+]
+
+[[package]]
+name = "types-protobuf"
+version = "7.34.1.20260403"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ae/b3/c2e407ea36e0e4355c135127cee1b88a2cc9a2c92eafca50a360ab9f2708/types_protobuf-7.34.1.20260403.tar.gz", hash = "sha256:8d7881867888e667eb9563c08a916fccdc12bdb5f9f34c31d217cce876e36765", size = 68782, upload-time = "2026-04-03T04:18:09.428Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7d/95/24fb0f6fe37b41cf94f9b9912712645e17d8048d4becaf37c1607ddd8e32/types_protobuf-7.34.1.20260403-py3-none-any.whl", hash = "sha256:16d9bbca52ab0f306279958878567df2520f3f5579059419b0ce149a0ad1e332", size = 86011, upload-time = "2026-04-03T04:18:08.245Z" },
+]
+
+[[package]]
+name = "types-psutil"
+version = "7.2.2.20260402"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/31/a2/a608db0caf0d71bd231305dc3ab3f5d65624d77761003696a3ca8c6fad40/types_psutil-7.2.2.20260402.tar.gz", hash = "sha256:9f36eebf15ad8487f8004ed67c8e008b84b63ba00cfb709a3f60275058217329", size = 26522, upload-time = "2026-04-02T04:18:47.916Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/81/8a/f4b3ca3154e8a77df91eb7a28c208af721d48f8a4aca667f582523a0beff/types_psutil-7.2.2.20260402-py3-none-any.whl", hash = "sha256:653d1fd908e68cc0666754b16a0cee28efbded0c401caa5314d2aeea67f227cd", size = 32860, upload-time = "2026-04-02T04:18:46.671Z" },
+]
+
+[[package]]
+name = "types-pycocotools"
+version = "2.0.0.20240806"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform == 'darwin'",
+    "python_full_version == '3.13.*' and platform_machine != 's390x' and sys_platform == 'darwin'",
+    "python_full_version < '3.13' and platform_machine != 's390x' and sys_platform == 'darwin'",
+    "python_full_version >= '3.14' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "python_full_version == '3.13.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "(python_full_version >= '3.14' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version < '3.13' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version < '3.13' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform == 'darwin'",
+    "python_full_version == '3.13.*' and platform_machine == 's390x' and sys_platform == 'darwin'",
+    "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform == 'darwin'",
+    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform != 'darwin' and sys_platform != 'win32'",
+    "python_full_version == '3.13.*' and platform_machine == 's390x' and sys_platform != 'darwin' and sys_platform != 'win32'",
+    "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform != 'darwin' and sys_platform != 'win32'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/58/d6/d8a054f50a9d15a1fe0b6454488331f436c9d08e7aab57282f0269941f5e/types-pycocotools-2.0.0.20240806.tar.gz", hash = "sha256:3ca05291f808f56b38cd4c5a0d04c3c9ebfdd739861d90cd121c02c54ecdfab0", size = 4457, upload-time = "2024-08-06T02:30:05.568Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6b/06/c441277b3a5dc5f3cf633633adf2057b2e710428627549f0b4d177d232cd/types_pycocotools-2.0.0.20240806-py3-none-any.whl", hash = "sha256:b1cd00c52b544937158fcde34c21deaaa0d283eceb170a3eb35eb49ad633a6ca", size = 5253, upload-time = "2024-08-06T02:30:04.386Z" },
+]
+
+[[package]]
+name = "types-pycocotools"
+version = "2.0.0.20260402"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform != 'win32'",
+    "python_full_version == '3.13.*' and platform_machine != 's390x' and sys_platform != 'win32'",
+    "python_full_version < '3.13' and platform_machine != 's390x' and sys_platform != 'win32'",
+    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform != 'win32'",
+    "python_full_version == '3.13.*' and platform_machine == 's390x' and sys_platform != 'win32'",
+    "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform != 'win32'",
+]
+dependencies = [
+    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-32-triton-redis-connector-workspace-triton-26-02' or extra != 'extra-32-triton-redis-connector-workspace-triton-25-03'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/32/a6/47db5b59c5f9fa0e2fbe3c39aa59a8647e667243247cac148f9c42b50c6a/types_pycocotools-2.0.0.20260402.tar.gz", hash = "sha256:ac63570dd462efaddf7916ae541d626824027bfeb2e63e83d8518cc47e0f4ffd", size = 9454, upload-time = "2026-04-02T04:19:59.487Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/17/c0/9fd5141065ada338187025f57d6792621fa902a715948c6e10765ba291df/types_pycocotools-2.0.0.20260402-py3-none-any.whl", hash = "sha256:b1dc6e708974c8c224e9f4970e62bcade0465d3e374d5c6d5ec4b65b4bcf3215", size = 9869, upload-time = "2026-04-02T04:19:58.657Z" },
+]
+
+[[package]]
+name = "types-pygments"
+version = "2.19.0.20260402"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "types-docutils" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a6/a8/5834c55d900ce31b31367eedb82e664347dfa551a957b74a0ce0cd9f4f9a/types_pygments-2.19.0.20260402.tar.gz", hash = "sha256:bd26e1f662c9a3b8ea56668ddc099b809ffd54931bee97b15853bc4a8e5d4250", size = 18808, upload-time = "2026-04-02T04:21:13.058Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f7/f2/b23659df4219fc4f39a45ede527cc209d961c7ff957678536a7a9d9ac9c5/types_pygments-2.19.0.20260402-py3-none-any.whl", hash = "sha256:5b0d863cec1c43ba38c946fb6e89d389c1cf287806f72360336fba4482f8daeb", size = 25672, upload-time = "2026-04-02T04:21:11.916Z" },
 ]
 
 [[package]]
@@ -5123,6 +5457,24 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/93/29/47a346550fd2020dac9a7a6d033ea03fccb92fa47c726056618cc889745e/types-pyOpenSSL-24.1.0.20240722.tar.gz", hash = "sha256:47913b4678a01d879f503a12044468221ed8576263c1540dcb0484ca21b08c39", size = 8458, upload-time = "2024-07-22T02:32:22.558Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/98/05/c868a850b6fbb79c26f5f299b768ee0adc1f9816d3461dcf4287916f655b/types_pyOpenSSL-24.1.0.20240722-py3-none-any.whl", hash = "sha256:6a7a5d2ec042537934cfb4c9d4deb0e16c4c6250b09358df1f083682fe6fda54", size = 7499, upload-time = "2024-07-22T02:32:21.232Z" },
+]
+
+[[package]]
+name = "types-python-dateutil"
+version = "2.9.0.20260402"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a7/30/c5d9efbff5422b20c9551dc5af237d1ab0c3d33729a9b3239a876ca47dd4/types_python_dateutil-2.9.0.20260402.tar.gz", hash = "sha256:a980142b9966713acb382c467e35c5cc4208a2f91b10b8d785a0ae6765df6c0b", size = 16941, upload-time = "2026-04-02T04:18:35.834Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e6/d7/fe753bf8329c8c3c1addcba1d2bf716c33898216757abb24f8b80f82d040/types_python_dateutil-2.9.0.20260402-py3-none-any.whl", hash = "sha256:7827e6a9c93587cc18e766944254d1351a2396262e4abe1510cbbd7601c5e01f", size = 18436, upload-time = "2026-04-02T04:18:34.806Z" },
+]
+
+[[package]]
+name = "types-pywin32"
+version = "311.0.0.20260402"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b3/f0/fc3c923b5d7822f3a93c7b242a69de0e1945e7c153cc5367074621a6509f/types_pywin32-311.0.0.20260402.tar.gz", hash = "sha256:637f041065f02fb49cbaba530ae8cf2e483b5d2c145a9bf97fd084c3e913c7e3", size = 332312, upload-time = "2026-04-02T04:18:52.748Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/80/0c/a2ee20785df4ebcda6d6ec62d58b7c08a37072f9d00cda4f9548e9c8e5aa/types_pywin32-311.0.0.20260402-py3-none-any.whl", hash = "sha256:4db644fcf40ee85a3ee2551f110d009e427c01569ed4670bb53cfe999df0929f", size = 395413, upload-time = "2026-04-02T04:18:51.529Z" },
 ]
 
 [[package]]
@@ -5160,6 +5512,15 @@ wheels = [
 ]
 
 [[package]]
+name = "types-tabulate"
+version = "0.10.0.20260308"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5f/44/d9e94f06010dde47b89892b2b133e3e54da729d8280ead4165dfdfa484ea/types_tabulate-0.10.0.20260308.tar.gz", hash = "sha256:724dcb1330ffba5f46d3cf6e29f45089fccb8e85801e6e7ac9efb1195bf7bea1", size = 8364, upload-time = "2026-03-08T03:59:59.472Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/74/3097387a6efcaef5ae92c7707a1a3e34a3881457d9ef1443a33681a77e08/types_tabulate-0.10.0.20260308-py3-none-any.whl", hash = "sha256:94a9795965bc6290f844d61e8680a1270040664b88fd12014624090fd847e13c", size = 8139, upload-time = "2026-03-08T03:59:58.678Z" },
+]
+
+[[package]]
 name = "types-tqdm"
 version = "4.67.3.20260402"
 source = { registry = "https://pypi.org/simple" }
@@ -5169,6 +5530,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/54/42/e9e6688891d8db77b5795ec02b329524170892ff81bec63c4c4ca7425b30/types_tqdm-4.67.3.20260402.tar.gz", hash = "sha256:e0739f3bc5d1c801999a202f0537280aa1bc2e669c49f5be91bfb99376690624", size = 18077, upload-time = "2026-04-02T04:22:23.049Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4f/73/a6cf75de5be376d7b57ce6c934ae9bc90aa5be6ada4ac50a99ecbdf9763e/types_tqdm-4.67.3.20260402-py3-none-any.whl", hash = "sha256:b5d1a65fe3286e1a855e51ddebf63d3641daf9bad285afd1ec56808eb59df76e", size = 24562, upload-time = "2026-04-02T04:22:22.114Z" },
+]
+
+[[package]]
+name = "types-xlrd"
+version = "2.0.0.20251020"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b3/85/14d85dd29c0c3440744ddc395c7e5527dae9f1e1f2ec4bd2e545dfde7c7b/types_xlrd-2.0.0.20251020.tar.gz", hash = "sha256:f219d90d62b6b41928e18c4bcae464903d15947ed1b488e3b88e3b1f34465c9e", size = 13962, upload-time = "2025-10-20T03:07:45.78Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/32/98/460831d93f4184517032d3b5ebdf19803a787efa58b2fbb5f6162d6dd120/types_xlrd-2.0.0.20251020-py3-none-any.whl", hash = "sha256:154da87c514ccb66d7291c9bcd72fb5cbfcf74d517a5a68df1c9e381a842556d", size = 16883, upload-time = "2025-10-20T03:07:44.77Z" },
 ]
 
 [[package]]

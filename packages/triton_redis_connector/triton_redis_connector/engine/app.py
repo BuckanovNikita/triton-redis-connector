@@ -12,14 +12,19 @@ import os
 import queue
 import threading
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
+import redis as redis_lib
 from loguru import logger
 
 from triton_redis_connector.engine.diagram import generate_mermaid
+from triton_redis_connector.engine.queue_bus import QueueBus
 from triton_redis_connector.engine.registry import SINK_VARIANTS, SOURCE_VARIANTS, PipelineRegistry
 from triton_redis_connector.engine.validation import validate_graph
 from triton_redis_connector.errors.models import ConnectorError, InferenceError, PreprocessingError
+from triton_redis_connector.metrics.buffer import MetricBuffer
+from triton_redis_connector.metrics.emitter import MetricEmitter
 from triton_redis_connector.protocols import (
     LifecycleService,
     MetricRecorder,
@@ -33,7 +38,6 @@ from triton_redis_connector.protocols import (
 
 if TYPE_CHECKING:
     from triton_redis_connector.config.schema import AppConfig
-    from triton_redis_connector.engine.queue_bus import QueueBus
     from triton_redis_connector.engine.registry import GraphNode
 
 
@@ -44,7 +48,7 @@ class Application:
     loop monitors variant health and handles graceful shutdown.
     """
 
-    def __init__(  # noqa: D107, PLR0913
+    def __init__(  # noqa: PLR0913
         self,
         config: AppConfig,
         registry: PipelineRegistry,
@@ -54,6 +58,7 @@ class Application:
         triton_collector: LifecycleService | None = None,
         metric_emitter: LifecycleService | None = None,
     ) -> None:
+        """Initialize Application with config, registry, queue bus, and optional services."""
         self._config = config
         self._registry = registry
         self._queue_bus = queue_bus
@@ -90,10 +95,6 @@ class Application:
         MetricEmitter, QueueBus, and PipelineRegistry from config.
         Runs graph validation before returning.
         """
-        from triton_redis_connector.engine.queue_bus import QueueBus  # noqa: PLC0415
-        from triton_redis_connector.metrics.buffer import MetricBuffer  # noqa: PLC0415
-        from triton_redis_connector.metrics.emitter import MetricEmitter  # noqa: PLC0415
-
         registry = PipelineRegistry()
         used_names: dict[str, int] = {}
 
@@ -116,8 +117,6 @@ class Application:
 
         metric_emitter: LifecycleService | None = None
         if config.metrics.output_stream:
-            import redis as redis_lib  # noqa: PLC0415
-
             redis_client: redis_lib.Redis[bytes] = redis_lib.Redis(
                 host=config.redis.host,
                 port=config.redis.port,
@@ -163,8 +162,6 @@ class Application:
         logger.info("Pipeline graph:\n```mermaid\n{}\n```", mermaid)
 
         if self._config.debug.mermaid_path:
-            from pathlib import Path  # noqa: PLC0415
-
             Path(self._config.debug.mermaid_path).write_text(mermaid, encoding="utf-8")
             logger.info("Mermaid diagram written to {}", self._config.debug.mermaid_path)
 

@@ -86,7 +86,7 @@ def build_parser(subparsers: SubParsers) -> None:
 
 
 def _run_local(args: argparse.Namespace) -> None:
-    from triton_model_tools.inference.local_folder_inference import run_local_folder_inference  # noqa: PLC0415
+    from triton_model_tools.inference.local_folder_inference import run_local_folder_inference
 
     model_path = Path(args.model).resolve()
     image_dir: Path = args.image_dir.resolve()
@@ -118,7 +118,7 @@ def _run_local(args: argparse.Namespace) -> None:
     logger.info("Total detections: {}", total_detections)
 
     if output_dir is not None:
-        from triton_model_tools.inference.detection_io import save_detections_to_txt  # noqa: PLC0415
+        from triton_model_tools.inference.detection_io import save_detections_to_txt
 
         resolved_output_dir = output_dir.resolve()
         resolved_output_dir.mkdir(parents=True, exist_ok=True)
@@ -147,8 +147,8 @@ def _run_local(args: argparse.Namespace) -> None:
 
 
 def _run_triton(args: argparse.Namespace) -> None:
-    from triton_model_tools.inference.folder_inference import run_folder_inference  # noqa: PLC0415
-    from triton_model_tools.models import discover_models  # noqa: PLC0415
+    from triton_model_tools.inference.folder_inference import run_folder_inference
+    from triton_model_tools.models import discover_models
 
     image_dir: Path = args.image_dir.resolve()
     model_name: str = args.model
@@ -190,7 +190,7 @@ def _run_triton(args: argparse.Namespace) -> None:
     logger.info("Average time: {:.1f}ms per image", result.avg_time_ms)
 
     if output_dir is not None:
-        from triton_model_tools.inference.detection_io import save_detections_to_txt  # noqa: PLC0415
+        from triton_model_tools.inference.detection_io import save_detections_to_txt
 
         resolved_output_dir = output_dir.resolve()
         resolved_output_dir.mkdir(parents=True, exist_ok=True)

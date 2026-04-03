@@ -17,9 +17,10 @@ from __future__ import annotations
 import threading
 import typing
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
-from triton_redis_connector.protocols import Counter, Gauge, GroupBy
+from triton_redis_connector.metrics.collector import MetricEvent
+from triton_redis_connector.protocols import Counter, Gauge, GroupBy, MetricRecorder
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +62,8 @@ class MetricAggregator:
         "_total_ms",
     )
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
+        """Initialize counters and lock for thread-safe metric aggregation."""
         self._lock = threading.Lock()
         self._call_count: int = 0
         self._error_count: int = 0
@@ -113,7 +115,7 @@ class InstrumentedNode(Protocol):
     aggregator: MetricAggregator | None
 
 
-def extract_tracked(annotation: Any) -> Tracked | None:  # noqa: ANN401
+def extract_tracked(annotation: object) -> Tracked | None:
     """Extract a ``Tracked`` marker from ``Annotated`` metadata.
 
     Returns ``None`` if the annotation is not ``Annotated`` or has no
@@ -126,7 +128,7 @@ def extract_tracked(annotation: Any) -> Tracked | None:  # noqa: ANN401
     return None
 
 
-def extract_metric_markers(annotation: Any) -> list[Counter | Gauge | GroupBy]:  # noqa: ANN401
+def extract_metric_markers(annotation: object) -> list[Counter | Gauge | GroupBy]:
     """Extract ``Counter``, ``Gauge``, and ``GroupBy`` markers from ``Annotated`` metadata.
 
     Returns empty list if the annotation is not ``Annotated`` or has no
@@ -189,23 +191,18 @@ def _get_class_attr(cls: type, name: str) -> list[object]:
     return []
 
 
-def _make_metric(component_name: str, measure: str, value: float) -> object:
-    """Create a MetricEvent via lazy import to avoid engine->metrics layer violation."""
-    from triton_redis_connector.metrics.collector import MetricEvent  # noqa: PLC0415
-
+def _make_metric(component_name: str, measure: str, value: float) -> MetricEvent:
+    """Create a MetricEvent for recording metrics."""
     return MetricEvent(component_name=component_name, measure=measure, value=value)
 
 
 def extract_and_record_metrics(
     result: object,
-    recorder: Any,  # noqa: ANN401
+    recorder: MetricRecorder,
     component_name: str,
     elapsed_ms: float,
 ) -> None:
-    """Extract Counter/Gauge/GroupBy metrics from a result event and record them.
-
-    ``recorder`` must satisfy the ``MetricRecorder`` protocol (has ``.record()``).
-    """
+    """Extract Counter/Gauge/GroupBy metrics from a result event and record them."""
     result_type = type(result)
 
     for counter in extract_event_counters(result_type):

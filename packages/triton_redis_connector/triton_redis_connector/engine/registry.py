@@ -77,7 +77,8 @@ _SINK_BASE_CLASSES = frozenset({BaseThreadSink})
 class GraphNode:
     """A node in the processing graph with its execution variant and type info."""
 
-    def __init__(self, name: str, instance: Callable[..., Any], variant: ExecutionVariant) -> None:  # noqa: D107
+    def __init__(self, name: str, instance: Callable[..., Any], variant: ExecutionVariant) -> None:
+        """Initialize graph node with name, callable instance, and execution variant."""
         self.name = name
         self.instance = instance
         self.variant = variant
@@ -149,7 +150,8 @@ class PipelineRegistry:
     Union return types (A | B | None) create edges to consumers of both A and B.
     """
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
+        """Initialize empty registry with type tracking maps."""
         self._nodes: dict[str, GraphNode] = {}
         self._type_producers: dict[type, list[str]] = {}
         self._type_consumers: dict[type, list[str]] = {}

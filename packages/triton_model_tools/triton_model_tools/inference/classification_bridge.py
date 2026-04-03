@@ -23,7 +23,7 @@ class ClassificationPostProcessorBridge:
     internally. For programmatic use, pass a pre-built ``postprocessor``.
     """
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         *,
         postprocessor: ClassificationPostprocessor | None = None,
@@ -31,6 +31,7 @@ class ClassificationPostProcessorBridge:
         apply_softmax: bool = True,
         class_names: dict[int, str] | None = None,
     ) -> None:
+        """Initialize bridge with classification postprocessor and top-K config."""
         self._postprocessor = postprocessor or ClassificationPostprocessor(top_k=top_k, apply_softmax=apply_softmax)
         self._class_names = class_names
 
@@ -54,7 +55,7 @@ class DetailedClassificationPostProcessorBridge:
     ``all_probabilities`` — the complete probability distribution over all classes.
     """
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         *,
         postprocessor: DetailedClassificationPostprocessor | None = None,
@@ -62,6 +63,7 @@ class DetailedClassificationPostProcessorBridge:
         apply_softmax: bool = True,
         class_names: dict[int, str] | None = None,
     ) -> None:
+        """Initialize bridge with detailed postprocessor and top-K config."""
         self._postprocessor = postprocessor or DetailedClassificationPostprocessor(
             top_k=top_k,
             apply_softmax=apply_softmax,

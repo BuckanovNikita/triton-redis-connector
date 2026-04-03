@@ -56,10 +56,10 @@ def build_parser(subparsers: SubParsers) -> None:
 
 def run(args: argparse.Namespace) -> None:
     """Execute the ``compare-folders`` subcommand."""
-    import json  # noqa: PLC0415
+    import json
 
-    from triton_model_tools.benchmarks.comparison import compare_inference  # noqa: PLC0415
-    from triton_model_tools.inference.detection_io import load_folder_detections  # noqa: PLC0415
+    from triton_model_tools.benchmarks.comparison import compare_inference
+    from triton_model_tools.inference.detection_io import load_folder_detections
 
     baseline_dir: Path = args.baseline_dir.resolve()
     candidate_dir: Path = args.candidate_dir.resolve()

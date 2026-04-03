@@ -6,6 +6,7 @@ Public API re-exports for the triton-redis-connector package.
 from __future__ import annotations
 
 from triton_redis_connector.config.schema import AppConfig
+from triton_redis_connector.connectors.redis_stream import AutoRedisSource
 from triton_redis_connector.engine.app import Application
 from triton_redis_connector.engine.bundle import ModelBundle, expand_bundle
 from triton_redis_connector.engine.events import (
@@ -14,6 +15,7 @@ from triton_redis_connector.engine.events import (
     Event,
     FrameworkMeta,
     ImagePayload,
+    InferenceTarget,
     PipelineEvent,
 )
 from triton_redis_connector.engine.metric_aggregator import MetricAggregator, Tracked
@@ -62,6 +64,7 @@ from triton_redis_connector.protocols import (
 __all__ = [
     "AppConfig",
     "Application",
+    "AutoRedisSource",
     "BaseProcessPoolProcessor",
     "BaseProcessSource",
     "BaseThreadPoolProcessor",
@@ -82,6 +85,7 @@ __all__ = [
     "ImagePayload",
     "ImagePreprocessorProtocol",
     "InferenceNode",
+    "InferenceTarget",
     "LetterBoxPreprocessor",
     "LifecycleService",
     "LogErrorSinkNode",

@@ -27,12 +27,13 @@ class TritonMetricsCollector:
     Also stores the latest stats for synchronous querying.
     """
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
-        client: Any,  # noqa: ANN401
+        client: Any,  # noqa: ANN401 — tritonclient has no type stubs
         buffer: MetricBuffer,
         poll_interval_s: float,
     ) -> None:
+        """Initialize collector with Triton gRPC client, buffer, and poll interval."""
         self._client = client
         self._buffer = buffer
         self._poll_interval_s = poll_interval_s

@@ -25,78 +25,93 @@ if TYPE_CHECKING:
 class CountByRule:
     """Counts events grouped by measure name."""
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         metric_name: str,
         window_seconds: int,
     ) -> None:
+        """Initialize with metric name and aggregation window size."""
         self._metric_name = metric_name
         self._window_seconds = window_seconds
 
     @property
-    def metric_name(self) -> str:  # noqa: D102
+    def metric_name(self) -> str:
+        """Return the metric name for this rule."""
         return self._metric_name
 
     @property
-    def window_seconds(self) -> int:  # noqa: D102
+    def window_seconds(self) -> int:
+        """Return the time window in seconds."""
         return self._window_seconds
 
-    def extract_key(self, event: MetricEvent) -> str:  # noqa: D102
+    def extract_key(self, event: MetricEvent) -> str:
+        """Extract the grouping key from a metric event."""
         return event.measure
 
-    def aggregate(self, count: int, value_sum: float) -> float:  # noqa: ARG002, D102
+    def aggregate(self, count: int, _value_sum: float) -> float:
+        """Compute aggregate value from count and value sum."""
         return float(count)
 
 
 class SumByRule:
     """Sums a numeric field (MetricEvent.value) grouped by measure name."""
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         metric_name: str,
         window_seconds: int,
     ) -> None:
+        """Initialize with metric name and aggregation window size."""
         self._metric_name = metric_name
         self._window_seconds = window_seconds
 
     @property
-    def metric_name(self) -> str:  # noqa: D102
+    def metric_name(self) -> str:
+        """Return the metric name for this rule."""
         return self._metric_name
 
     @property
-    def window_seconds(self) -> int:  # noqa: D102
+    def window_seconds(self) -> int:
+        """Return the time window in seconds."""
         return self._window_seconds
 
-    def extract_key(self, event: MetricEvent) -> str:  # noqa: D102
+    def extract_key(self, event: MetricEvent) -> str:
+        """Extract the grouping key from a metric event."""
         return event.measure
 
-    def aggregate(self, count: int, value_sum: float) -> float:  # noqa: ARG002, D102
+    def aggregate(self, _count: int, value_sum: float) -> float:
+        """Compute aggregate value from count and value sum."""
         return value_sum
 
 
 class AvgByRule:
     """Averages a numeric field (MetricEvent.value) grouped by measure name."""
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         metric_name: str,
         window_seconds: int,
     ) -> None:
+        """Initialize with metric name and aggregation window size."""
         self._metric_name = metric_name
         self._window_seconds = window_seconds
 
     @property
-    def metric_name(self) -> str:  # noqa: D102
+    def metric_name(self) -> str:
+        """Return the metric name for this rule."""
         return self._metric_name
 
     @property
-    def window_seconds(self) -> int:  # noqa: D102
+    def window_seconds(self) -> int:
+        """Return the time window in seconds."""
         return self._window_seconds
 
-    def extract_key(self, event: MetricEvent) -> str:  # noqa: D102
+    def extract_key(self, event: MetricEvent) -> str:
+        """Extract the grouping key from a metric event."""
         return event.measure
 
-    def aggregate(self, count: int, value_sum: float) -> float:  # noqa: D102
+    def aggregate(self, count: int, value_sum: float) -> float:
+        """Compute aggregate value from count and value sum."""
         return value_sum / count if count > 0 else 0.0
 
 
@@ -128,18 +143,20 @@ class TimeWindowAggregator:
     Thread-safe: all mutable state is protected by a lock.
     """
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         buffer: MetricBuffer,
         rules: list[AggregationRuleProtocol[MetricEvent]],
     ) -> None:
+        """Initialize aggregator with metric buffer and aggregation rules."""
         self._buffer = buffer
         self._rules = rules
         self._lock = threading.Lock()
         self._buckets: dict[str, _WindowBucket] = {}
         self._init_buckets()
 
-    def __call__(self, event: MetricEvent) -> None:  # noqa: D102
+    def __call__(self, event: MetricEvent) -> None:
+        """Process a metric event through all aggregation rules."""
         now = time.monotonic()
         with self._lock:
             for rule in self._rules:

@@ -22,7 +22,7 @@ class RetryMiddleware[TIn, TOut]:
     parallel node runs in its own thread. Stateless — no timers, no locks.
     """
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         inner: Callable[[TIn], TOut | None],
         max_attempts: int = 3,
@@ -30,6 +30,7 @@ class RetryMiddleware[TIn, TOut]:
         backoff_multiplier: float = 4.0,
         on_failure: Callable[[TIn, str], TOut | None] | None = None,
     ) -> None:
+        """Initialize retry middleware with inner callable and backoff parameters."""
         self._inner = inner
         self._max_attempts = max_attempts
         self._base_delay_s = base_delay_s

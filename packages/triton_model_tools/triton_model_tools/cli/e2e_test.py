@@ -262,7 +262,7 @@ def _run_populate_only(args: argparse.Namespace) -> None:
 
 
 def _run_e2e_test(args: argparse.Namespace) -> None:
-    from triton_model_tools.testing.e2e_test import (  # noqa: PLC0415
+    from triton_model_tools.testing.e2e_test import (
         ConnectorE2ETestHarness,
         E2ETestConfig,
     )
@@ -302,7 +302,7 @@ def _run_e2e_test(args: argparse.Namespace) -> None:
     logger.info("Total time: {:.2f}s", result.total_time_s)
     logger.info("Average time: {:.1f}ms per image", result.avg_time_ms)
 
-    from triton_model_tools.inference.detection_io import save_detections_to_txt  # noqa: PLC0415
+    from triton_model_tools.inference.detection_io import save_detections_to_txt
 
     resolved_output_dir = output_dir.resolve()
     resolved_output_dir.mkdir(parents=True, exist_ok=True)

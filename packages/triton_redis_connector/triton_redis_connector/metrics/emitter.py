@@ -44,7 +44,7 @@ class MetricEmitter:
     is derived from ``app_name`` (if provided) or ``socket.gethostname()``.
     """
 
-    def __init__(  # noqa: D107, PLR0913
+    def __init__(  # noqa: PLR0913
         self,
         buffer: MetricBuffer,
         client: Redis[bytes],
@@ -53,6 +53,7 @@ class MetricEmitter:
         known_metrics: set[str] | None = None,
         app_name: str = "",
     ) -> None:
+        """Initialize emitter with buffer, Redis client, stream name, and interval."""
         self._buffer = buffer
         self._client = client
         self._stream = stream

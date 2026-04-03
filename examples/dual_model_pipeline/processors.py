@@ -40,12 +40,14 @@ class CameraBranchRouter(
     replacing the old untyped metadata dict bypass pattern.
     """
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
+        """Initialize the camera branch router."""
         super().__init__()
 
-    def __call__(  # noqa: D102
+    def __call__(
         self, event: SteelInspectionInput
     ) -> PipelineEvent[SteelMeta, EvenImagePayload] | PipelineEvent[SteelMeta, OddImagePayload] | None:
+        """Route event to even or odd camera branch based on camera number."""
         metal_type = event.metal_type or ("HK" if event.camera_no % 2 == 0 else "GK")
         context = SteelMeta(
             fw=event.fw,
@@ -62,7 +64,7 @@ class CameraBranchRouter(
                 payload=EvenImagePayload(image_path=event.image_path),
             )
 
-        return PipelineEvent[SteelMeta, OddImagePayload](
+        return PipelineEvent(
             context=context,
             payload=OddImagePayload(image_path=event.image_path),
         )
@@ -80,12 +82,14 @@ class ModelResultRouter(
     so the type-based routing table sends results to the correct sink.
     """
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
+        """Initialize the model result router."""
         super().__init__()
 
-    def __call__(  # noqa: D102
+    def __call__(
         self, event: PipelineEvent[SteelMeta, DetectionResult]
     ) -> PipelineEvent[SteelMeta, EvenDetectionResult] | PipelineEvent[SteelMeta, OddDetectionResult] | None:
+        """Route detection result to even or odd typed sink by model name."""
         result = event.payload
         if result.model_name == EVEN_MODEL:
             typed_result = EvenDetectionResult(
@@ -112,13 +116,15 @@ class EvenResultSink(
     Redis hash entries, payload is serialized as a ``result`` JSON field.
     """
 
-    def __init__(self, client: Redis[bytes], stream: str, maxlen: int = 10_000) -> None:  # noqa: D107
+    def __init__(self, client: Redis[bytes], stream: str, maxlen: int = 10_000) -> None:
+        """Initialize sink with Redis client, stream name, and max length."""
         super().__init__()
         self._client = client
         self._stream = stream
         self._maxlen = maxlen
 
-    def __call__(self, event: PipelineEvent[SteelMeta, EvenDetectionResult]) -> None:  # noqa: D102
+    def __call__(self, event: PipelineEvent[SteelMeta, EvenDetectionResult]) -> None:
+        """Serialize and write even-camera result to Redis stream."""
         fields = _serialize_pipeline_event(event)
         self._client.xadd(self._stream, fields, maxlen=self._maxlen, approximate=True)
         logger.debug("Wrote even result to {}", self._stream)
@@ -132,13 +138,15 @@ class OddResultSink(
     Same serialization as EvenResultSink, targeting a different stream.
     """
 
-    def __init__(self, client: Redis[bytes], stream: str, maxlen: int = 10_000) -> None:  # noqa: D107
+    def __init__(self, client: Redis[bytes], stream: str, maxlen: int = 10_000) -> None:
+        """Initialize sink with Redis client, stream name, and max length."""
         super().__init__()
         self._client = client
         self._stream = stream
         self._maxlen = maxlen
 
-    def __call__(self, event: PipelineEvent[SteelMeta, OddDetectionResult]) -> None:  # noqa: D102
+    def __call__(self, event: PipelineEvent[SteelMeta, OddDetectionResult]) -> None:
+        """Serialize and write odd-camera result to Redis stream."""
         fields = _serialize_pipeline_event(event)
         self._client.xadd(self._stream, fields, maxlen=self._maxlen, approximate=True)
         logger.debug("Wrote odd result to {}", self._stream)

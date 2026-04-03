@@ -24,7 +24,7 @@ class YoloPostProcessorBridge:
     internally. For programmatic use, pass a pre-built ``postprocessor``.
     """
 
-    def __init__(  # noqa: D107, PLR0913
+    def __init__(  # noqa: PLR0913
         self,
         *,
         postprocessor: YoloPostprocessor | None = None,
@@ -34,6 +34,7 @@ class YoloPostProcessorBridge:
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.45,
     ) -> None:
+        """Initialize bridge with postprocessor and detection thresholds."""
         self._postprocessor = postprocessor or YoloPostprocessor(end2end=end2end)
         self._scale = scale
         self._pad_offset = pad_offset
@@ -65,7 +66,7 @@ class YoloDetailedPostProcessorBridge:
     Only works with standard (non-end2end) models.
     """
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         *,
         postprocessor: YoloDetailedPostprocessor | None = None,
@@ -74,6 +75,7 @@ class YoloDetailedPostProcessorBridge:
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.45,
     ) -> None:
+        """Initialize bridge with detailed postprocessor and detection thresholds."""
         self._postprocessor = postprocessor or YoloDetailedPostprocessor()
         self._scale = scale
         self._pad_offset = pad_offset

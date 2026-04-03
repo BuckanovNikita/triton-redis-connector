@@ -49,7 +49,7 @@ def run_detection(  # noqa: PLR0913
         FolderInferenceResult with per-image results and timing.
 
     """
-    from triton_model_tools.inference.folder_inference import run_folder_inference  # noqa: PLC0415
+    from triton_model_tools.inference.folder_inference import run_folder_inference
 
     return run_folder_inference(
         image_dir=image_dir,
@@ -86,7 +86,7 @@ def run_local_detection(  # noqa: PLR0913
         FolderInferenceResult with per-image results and timing.
 
     """
-    from triton_model_tools.inference.local_folder_inference import (  # noqa: PLC0415
+    from triton_model_tools.inference.local_folder_inference import (
         run_local_folder_inference,
     )
 
@@ -119,7 +119,7 @@ def compare_detection_results(
         ComparisonSummary with per-image and overall metrics.
 
     """
-    from triton_model_tools.benchmarks.comparison import compare_inference  # noqa: PLC0415
+    from triton_model_tools.benchmarks.comparison import compare_inference
 
     return compare_inference(baseline, candidate, iou_threshold)
 
@@ -141,6 +141,6 @@ def compare_classification_results(
         ClassificationComparisonSummary with per-image and overall metrics.
 
     """
-    from triton_model_tools.benchmarks.comparison import compare_classification  # noqa: PLC0415
+    from triton_model_tools.benchmarks.comparison import compare_classification
 
     return compare_classification(baseline, candidate)

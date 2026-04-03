@@ -49,8 +49,8 @@ def export_resnet18(
 
     """
     try:
-        import torch  # noqa: PLC0415
-        from torchvision.models import ResNet18_Weights, resnet18  # noqa: PLC0415
+        import torch
+        from torchvision.models import ResNet18_Weights, resnet18
     except ImportError as exc:
         msg = "torch and torchvision are required for ResNet18 export. Install them with: pip install torch torchvision"
         raise ImportError(msg) from exc
