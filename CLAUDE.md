@@ -35,6 +35,9 @@ uv run pyright                         # type check (pyright)
 uv run lint-imports                    # architecture layer contracts
 uv run vulture                         # dead code detection
 ```
+This is a Python monorepo using uv, ruff, mypy, pyright, and pre-commit hooks.
+Always run `uv run pytest` and pre-commit checks before considering work complete.
+Use `--no-verify` only when pre-existing failures block commits (e.g., TurboJPEG host issues)
 
 ## Triton Version Management
 
@@ -277,11 +280,22 @@ Pipeline: ruff format -> ruff check -> mypy -> pyright -> import-linter -> vultu
 uv run pre-commit run --all-files
 ```
 
+## Claude Code Hooks
+
+Automated hooks in `.claude/hooks/` enforce project conventions during Claude Code sessions.
+
+| Hook | Event | What it does |
+|------|-------|-------------|
+| `block-bare-tools.sh` | PreToolUse (Bash) | Blocks bare `python`/`pytest`/`ruff`/`mypy`/`.venv/bin/*` — must use `uv run` |
+| `validate-commit-msg.sh` | PreToolUse (git commit) | Blocks non-conventional commit messages |
+| `setup-worktree.sh` | WorktreeCreate | Copies `.env`, runs `uv sync` in new worktrees |
+
 ## Git / Commits
 
 - [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`
 - Always run `uv run pre-commit run --all-files` before committing
 - SSH for push: `git@github.com:<org>/<repo>.git`
+- For multi-line commit messages, use unique temp files (`/tmp/COMMIT_MSG_<short_hash>`), then `git commit -F <path>`, then delete
 
 ## Agent Team
 
@@ -289,3 +303,11 @@ uv run pre-commit run --all-files
 - **implementer** — code implementation, following project conventions
 - **tester** — tests, mocks, coverage, integration tests
 - **reviewer** — code review, quality and security checks
+
+## Multi-Agent / Parallel Work section
+When using parallel agents or worktrees:
+    (1) never commit from agents on main branch, (2) never use shared temp files like /tmp/COMMIT_MSG, (3) verify git state after agent completion before proceeding.
+## Code Conventions section
+Use Pydantic models for all serialization - never use raw dicts. All serialization logic should be internal to utility functions, not spread across callers.
+## Project Structure 
+Project skills and configuration files go in `.claude/` within the project directory, never in `~/.claude/` personal directory.
