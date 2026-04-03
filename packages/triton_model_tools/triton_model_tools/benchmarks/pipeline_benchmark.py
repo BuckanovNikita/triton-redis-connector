@@ -15,8 +15,10 @@ from triton_model_tools.benchmarks.stats import compute_statistics
 from triton_model_tools.inference.detection_io import collect_image_paths
 from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
 from triton_model_tools.testing.e2e_test import CONSUMER_NAME, POLL_INTERVAL_S, ensure_consumer_group
+from triton_model_tools.testing.stream_populator import StreamFields, populate_stream
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
     import redis
@@ -61,22 +63,23 @@ def _push_images(
     input_stream: str,
     image_paths: list[Path],
     model_name: str,
-) -> dict[str, float]:
-    """Push images to Redis and record push timestamps. Returns {image_name: push_time}."""
-    push_times: dict[str, float] = {}
-    for image_path in tqdm(image_paths, desc="Pushing images", unit="img"):
-        image_bytes = image_path.read_bytes()
-        push_times[image_path.name] = time.monotonic()
-        redis_client.xadd(
-            name=input_stream,
-            fields={
-                b"data": image_bytes,
+) -> None:
+    """Push images to Redis input stream."""
+
+    def _fields_gen() -> Iterator[StreamFields]:
+        for image_path in image_paths:
+            yield {
+                b"data": image_path.read_bytes(),
                 b"request_id": uuid.uuid4().hex.encode(),
                 b"model_name": model_name.encode(),
                 b"image_name": image_path.name.encode(),
-            },
-        )
-    return push_times
+            }
+
+    populate_stream(
+        redis_client,
+        input_stream,
+        tqdm(_fields_gen(), total=len(image_paths), desc="Pushing images", unit="img"),
+    )
 
 
 def _collect_with_timestamps(

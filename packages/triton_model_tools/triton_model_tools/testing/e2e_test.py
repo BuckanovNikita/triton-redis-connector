@@ -19,8 +19,10 @@ from triton_model_tools.models.detection import (
     FolderInferenceResult,
     ImageDetectionResult,
 )
+from triton_model_tools.testing.stream_populator import StreamFields, populate_stream
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
     import redis
@@ -101,34 +103,23 @@ class ConnectorE2ETestHarness:
 
     def push_test_images(self, image_paths: list[Path]) -> list[str]:
         """Push images to Redis input stream via XADD. Returns list of message IDs."""
-        message_ids: list[str] = []
-        for image_path in tqdm(image_paths, desc="Pushing images", unit="img"):
-            image_bytes = image_path.read_bytes()
-            request_id = uuid.uuid4().hex
-            raw_id: Any = self._redis.xadd(
-                name=self._config.input_stream,
-                fields={
-                    b"data": image_bytes,
-                    b"request_id": request_id.encode(),
-                    b"model_name": self._config.model_name.encode(),
-                    b"image_name": image_path.name.encode(),
-                },
-            )
-            decoded_id: str = raw_id.decode() if isinstance(raw_id, bytes) else str(raw_id)
-            message_ids.append(decoded_id)
-            logger.debug(
-                "Pushed image {} as message {} (request_id={})",
-                image_path.name,
-                decoded_id,
-                request_id,
-            )
+        model_name = self._config.model_name
 
-        logger.info(
-            "Pushed {} images to stream {}",
-            len(message_ids),
+        def _fields_gen() -> Iterator[StreamFields]:
+            for image_path in image_paths:
+                yield {
+                    b"data": image_path.read_bytes(),
+                    b"request_id": uuid.uuid4().hex.encode(),
+                    b"model_name": model_name.encode(),
+                    b"image_name": image_path.name.encode(),
+                }
+
+        result = populate_stream(
+            self._redis,
             self._config.input_stream,
+            tqdm(_fields_gen(), total=len(image_paths), desc="Pushing images", unit="img"),
         )
-        return message_ids
+        return result.message_ids
 
     def collect_results(
         self,

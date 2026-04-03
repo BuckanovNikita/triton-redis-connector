@@ -11,12 +11,14 @@ from loguru import logger
 
 if TYPE_CHECKING:
     import argparse
+    from collections.abc import Iterator
 
     import redis
 
     from triton_model_tools.cli._types import SubParsers
 
 from triton_model_tools.cli._types import parse_image_size
+from triton_model_tools.testing.stream_populator import StreamFields, populate_stream
 
 _IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"})
 
@@ -156,41 +158,26 @@ def _push_images(
     event_type: str,
     camera_count: int,
 ) -> list[str]:
-    message_ids: list[str] = []
     metal_types = _DEFAULT_METAL_TYPES
 
-    for idx, image_path in enumerate(image_paths):
-        camera_no = str((idx % camera_count) + 1)
-        metal_type = metal_types[idx % len(metal_types)]
-        frame_counter = str(idx + 1)
-        receipt_ts = str(time.time())
-
-        raw_id: Any = redis_client.xadd(
-            name=stream,
-            fields={
-                b"camera_no": camera_no.encode(),
+    def _fields_gen() -> Iterator[StreamFields]:
+        for idx, image_path in enumerate(image_paths):
+            yield {
+                b"camera_no": str((idx % camera_count) + 1).encode(),
                 b"image_path": str(image_path.resolve()).encode(),
-                b"frame_counter": frame_counter.encode(),
-                b"receipt_ts": receipt_ts.encode(),
-                b"metal_type": metal_type.encode(),
+                b"frame_counter": str(idx + 1).encode(),
+                b"receipt_ts": str(time.time()).encode(),
+                b"metal_type": metal_types[idx % len(metal_types)].encode(),
                 b"event_type": event_type.encode(),
-            },
-            maxlen=_XADD_MAXLEN,
-            approximate=True,
-        )
-        decoded_id: str = raw_id.decode() if isinstance(raw_id, bytes) else str(raw_id)
-        message_ids.append(decoded_id)
+            }
 
-        logger.debug(
-            "XADD {} -> {}: camera={} frame={} metal={}",
-            image_path.name,
-            decoded_id,
-            camera_no,
-            frame_counter,
-            metal_type,
-        )
-
-    return message_ids
+    result = populate_stream(
+        redis_client,
+        stream,
+        _fields_gen(),
+        maxlen=_XADD_MAXLEN,
+    )
+    return result.message_ids
 
 
 def _verify_messages(

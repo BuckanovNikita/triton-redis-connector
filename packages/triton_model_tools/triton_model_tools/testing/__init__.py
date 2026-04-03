@@ -6,11 +6,19 @@ from triton_model_tools.testing.preprocessing_verify import (
     verify_classification_preprocessing,
     verify_yolo_preprocessing,
 )
+from triton_model_tools.testing.stream_populator import (
+    PopulateResult,
+    StreamFields,
+    populate_stream,
+)
 
 __all__ = [
     "ConnectorE2ETestHarness",
     "E2ETestConfig",
+    "PopulateResult",
     "PreprocessingResult",
+    "StreamFields",
+    "populate_stream",
     "verify_classification_preprocessing",
     "verify_yolo_preprocessing",
 ]
