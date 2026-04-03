@@ -12,9 +12,9 @@ from typing import TYPE_CHECKING, cast
 
 from pydantic import BaseModel, ValidationError
 
-from typed_flow.engine.events import FrameworkMeta, PipelineEvent, Unprocessed
 from typed_flow.errors.models import ConnectorError
 from typed_flow.protocols import BaseThreadSink, BaseThreadSource, Envelope
+from typed_flow.protocols.messaging import FrameworkMeta, HasFlowMeta
 
 if TYPE_CHECKING:
     from redis import Redis
@@ -120,12 +120,11 @@ def deserialize_envelope[T: BaseModel](
     event_model: type[T],
     connector_name: str,
     priority: int,
-) -> PipelineEvent[T, Unprocessed] | ConnectorError:
-    """Deserialize an Envelope into a PipelineEvent wrapping a typed user model.
+) -> T | ConnectorError:
+    """Deserialize an Envelope into a typed user model with flow_meta populated.
 
+    The user model T must have a ``flow_meta: FrameworkMeta`` field with a default.
     On ValidationError, returns a ConnectorError instead of raising.
-    The user model T is a pure BaseModel -- framework metadata lives
-    on the returned PipelineEvent.fw, not on the user model.
     """
     try:
         raw_fields = dict(envelope.original_fields)
@@ -146,18 +145,17 @@ def deserialize_envelope[T: BaseModel](
         message_id=envelope.message_id,
         priority=priority,
     )
-    concrete_cls = PipelineEvent[event_model, Unprocessed]  # type: ignore[valid-type]
-    return concrete_cls(fw=fw, context=event, payload=Unprocessed())
+    if isinstance(event, HasFlowMeta):
+        return event.model_copy(update={"flow_meta": fw})
+    return event
 
 
-class LiveRedisStreamSource[T: BaseModel](BaseThreadSource[PipelineEvent[T, Unprocessed] | ConnectorError]):
+class LiveRedisStreamSource[T: BaseModel](BaseThreadSource[T | ConnectorError]):
     """Typed thread source that reads live (new) messages from a Redis Stream.
 
     Always reads from the latest cursor (``>``). Deserializes raw bytes into
-    user model ``T`` and wraps in ``PipelineEvent[T, Unprocessed]``.
+    user model ``T`` and populates ``flow_meta`` on the result.
     On deserialization failure returns ConnectorError.
-
-    Sets ``fw.priority = 0`` (highest) on all produced events.
     """
 
     def __init__(
@@ -175,16 +173,15 @@ class LiveRedisStreamSource[T: BaseModel](BaseThreadSource[PipelineEvent[T, Unpr
         self._event_model = event_model
         self.name = name or f"live_source_{config.stream_name}"
 
-    def __call__(self) -> PipelineEvent[T, Unprocessed] | ConnectorError | None:
+    def __call__(self) -> T | ConnectorError | None:
         """Read the next live message, deserialize, and return."""
         results = self._connector.read_new(count=1, block_ms=self._config.block_ms)
         if not results:
             return None
-        envelope = results[0]
-        return deserialize_envelope(envelope, self._event_model, self.name, priority=0)
+        return deserialize_envelope(results[0], self._event_model, self.name, priority=0)
 
 
-class AutoRedisSource[T: BaseModel](BaseThreadSource[PipelineEvent[T, Unprocessed] | ConnectorError]):
+class AutoRedisSource[T: BaseModel](BaseThreadSource[T | ConnectorError]):
     """Redis stream source derived from config and event type annotation.
 
     Users subclass with a type annotation only::
@@ -193,8 +190,7 @@ class AutoRedisSource[T: BaseModel](BaseThreadSource[PipelineEvent[T, Unprocesse
 
     The event model ``T`` is extracted from the generic parameter at class
     creation time via ``__orig_bases__``. Stream configuration comes from
-    the provided ``SourceConfig``. This removes all boilerplate from
-    user-defined Redis sources.
+    the provided ``SourceConfig``.
     """
 
     _event_model: type[T]
@@ -227,24 +223,19 @@ class AutoRedisSource[T: BaseModel](BaseThreadSource[PipelineEvent[T, Unprocesse
         self._config = config
         self.name = name or f"auto_source_{config.stream_name}"
 
-    def __call__(self) -> PipelineEvent[T, Unprocessed] | ConnectorError | None:
+    def __call__(self) -> T | ConnectorError | None:
         """Read the next message, deserialize into ``T``, and return."""
         results = self._connector.read_new(count=1, block_ms=self._config.block_ms)
         if not results:
             return None
-        envelope = results[0]
-        return deserialize_envelope(envelope, self._event_model, self.name, priority=0)
+        return deserialize_envelope(results[0], self._event_model, self.name, priority=0)
 
 
-class TypedRedisStreamSink[TCtx: BaseModel, TResult: BaseModel](
-    BaseThreadSink[PipelineEvent[TCtx, TResult]],
-):
-    """Typed sink that serializes PipelineEvent to Redis Stream output.
+class TypedRedisStreamSink[T: BaseModel](BaseThreadSink[T]):
+    """Typed sink that serializes a BaseModel event to Redis Stream output.
 
-    Serialization is built into the sink:
-    - Context fields written as top-level Redis hash entries (all TCtx fields)
-    - Payload written as a single ``result`` JSON field
-    - ``fw`` field is on PipelineEvent, not on context -- never serialized
+    If the event has a ``flow_meta`` field (satisfies HasFlowMeta), it is
+    excluded from serialization. All other fields are written to Redis.
     """
 
     def __init__(
@@ -258,16 +249,10 @@ class TypedRedisStreamSink[TCtx: BaseModel, TResult: BaseModel](
         self._output = output_connector
         self.name = name or "typed_sink"
 
-    def __call__(self, event: PipelineEvent[TCtx, TResult]) -> None:
-        """Serialize PipelineEvent and write to Redis."""
-        ctx = event.context
-        result = event.payload
-
+    def __call__(self, event: T) -> None:
+        """Serialize event and write to Redis, stripping flow_meta if present."""
+        exclude: set[str] = {"flow_meta"} if isinstance(event, HasFlowMeta) else set()
         data: dict[str, bytes] = {}
-        ctx_dict = ctx.model_dump()
-        for key, value in ctx_dict.items():
+        for key, value in event.model_dump(exclude=exclude).items():
             data[key] = str(value).encode()
-
-        data["result"] = result.model_dump_json().encode()
-
         self._output.write(data)

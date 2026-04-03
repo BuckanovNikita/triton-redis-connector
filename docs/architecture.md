@@ -176,7 +176,17 @@ All domain events inherit from `Event` (in `engine/events.py`), which carries fr
 - `ClassificationResult` -- structured classification predictions with metrics annotations
 - `FrameworkMeta` -- framework-owned metadata, set by RedisStreamSource, stripped by RedisStreamSink
 
-The `PipelineEvent` pattern allows the original user event (context) to travel alongside processing stages without being lost. Framework routes by exact generic match on `PipelineEvent[ConcreteCtx, ConcretePayload]`.
+The `PipelineEvent` pattern allows the original user event (context) to travel alongside processing stages without being lost.
+
+### Type-Based Routing
+
+The framework routes events using **subtype-aware matching**:
+
+- **isinstance at runtime**: `isinstance(result, expected_type)` — subclass instances route to parent-type consumers
+- **issubclass at validation**: a produced `ChildEvent` satisfies a consumer expecting `ParentEvent`
+- **Union inputs**: `BaseThreadProcessor[A | B | C, Out]` subscribes to all three types from any source
+- **Container unpacking**: `list[T]` and `tuple[T, ...]` return types are unpacked — each element is routed individually
+- **Pydantic generics**: fallback comparison via `__pydantic_generic_metadata__` for thread-safety
 
 ## ModelBundle
 

@@ -5,32 +5,26 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from pydantic import BaseModel, ConfigDict
-from typed_flow.config.schema import SourceConfig
+from typed_flow.config.schema import SinkConfig, SourceConfig
 from typed_flow.connectors.redis_stream import (
     LiveRedisStreamSource,
     RedisStreamInputConnector,
     RedisStreamOutputConnector,
     TypedRedisStreamSink,
 )
-from typed_flow.engine.events import (
-    FrameworkMeta,
-    PipelineEvent,
-    Unprocessed,
-)
 from typed_flow.errors.models import ConnectorError
 from typed_flow.protocols import Envelope
+from typed_flow.protocols.messaging import BaseEvent, FrameworkMeta
 
 
-class SampleEvent(BaseModel):
+class SampleEvent(BaseEvent):
     model_config = ConfigDict(frozen=True, strict=True)
 
     camera_id: str
     image_path: str = ""
 
 
-class SampleResult(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
+class SampleResult(BaseEvent):
     score: float
     label: str
 
@@ -72,7 +66,7 @@ class TestLiveRedisStreamSource:
         result = source()
         assert result is None
 
-    def test_deserializes_event_with_fw_metadata(self) -> None:
+    def test_deserializes_event_with_flow_meta(self) -> None:
         connector = MagicMock(spec=RedisStreamInputConnector)
         envelope = _make_envelope(
             msg_id="1-0",
@@ -84,13 +78,12 @@ class TestLiveRedisStreamSource:
         source = LiveRedisStreamSource(connector, config, SampleEvent)
         result = source()
 
-        assert isinstance(result, PipelineEvent)
-        assert result.context.camera_id == "cam01"
-        assert result.context.image_path == "/img/1.jpg"
-        assert result.fw.source_stream == "stream:test"
-        assert result.fw.message_id == "1-0"
-        assert result.fw.priority == 0
-        assert isinstance(result.payload, Unprocessed)
+        assert isinstance(result, SampleEvent)
+        assert result.camera_id == "cam01"
+        assert result.image_path == "/img/1.jpg"
+        assert result.flow_meta.source_stream == "stream:test"
+        assert result.flow_meta.message_id == "1-0"
+        assert result.flow_meta.priority == 0
 
     def test_returns_connector_error_on_validation_failure(self) -> None:
         connector = MagicMock(spec=RedisStreamInputConnector)
@@ -120,26 +113,22 @@ class TestLiveRedisStreamSource:
 
 
 class TestTypedRedisStreamSink:
-    def test_serializes_pipeline_event(self) -> None:
+    def test_serializes_event_fields(self) -> None:
         mock_redis = MagicMock()
         mock_redis.xadd.return_value = b"1-0"
-
-        from typed_flow.config.schema import SinkConfig
 
         sink_config = SinkConfig(stream_name="stream:output")
         output_connector = RedisStreamOutputConnector(mock_redis, sink_config)
 
-        sink: TypedRedisStreamSink[SampleEvent, SampleResult] = TypedRedisStreamSink(
+        sink: TypedRedisStreamSink[SampleResult] = TypedRedisStreamSink(
             output_connector=output_connector,
             name="test_sink",
         )
 
-        ctx = SampleEvent(camera_id="cam01", image_path="/img/1.jpg")
-        payload = SampleResult(score=0.95, label="cat")
-        event: PipelineEvent[SampleEvent, SampleResult] = PipelineEvent(
-            fw=FrameworkMeta(source_stream="stream:input", message_id="5-0"),
-            context=ctx,
-            payload=payload,
+        event = SampleResult(
+            flow_meta=FrameworkMeta(source_stream="stream:input", message_id="5-0"),
+            score=0.95,
+            label="cat",
         )
 
         sink(event)
@@ -149,28 +138,24 @@ class TestTypedRedisStreamSink:
         if call_fields is None:
             call_fields = mock_redis.xadd.call_args[0][1]
 
-        assert "camera_id" in call_fields
-        assert "result" in call_fields
+        assert "score" in call_fields
+        assert "label" in call_fields
 
-    def test_fw_not_in_output(self) -> None:
+    def test_flow_meta_not_in_output(self) -> None:
         mock_redis = MagicMock()
         mock_redis.xadd.return_value = b"1-0"
-
-        from typed_flow.config.schema import SinkConfig
 
         sink_config = SinkConfig(stream_name="stream:output")
         output_connector = RedisStreamOutputConnector(mock_redis, sink_config)
 
-        sink: TypedRedisStreamSink[SampleEvent, SampleResult] = TypedRedisStreamSink(
+        sink: TypedRedisStreamSink[SampleResult] = TypedRedisStreamSink(
             output_connector=output_connector,
         )
 
-        ctx = SampleEvent(camera_id="cam01")
-        payload = SampleResult(score=0.5, label="dog")
-        event: PipelineEvent[SampleEvent, SampleResult] = PipelineEvent(
-            fw=FrameworkMeta(source_stream="s", message_id="1-0"),
-            context=ctx,
-            payload=payload,
+        event = SampleResult(
+            flow_meta=FrameworkMeta(source_stream="s", message_id="1-0"),
+            score=0.5,
+            label="dog",
         )
 
         sink(event)
@@ -180,28 +165,24 @@ class TestTypedRedisStreamSink:
         if fields is None:
             fields = written_data[0][1]
 
-        assert "fw" not in fields
+        assert "flow_meta" not in fields
 
-    def test_context_fields_as_top_level_entries(self) -> None:
+    def test_model_without_flow_meta_passes_through(self) -> None:
+        """Models without flow_meta are serialized as-is."""
         mock_redis = MagicMock()
         mock_redis.xadd.return_value = b"1-0"
 
-        from typed_flow.config.schema import SinkConfig
+        class PlainModel(BaseModel):
+            value: int
 
         sink_config = SinkConfig(stream_name="stream:output")
         output_connector = RedisStreamOutputConnector(mock_redis, sink_config)
 
-        sink: TypedRedisStreamSink[SampleEvent, SampleResult] = TypedRedisStreamSink(
+        sink: TypedRedisStreamSink[PlainModel] = TypedRedisStreamSink(
             output_connector=output_connector,
         )
 
-        ctx = SampleEvent(camera_id="cam99", image_path="/data/test.jpg")
-        payload = SampleResult(score=0.99, label="person")
-        event: PipelineEvent[SampleEvent, SampleResult] = PipelineEvent(
-            context=ctx,
-            payload=payload,
-        )
-
+        event = PlainModel(value=42)
         sink(event)
 
         written = mock_redis.xadd.call_args
@@ -209,40 +190,4 @@ class TestTypedRedisStreamSink:
         if fields is None:
             fields = written[0][1]
 
-        assert fields["camera_id"] == b"cam99"
-        assert fields["image_path"] == b"/data/test.jpg"
-
-    def test_result_field_is_json(self) -> None:
-        mock_redis = MagicMock()
-        mock_redis.xadd.return_value = b"1-0"
-
-        import json
-
-        from typed_flow.config.schema import SinkConfig
-
-        sink_config = SinkConfig(stream_name="stream:output")
-        output_connector = RedisStreamOutputConnector(mock_redis, sink_config)
-
-        sink: TypedRedisStreamSink[SampleEvent, SampleResult] = TypedRedisStreamSink(
-            output_connector=output_connector,
-        )
-
-        ctx = SampleEvent(camera_id="cam01")
-        payload = SampleResult(score=0.75, label="bicycle")
-        event: PipelineEvent[SampleEvent, SampleResult] = PipelineEvent(
-            context=ctx,
-            payload=payload,
-        )
-
-        sink(event)
-
-        written = mock_redis.xadd.call_args
-        fields = written.kwargs.get("fields") or written[1].get("fields")
-        if fields is None:
-            fields = written[0][1]
-
-        result_bytes = fields.get(b"result") or fields.get("result")
-        assert result_bytes is not None
-        parsed = json.loads(result_bytes)
-        assert parsed["score"] == 0.75
-        assert parsed["label"] == "bicycle"
+        assert "value" in fields

@@ -91,21 +91,74 @@ class GraphNode:
         self.output_types: set[type] = set()
 
 
+def _unwrap_container(annotation: object) -> object:
+    """Unwrap list[T] and tuple[T, ...] to T for type-based routing.
+
+    The framework routes individual elements, so container wrappers
+    are stripped at the type level. At runtime, _run_parallel_node
+    unpacks list/tuple results and routes each element separately.
+    """
+    origin = typing.get_origin(annotation)
+    if origin is list:
+        args = typing.get_args(annotation)
+        if args:
+            return args[0]
+    if origin is tuple:
+        args = typing.get_args(annotation)
+        if len(args) == 2 and args[1] is Ellipsis:
+            return args[0]
+    return annotation
+
+
 def _flatten_union(annotation: object) -> list[type]:
-    """Flatten a union type (A | B | None) into individual types, excluding NoneType."""
+    """Flatten a union type (A | B | None) into individual types, excluding NoneType.
+
+    Also unwraps list[T] and tuple[T, ...] containers to extract the
+    element type T for routing.
+    """
+    annotation = _unwrap_container(annotation)
     origin = typing.get_origin(annotation)
     if origin is types.UnionType or origin is typing.Union:
         result: list[type] = []
         for arg in typing.get_args(annotation):
             if arg is type(None):
                 continue
-            unwrapped = _unwrap_annotated(arg)
+            unwrapped = _unwrap_annotated(_unwrap_container(arg))
             if unwrapped is not type(None):
                 result.append(unwrapped)
         return result
     if isinstance(annotation, type) and annotation is not type(None):
         return [annotation]
     return []
+
+
+def _is_subclass_safe(child: object, parent: object) -> bool:
+    """Check issubclass, returning False for non-class types instead of raising."""
+    if not isinstance(child, type) or not isinstance(parent, type):
+        return False
+    try:
+        return issubclass(child, parent)
+    except TypeError:
+        return False
+
+
+def _find_subclass_consumers(
+    out_type: type,
+    type_consumers: dict[type, list[str]],
+) -> list[tuple[str, type]]:
+    """Find consumers where out_type is a subclass of the consumed type.
+
+    Skips exact matches (handled by dict lookup) and non-class types.
+    Returns (consumer_name, consumed_type) pairs so the routing table
+    stores the consumer's declared type for isinstance checks at runtime.
+    """
+    results: list[tuple[str, type]] = []
+    for consumed_type, consumer_names in type_consumers.items():
+        if consumed_type is out_type:
+            continue
+        if _is_subclass_safe(out_type, consumed_type):
+            results.extend((name, consumed_type) for name in consumer_names)
+    return results
 
 
 def _unwrap_annotated(annotation: object) -> type:
@@ -273,7 +326,8 @@ class PipelineRegistry:
     def validate(self) -> list[str]:
         """Validate graph integrity. Returns a list of error messages (empty = valid).
 
-        Uses exact type matching: types must match exactly (no subtype checking).
+        Uses subtype-aware matching: a produced type satisfies a consumer
+        if the produced type is a subclass of the consumed type.
         """
         errors: list[str] = []
 
@@ -284,7 +338,8 @@ class PipelineRegistry:
         all_produced_types = set(self._type_producers.keys())
 
         for consumed_type, consumers in self._type_consumers.items():
-            if consumed_type not in all_produced_types:
+            has_producer = any(_is_subclass_safe(pt, consumed_type) for pt in all_produced_types)
+            if not has_producer:
                 type_name = _type_display_name(consumed_type)
                 errors.extend(
                     f"Node '{consumer_name}' consumes {type_name} but no node produces it"
@@ -294,7 +349,8 @@ class PipelineRegistry:
         all_consumed_types = set(self._type_consumers.keys())
 
         for produced_type, producers in self._type_producers.items():
-            if produced_type not in all_consumed_types:
+            has_consumer = any(_is_subclass_safe(produced_type, ct) for ct in all_consumed_types)
+            if not has_consumer:
                 for producer_name in producers:
                     node = self._nodes[producer_name]
                     if node.variant not in SINK_VARIANTS:
@@ -340,7 +396,7 @@ class PipelineRegistry:
         """Check that the graph has no disconnected subgraphs.
 
         All nodes must be reachable from at least one source node.
-        Uses exact type matching for connectivity.
+        Uses subtype-aware matching for connectivity.
         """
         errors: list[str] = []
         source_names = {name for name, node in self._nodes.items() if node.variant in SOURCE_VARIANTS}
@@ -358,7 +414,10 @@ class PipelineRegistry:
             reachable.add(current_name)
             current_node = self._nodes[current_name]
             for out_type in current_node.output_types:
-                consumer_names = self._type_consumers.get(out_type, [])
+                consumer_names = list(self._type_consumers.get(out_type, []))
+                for name, _ in _find_subclass_consumers(out_type, self._type_consumers):
+                    if name not in consumer_names:
+                        consumer_names.append(name)
                 frontier.extend(name for name in consumer_names if name not in reachable)
 
         unreachable = set(self._nodes.keys()) - reachable
@@ -371,8 +430,9 @@ class PipelineRegistry:
     def compute_routing_table(self) -> dict[str, list[tuple[str, type]]]:
         """Build a producer-name -> list[(consumer_name, expected_input_type)] table.
 
-        Uses exact type matching. Each entry tells the router which consumer
-        to consider and what type to check against at runtime.
+        Uses subtype-aware matching. For exact matches the producer's output
+        type is stored; for subclass matches the consumer's declared input
+        type is stored so isinstance checks work at runtime.
         """
         table: dict[str, list[tuple[str, type]]] = {}
         for name, node in self._nodes.items():
@@ -381,6 +441,7 @@ class PipelineRegistry:
                 consumer_pairs.extend(
                     (consumer_name, out_type) for consumer_name in self._type_consumers.get(out_type, [])
                 )
+                consumer_pairs.extend(_find_subclass_consumers(out_type, self._type_consumers))
             if consumer_pairs:
                 seen: set[tuple[str, type]] = set()
                 unique: list[tuple[str, type]] = []

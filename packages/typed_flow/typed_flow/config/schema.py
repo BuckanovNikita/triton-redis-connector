@@ -44,7 +44,7 @@ class QueueConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    maxsize: int = Field(default=1000, ge=1)
+    maxsize: int = Field(default=50_000, ge=1)
 
 
 class MetricsConfig(BaseModel):

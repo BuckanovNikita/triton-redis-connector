@@ -37,7 +37,7 @@ from typed_flow.protocols.lifecycle import (
     Startable,
     Stoppable,
 )
-from typed_flow.protocols.messaging import Envelope
+from typed_flow.protocols.messaging import BaseEvent, Envelope, FrameworkMeta, HasFlowMeta
 from typed_flow.protocols.metrics import (
     Counter,
     Gauge,
@@ -47,6 +47,7 @@ from typed_flow.protocols.metrics import (
 
 __all__ = [
     "AggregationRuleProtocol",
+    "BaseEvent",
     "BaseProcessPoolProcessor",
     "BaseProcessSink",
     "BaseProcessSource",
@@ -56,8 +57,10 @@ __all__ = [
     "BaseThreadSource",
     "Counter",
     "Envelope",
+    "FrameworkMeta",
     "Gauge",
     "GroupBy",
+    "HasFlowMeta",
     "LifecycleService",
     "MetricRecorder",
     "ObserverProtocol",

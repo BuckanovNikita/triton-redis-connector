@@ -2,7 +2,6 @@
 
 Task 5.7: Build validation catches broken configs (no Docker needed).
 Task 5.4: Error event creation and properties (partial, no Docker needed).
-Task 5.6: User data preservation via PipelineEvent round-trip (partial, no Docker needed).
 Task 5.1/5.2: Full pipeline smoke test (requires Redis + Triton).
 """
 
@@ -18,10 +17,6 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from triton_redis_connector.errors.models import InferenceError, PreprocessingError
 from typed_flow.config.schema import AppConfig
 from typed_flow.engine.app import Application
-from typed_flow.engine.events import (
-    FrameworkMeta,
-    PipelineEvent,
-)
 from typed_flow.errors.models import ConnectorError
 from typed_flow.protocols import (
     BaseThreadProcessor,
@@ -36,29 +31,6 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # Shared test types
 # ---------------------------------------------------------------------------
-
-
-class SimplePayload(BaseModel):
-    model_config = ConfigDict(frozen=True)
-    data: str = "test"
-
-
-class AnotherPayload(BaseModel):
-    model_config = ConfigDict(frozen=True)
-    number: int = 42
-
-
-class UserContext(BaseModel):
-    model_config = ConfigDict(frozen=True)
-    camera_id: str = "cam_01"
-    location: str = "hall_a"
-
-
-class ContextWithShadowingNames(BaseModel):
-    model_config = ConfigDict(frozen=True)
-    source_stream: str = "user_stream"
-    message_id: str = "user_msg_123"
-    created_at: float = 1234567890.0
 
 
 class ContextWithResultField(BaseModel):
@@ -249,87 +221,6 @@ class TestPreprocessingErrorMetrics:
 
         counters = extract_event_counters(PreprocessingError)
         assert any(c.name == "decode_failure" for c in counters)
-
-
-# ---------------------------------------------------------------------------
-# Task 5.6: User data preservation via PipelineEvent round-trip (partial)
-# ---------------------------------------------------------------------------
-
-
-class TestPipelineEventPreservesUserContext:
-    def test_fw_separate_from_user_context(self) -> None:
-        fw = FrameworkMeta(source_stream="framework:stream", message_id="fw-001")
-        ctx = ContextWithShadowingNames(
-            source_stream="user_stream",
-            message_id="user_msg_123",
-            created_at=1234567890.0,
-        )
-        pe: PipelineEvent[ContextWithShadowingNames, SimplePayload] = PipelineEvent(
-            fw=fw,
-            context=ctx,
-            payload=SimplePayload(data="hello"),
-        )
-
-        assert pe.fw.source_stream == "framework:stream"
-        assert pe.fw.message_id == "fw-001"
-        assert pe.context.source_stream == "user_stream"
-        assert pe.context.message_id == "user_msg_123"
-        assert pe.context.created_at == 1234567890.0
-
-    def test_user_fields_survive_without_fw(self) -> None:
-        ctx = UserContext(camera_id="cam_07", location="gate_b")
-        pe: PipelineEvent[UserContext, SimplePayload] = PipelineEvent(
-            fw=FrameworkMeta(source_stream="fw:stream", message_id="fw-002"),
-            context=ctx,
-            payload=SimplePayload(data="world"),
-        )
-
-        dumped = pe.context.model_dump()
-        assert "fw" not in dumped
-        assert dumped["camera_id"] == "cam_07"
-        assert dumped["location"] == "gate_b"
-
-    def test_pipeline_event_preserves_payload_through_transform(self) -> None:
-        ctx = UserContext(camera_id="cam_03", location="zone_c")
-        pe_input: PipelineEvent[UserContext, SimplePayload] = PipelineEvent(
-            context=ctx,
-            payload=SimplePayload(data="input_data"),
-        )
-
-        pe_output: PipelineEvent[UserContext, AnotherPayload] = PipelineEvent(
-            fw=pe_input.fw,
-            context=pe_input.context,
-            payload=AnotherPayload(number=99),
-        )
-
-        assert pe_output.context.camera_id == "cam_03"
-        assert pe_output.context.location == "zone_c"
-        assert pe_output.payload.number == 99
-        assert pe_output.context is pe_input.context
-
-
-class TestPipelineEventShadowedFieldsRoundTrip:
-    def test_shadowed_names_serialization_round_trip(self) -> None:
-        fw = FrameworkMeta(source_stream="fw:src", message_id="fw-msg-100")
-        ctx = ContextWithShadowingNames(
-            source_stream="user_source",
-            message_id="user_msg",
-            created_at=9999.9,
-        )
-        pe: PipelineEvent[ContextWithShadowingNames, SimplePayload] = PipelineEvent(
-            fw=fw,
-            context=ctx,
-            payload=SimplePayload(),
-        )
-
-        json_str = pe.model_dump_json()
-        restored = PipelineEvent[ContextWithShadowingNames, SimplePayload].model_validate_json(json_str)
-
-        assert restored.fw.source_stream == "fw:src"
-        assert restored.fw.message_id == "fw-msg-100"
-        assert restored.context.source_stream == "user_source"
-        assert restored.context.message_id == "user_msg"
-        assert restored.context.created_at == 9999.9
 
 
 # ---------------------------------------------------------------------------

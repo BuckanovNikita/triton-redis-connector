@@ -1,15 +1,55 @@
-"""Envelope: framework-internal event transport wrapper.
+"""Envelope, FrameworkMeta, and HasFlowMeta protocol.
 
-Envelope is generic over the payload type and carries timing, state tracking,
-and source metadata through the processing graph. User code never creates or
-receives Envelopes directly.
+Envelope is framework-internal event transport. FrameworkMeta carries
+source metadata (stream, message_id, priority) through the pipeline.
+HasFlowMeta is a runtime-checkable protocol for types that carry flow_meta.
 """
 
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
+
+from pydantic import BaseModel, ConfigDict
+
+
+class FrameworkMeta(BaseModel):
+    """Framework-owned metadata carried through the pipeline on event.flow_meta.
+
+    Set by source connectors from the Redis envelope. Stripped by
+    sinks before writing to the output stream.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    source_stream: str = ""
+    message_id: str = ""
+    priority: int = 0
+
+
+@runtime_checkable
+class HasFlowMeta(Protocol):
+    """Protocol for types that carry framework metadata.
+
+    Sources produce events satisfying this protocol so the framework
+    can track source_stream, message_id, and priority through the pipeline.
+    """
+
+    flow_meta: FrameworkMeta
+
+
+class BaseEvent(BaseModel):
+    """Base class for user events flowing through the pipeline.
+
+    Provides ``flow_meta`` with a default so sources can populate it
+    after deserialization. Inherit from this instead of plain BaseModel
+    to get automatic framework metadata support.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    flow_meta: FrameworkMeta = FrameworkMeta()
 
 
 @dataclass

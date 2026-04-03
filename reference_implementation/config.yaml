@@ -1,0 +1,42 @@
+redis:
+  host: localhost
+  port: 6379
+  db: 0
+
+sources:
+  - stream_name: "sensor:temperature"
+    consumer_group: "merger-group"
+    event_model: "TemperatureReading"
+    batch_size: 1
+    block_ms: 100
+
+  - stream_name: "sensor:humidity"
+    consumer_group: "merger-group"
+    event_model: "HumidityReading"
+    batch_size: 1
+    block_ms: 100
+
+  - stream_name: "sensor:pressure"
+    consumer_group: "merger-group"
+    event_model: "PressureReading"
+    batch_size: 1
+    block_ms: 100
+
+  - stream_name: "sensor:wind"
+    consumer_group: "merger-group"
+    event_model: "WindReading"
+    batch_size: 1
+    block_ms: 100
+
+sinks:
+  - stream_name: "sensor:merged"
+    maxlen: 100000
+    approximate_maxlen: true
+
+metrics:
+  output_stream: ""
+  stats_log_interval_s: 30.0
+
+debug:
+  stop_on_error: false
+  mermaid_path: ""

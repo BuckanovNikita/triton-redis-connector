@@ -10,14 +10,15 @@ from __future__ import annotations
 
 import numpy as np  # noqa: TC002 — pydantic needs runtime access for model_rebuild()
 import numpy.typing as npt  # noqa: TC002
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
+from typed_flow.protocols.messaging import BaseEvent
 
 from triton_redis_connector.engine.events import TritonRequest
 
 __all__ = ["InferenceOutput", "TritonRequest"]
 
 
-class InferenceOutput(BaseModel):
+class InferenceOutput(BaseEvent):
     """Output event from Triton inference processor.
 
     Contains the raw inference results as numpy arrays keyed by output

@@ -20,8 +20,21 @@ def mock_redis() -> MagicMock:
 
 
 class TestEnsureGroupExists:
-    def test_creates_group_with_latest_id(self, manager: ConsumerGroupManager, mock_redis: MagicMock) -> None:
+    def test_creates_group_from_beginning_by_default(
+        self, manager: ConsumerGroupManager, mock_redis: MagicMock
+    ) -> None:
         manager.ensure_group_exists(mock_redis, "stream:input", "workers")
+        mock_redis.xgroup_create.assert_called_once_with(
+            name="stream:input",
+            groupname="workers",
+            id="0",
+            mkstream=True,
+        )
+
+    def test_creates_group_from_latest_when_requested(
+        self, manager: ConsumerGroupManager, mock_redis: MagicMock
+    ) -> None:
+        manager.ensure_group_exists(mock_redis, "stream:input", "workers", start_from_beginning=False)
         mock_redis.xgroup_create.assert_called_once_with(
             name="stream:input",
             groupname="workers",

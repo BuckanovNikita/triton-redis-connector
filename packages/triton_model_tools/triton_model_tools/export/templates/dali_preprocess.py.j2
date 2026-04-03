@@ -35,13 +35,16 @@ def pipe():
     pad_top = fn.cast((target_h - new_h) / 2, dtype=types.INT32)
     pad_left = fn.cast((target_w - new_w) / 2, dtype=types.INT32)
 
+    max_target = {{ [target_h, target_w] | max }}
+    max_new = dmath.max(fn.cast(new_h, dtype=types.FLOAT), fn.cast(new_w, dtype=types.FLOAT))
+    paste_ratio = max_target / max_new
+
     padded = fn.paste(
         resized,
-        paste_x=fn.cast(pad_left, dtype=types.FLOAT) / {{ target_w }},
-        paste_y=fn.cast(pad_top, dtype=types.FLOAT) / {{ target_h }},
-        ratio=1.0,
-        fill_value=({{ pad_value }}, {{ pad_value }}, {{ pad_value }}),
-        min_canvas_size=({{ target_h }}, {{ target_w }}),
+        paste_x=fn.cast(pad_left, dtype=types.FLOAT) / (fn.cast(new_w, dtype=types.FLOAT) * paste_ratio),
+        paste_y=fn.cast(pad_top, dtype=types.FLOAT) / (fn.cast(new_h, dtype=types.FLOAT) * paste_ratio),
+        ratio=paste_ratio,
+        fill_value={{ pad_value }},
     )
     padded = fn.crop(
         padded,

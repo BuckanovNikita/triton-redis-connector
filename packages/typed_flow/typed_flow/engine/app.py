@@ -306,13 +306,16 @@ class Application:
         - Source variants: produce events, route to consumer input queues
         - Processor variants: read from input queue, transform, route outputs
         - Sink variants: read from input queue, consume (side effects)
+
+        If a source or processor returns a list or tuple, each element
+        is routed individually to downstream consumers.
         """
         while not self._shutdown.is_set():
             try:
                 if node.variant in SOURCE_VARIANTS:
                     result = cast("object", node.instance())
                     if result is not None:
-                        self._route_to_consumers(node, result)
+                        self._route_result(node, result)
                 elif node.variant in SINK_VARIANTS:
                     event = self._read_from_input_queue(node, timeout=0.1)
                     if event is not None:
@@ -322,19 +325,27 @@ class Application:
                     if event is not None:
                         result = cast("object", node.instance(event))
                         if result is not None:
-                            self._route_to_consumers(node, result)
+                            self._route_result(node, result)
             except (RuntimeError, ValueError, TypeError, OSError, LookupError, queue.Full):
                 logger.exception("Error in parallel node {}", node.name)
                 if not self._shutdown.is_set():
                     time.sleep(0.1)
 
+    def _route_result(self, node: GraphNode, result: object) -> None:
+        """Route a result, unpacking list/tuple containers into individual events."""
+        if isinstance(result, (list, tuple)):
+            for item in result:
+                self._route_to_consumers(node, item)
+        else:
+            self._route_to_consumers(node, result)
+
     def _route_to_consumers(self, node: GraphNode, result: object) -> None:
         """Route a result to downstream consumer input queues via runtime type check.
 
         For each (consumer_name, expected_type) in the routing table,
-        checks ``type(result) is expected_type`` for exact match. Only
-        matching consumers receive the event. This ensures union return
-        types (e.g. ``PipelineEvent | ErrorEvent``) route correctly.
+        checks ``isinstance(result, expected_type)`` which handles both
+        exact matches and subclass relationships. Falls back to
+        ``_pydantic_generic_match`` for Pydantic generic thread-safety.
         """
         consumer_pairs = self._routing_table.get(node.name, [])
         if not consumer_pairs:
@@ -347,7 +358,7 @@ class Application:
         result_type = type(result)
         routed = False
         for consumer_name, expected_type in consumer_pairs:
-            if result_type is expected_type or _pydantic_generic_match(result_type, expected_type):
+            if isinstance(result, expected_type) or _pydantic_generic_match(result_type, expected_type):
                 self._queue_bus.put(f"{consumer_name}:input", result)
                 routed = True
         if not routed:

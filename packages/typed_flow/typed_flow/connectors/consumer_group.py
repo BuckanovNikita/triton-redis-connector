@@ -25,17 +25,21 @@ class ConsumerGroupManager:
         client: Redis[bytes],
         stream: str,
         group: str,
+        *,
+        start_from_beginning: bool = True,
     ) -> None:
         """Create consumer group idempotently, ignoring BUSYGROUP if already exists.
 
-        Always uses ``$`` as start ID (FROM_LATEST behavior) so only new
-        messages are delivered.
+        When ``start_from_beginning=True`` (default), uses ``0`` as start ID
+        so all existing messages are delivered. When False, uses ``$``
+        (only messages arriving after group creation).
         """
+        start_id = "0" if start_from_beginning else "$"
         try:
             client.xgroup_create(
                 name=stream,
                 groupname=group,
-                id="$",
+                id=start_id,
                 mkstream=True,
             )
             logger.info("Created consumer group {} on stream {}", group, stream)

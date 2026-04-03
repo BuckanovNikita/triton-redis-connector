@@ -7,6 +7,7 @@ URL="localhost:8001"
 CONCURRENCY="1"
 OUTPUT_DIR="e2e_results/perf_analyzer"
 MEASUREMENT_INTERVAL=10000
+SHAPE=""
 
 usage() {
     cat <<USAGE
@@ -22,22 +23,24 @@ Options:
   -c CONCURRENCY  Comma-separated concurrency levels (default: 1)
   -o OUTPUT_DIR   Output directory for CSV results (default: e2e_results/perf_analyzer)
   -i INTERVAL     Measurement interval in ms (default: 10000)
+  -s SHAPE        Input shape for dynamic dims (e.g. images:3,640,640)
   -h              Show this help
 
 Examples:
-  $0 -m yolo11s -u triton:8001 -c 1,4,8
+  $0 -m yolo11s -u triton:8001 -c 1,4,8 -s images:3,640,640
   $0 -m yolo11s -p http -u triton:8000 -c 1 -o results/
 USAGE
     exit 0
 }
 
-while getopts "m:p:u:c:o:i:h" opt; do
+while getopts "m:p:u:c:o:i:s:h" opt; do
     case $opt in
         m) MODEL="$OPTARG" ;;
         p) PROTOCOL="$OPTARG" ;;
         u) URL="$OPTARG" ;;
         c) CONCURRENCY="$OPTARG" ;;
         o) OUTPUT_DIR="$OPTARG" ;;
+        s) SHAPE="$OPTARG" ;;
         i) MEASUREMENT_INTERVAL="$OPTARG" ;;
         h) usage ;;
         *) usage ;;
@@ -70,14 +73,19 @@ for level in "${LEVELS[@]}"; do
     csv_file="${OUTPUT_DIR}/${MODEL}_c${level}.csv"
     echo "--- Running: model=$MODEL concurrency=$level protocol=$PROTOCOL ---"
 
+    SHAPE_ARG=""
+    if [ -n "$SHAPE" ]; then
+        SHAPE_ARG="--shape $SHAPE"
+    fi
+
     if ! perf_analyzer \
         -m "$MODEL" \
         -u "$URL" \
-        --protocol "$PROTOCOL" \
+        -i "$PROTOCOL" \
         --concurrency-range "$level" \
         --measurement-interval "$MEASUREMENT_INTERVAL" \
         -f "$csv_file" \
-        --verbose-csv 2>&1; then
+        --verbose-csv $SHAPE_ARG 2>&1; then
         echo "FAILED: model=$MODEL concurrency=$level"
         echo "$MODEL,$level,FAILED,-,-,-,-" >> "${OUTPUT_DIR}/${MODEL}_summary.csv"
         continue

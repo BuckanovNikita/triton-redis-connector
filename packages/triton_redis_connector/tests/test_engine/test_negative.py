@@ -10,14 +10,9 @@ import threading
 import time
 
 import pytest
-from pydantic import BaseModel, ConfigDict
 from triton_redis_connector.errors.models import InferenceError, PreprocessingError
 from typed_flow.config.schema import AppConfig
 from typed_flow.engine.app import Application
-from typed_flow.engine.events import (
-    FrameworkMeta,
-    PipelineEvent,
-)
 from typed_flow.engine.registry import PipelineRegistry
 from typed_flow.engine.validation import validate_graph
 from typed_flow.errors.models import ConnectorError
@@ -26,21 +21,6 @@ from typed_flow.protocols import (
     BaseThreadSink,
     BaseThreadSource,
 )
-
-
-class PayloadA(BaseModel):
-    model_config = ConfigDict(frozen=True)
-    value: str = "a"
-
-
-class PayloadB(BaseModel):
-    model_config = ConfigDict(frozen=True)
-    value: str = "b"
-
-
-class MyCtx(BaseModel):
-    model_config = ConfigDict(frozen=True)
-    camera_id: str = "cam_1"
 
 
 class EventX:
@@ -131,44 +111,6 @@ class TestTypeMismatchDetection:
         assert len(errors) > 0
         error_text = " ".join(errors)
         assert "EventY" in error_text or "no node consumes" in error_text
-
-
-class TestPipelineEventExactMatching:
-    """PipelineEvent[CtxA, PayloadA] must NOT match PipelineEvent[CtxA, PayloadB]."""
-
-    def test_pipeline_event_different_payload_not_routed(self) -> None:
-        class Src(BaseThreadSource[PipelineEvent[MyCtx, PayloadA]]):
-            def __call__(self) -> PipelineEvent[MyCtx, PayloadA] | None:
-                return PipelineEvent(context=MyCtx(), payload=PayloadA())
-
-        class SinkB(BaseThreadSink[PipelineEvent[MyCtx, PayloadB]]):
-            def __call__(self, event: PipelineEvent[MyCtx, PayloadB]) -> None:
-                return None
-
-        registry = PipelineRegistry()
-        registry.register("src", Src())
-        registry.register("sink_b", SinkB())
-
-        errors = registry.validate()
-        assert len(errors) > 0
-        error_text = " ".join(errors)
-        assert "no node consumes" in error_text or "no node produces" in error_text
-
-    def test_pipeline_event_same_payload_matches(self) -> None:
-        class Src(BaseThreadSource[PipelineEvent[MyCtx, PayloadA]]):
-            def __call__(self) -> PipelineEvent[MyCtx, PayloadA] | None:
-                return PipelineEvent(context=MyCtx(), payload=PayloadA())
-
-        class SinkA(BaseThreadSink[PipelineEvent[MyCtx, PayloadA]]):
-            def __call__(self, event: PipelineEvent[MyCtx, PayloadA]) -> None:
-                return None
-
-        registry = PipelineRegistry()
-        registry.register("src", Src())
-        registry.register("sink_a", SinkA())
-
-        errors = registry.validate()
-        assert errors == []
 
 
 class TestProcessorResilienceOnException:
@@ -411,15 +353,3 @@ class TestRoutingTableExactMatch:
         consumer_names = {name for name, _ in router_consumers}
         assert "sink_y" in consumer_names
         assert "sink_z" in consumer_names
-
-
-class TestFrameworkMetaPreserved:
-    """FrameworkMeta travels through PipelineEvent.fw."""
-
-    def test_fw_accessible_through_pipeline_event(self) -> None:
-        fw = FrameworkMeta(source_stream="stream:input", message_id="100-0", priority=1)
-        ctx = MyCtx(camera_id="cam_1")
-        pe: PipelineEvent[MyCtx, PayloadA] = PipelineEvent(fw=fw, context=ctx, payload=PayloadA())
-        assert pe.fw.source_stream == "stream:input"
-        assert pe.fw.message_id == "100-0"
-        assert pe.fw.priority == 1

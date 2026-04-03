@@ -1,8 +1,8 @@
 """Reusable shipped Node classes for common pipeline patterns.
 
-Provides ready-made building blocks using the ``PipelineEvent``
-composition pattern: ClientPreprocessorNode, InferenceNode,
-PostProcessorNode, LogErrorSinkNode.
+Provides ready-made building blocks: ClientPreprocessorNode, InferenceNode,
+PostProcessorNode, LogErrorSinkNode. Each processor is a simple Tin -> Tout
+transform, with flow_meta threaded through pipeline types.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ import numpy.typing as npt
 import tritonclient.grpc as grpcclient
 from loguru import logger
 from pydantic import BaseModel
-from typed_flow.engine.events import PipelineEvent
 from typed_flow.errors.models import ConnectorError
 from typed_flow.protocols import BaseThreadProcessor, BaseThreadSink
 
@@ -44,14 +43,13 @@ class _PostprocessorCallable[TIn, TResult](Protocol):
     def __call__(self, event: TIn) -> TResult | None: ...
 
 
-class ClientPreprocessorNode[TCtx: BaseModel, TPayload: ImagePayload](
-    BaseThreadProcessor[PipelineEvent[TCtx, TPayload], PipelineEvent[TCtx, TritonRequest] | PreprocessingError],
+class ClientPreprocessorNode[TIn: ImagePayload](
+    BaseThreadProcessor[TIn, TritonRequest | PreprocessingError],
 ):
-    """PipelineEvent-aware client-side preprocessor.
+    """Client-side preprocessor that reads image, decodes, and produces TritonRequest.
 
-    Reads image from ``ImagePayload`` (path or bytes), decodes, applies
-    letterbox, and wraps as ``PipelineEvent[TCtx, TritonRequest]``.
-    Returns ``PreprocessingError`` on failure instead of dropping.
+    Input must satisfy HasFlowMeta (for error reporting) and ImagePayload
+    (for image data). Returns PreprocessingError on failure.
     """
 
     def __init__(
@@ -71,21 +69,17 @@ class ClientPreprocessorNode[TCtx: BaseModel, TPayload: ImagePayload](
         self._input_name = input_name
         self._output_names = tuple(output_names)
 
-    def __call__(
-        self, event: PipelineEvent[TCtx, TPayload]
-    ) -> PipelineEvent[TCtx, TritonRequest] | PreprocessingError | None:
-        """Read image, preprocess, and wrap as PipelineEvent with TritonRequest payload."""
-        payload = event.payload
-
+    def __call__(self, event: TIn) -> TritonRequest | PreprocessingError | None:
+        """Read image, preprocess, and produce TritonRequest with flow_meta."""
         raw_bytes: bytes
-        if payload.image_bytes is not None:
-            raw_bytes = payload.image_bytes
-        elif payload.image_path:
+        if event.image_bytes is not None:
+            raw_bytes = event.image_bytes
+        elif event.image_path:
             try:
-                raw_bytes = Path(payload.image_path).read_bytes()
+                raw_bytes = Path(event.image_path).read_bytes()
             except (FileNotFoundError, PermissionError, OSError) as exc:
                 return PreprocessingError(
-                    message_id=event.fw.message_id,
+                    message_id=event.flow_meta.message_id,
                     decoder_type="filesystem",
                     error_type=type(exc).__name__,
                     error_message=str(exc),
@@ -98,7 +92,7 @@ class ClientPreprocessorNode[TCtx: BaseModel, TPayload: ImagePayload](
             decoded = self._decoder.decode(raw_bytes)
         except ValueError as exc:
             return PreprocessingError(
-                message_id=event.fw.message_id,
+                message_id=event.flow_meta.message_id,
                 decoder_type="decode",
                 error_type="DecodeError",
                 error_message=str(exc),
@@ -109,30 +103,29 @@ class ClientPreprocessorNode[TCtx: BaseModel, TPayload: ImagePayload](
 
         model = self._model_name
         version = ""
-        if isinstance(event.context, InferenceTarget):
-            if event.context.target_model:
-                model = event.context.target_model
-            if event.context.target_model_version:
-                version = event.context.target_model_version
+        if isinstance(event, InferenceTarget):
+            if event.target_model:
+                model = event.target_model
+            if event.target_model_version:
+                version = event.target_model_version
 
-        triton_req = TritonRequest(
+        return TritonRequest(
+            flow_meta=event.flow_meta,
             model_name=model,
             model_version=version,
             raw_image=tensor,
             input_name=self._input_name,
             output_names=self._output_names,
         )
-        return PipelineEvent(fw=event.fw, context=event.context, payload=triton_req)
 
 
-class InferenceNode[TCtx: BaseModel, TReq: TritonRequest, TOut: InferenceOutput](
-    BaseThreadProcessor[PipelineEvent[TCtx, TReq], PipelineEvent[TCtx, TOut] | InferenceError],
+class InferenceNode(
+    BaseThreadProcessor[TritonRequest, InferenceOutput | InferenceError],
 ):
-    """PipelineEvent-aware Triton inference processor.
+    """Triton inference processor.
 
-    Sends a ``TritonRequest`` to Triton and wraps the result in a
-    ``PipelineEvent[TCtx, InferenceOutput]``. Returns ``InferenceError``
-    on failure.
+    Sends a TritonRequest to Triton and returns InferenceOutput with
+    flow_meta preserved. Returns InferenceError on failure.
     """
 
     def __init__(self, grpc_url: str) -> None:
@@ -141,34 +134,33 @@ class InferenceNode[TCtx: BaseModel, TReq: TritonRequest, TOut: InferenceOutput]
         self._grpcclient = grpcclient
         self._client: grpcclient.InferenceServerClient = grpcclient.InferenceServerClient(url=grpc_url)
 
-    def __call__(self, event: PipelineEvent[TCtx, TReq]) -> PipelineEvent[TCtx, TOut] | InferenceError | None:
-        """Run inference and wrap output in PipelineEvent or return InferenceError."""
-        req = event.payload
+    def __call__(self, event: TritonRequest) -> InferenceOutput | InferenceError | None:
+        """Run inference and return InferenceOutput or InferenceError."""
         start = time.monotonic()
 
-        if req.raw_image is not None:
-            input_tensor = self._grpcclient.InferInput(req.input_name, req.raw_image.shape, "FP32")
-            input_tensor.set_data_from_numpy(req.raw_image)
-        elif req.image_bytes is not None:
-            data = np.frombuffer(req.image_bytes, dtype=np.uint8)
-            input_tensor = self._grpcclient.InferInput(req.input_name, [len(data)], "UINT8")
+        if event.raw_image is not None:
+            input_tensor = self._grpcclient.InferInput(event.input_name, event.raw_image.shape, "FP32")
+            input_tensor.set_data_from_numpy(event.raw_image)
+        elif event.image_bytes is not None:
+            data = np.frombuffer(event.image_bytes, dtype=np.uint8)
+            input_tensor = self._grpcclient.InferInput(event.input_name, [len(data)], "UINT8")
             input_tensor.set_data_from_numpy(data)
         else:
             return None
 
-        outputs = [self._grpcclient.InferRequestedOutput(name) for name in req.output_names]
+        outputs = [self._grpcclient.InferRequestedOutput(name) for name in event.output_names]
 
         try:
             result = self._client.infer(
-                model_name=req.model_name,
+                model_name=event.model_name,
                 inputs=[input_tensor],
                 outputs=outputs,
-                model_version=req.model_version or "",
+                model_version=event.model_version or "",
             )
         except Exception as exc:  # noqa: BLE001
             return InferenceError(
-                model_name=req.model_name,
-                model_version=req.model_version,
+                model_name=event.model_name,
+                model_version=event.model_version,
                 error_type=type(exc).__name__,
                 error_message=str(exc),
                 retry_count=0,
@@ -177,36 +169,34 @@ class InferenceNode[TCtx: BaseModel, TReq: TritonRequest, TOut: InferenceOutput]
 
         if result is None:
             return InferenceError(
-                model_name=req.model_name,
-                model_version=req.model_version,
+                model_name=event.model_name,
+                model_version=event.model_version,
                 error_type="NullResult",
-                error_message=f"Triton returned None for model {req.model_name}",
+                error_message=f"Triton returned None for model {event.model_name}",
                 retry_count=0,
                 timestamp_ms=int(time.time() * 1000),
             )
 
         elapsed_ms = (time.monotonic() - start) * 1000.0
         output_arrays: dict[str, np.ndarray[Any, np.dtype[np.float32]]] = {
-            name: np.asarray(result.as_numpy(name), dtype=np.float32) for name in req.output_names
+            name: np.asarray(result.as_numpy(name), dtype=np.float32) for name in event.output_names
         }
 
-        inference_output = InferenceOutput(
-            model_name=req.model_name,
-            model_version=req.model_version,
+        return InferenceOutput(
+            flow_meta=event.flow_meta,
+            model_name=event.model_name,
+            model_version=event.model_version,
             outputs=output_arrays,
             inference_time_ms=elapsed_ms,
         )
-        return PipelineEvent(fw=event.fw, context=event.context, payload=inference_output)  # type: ignore[arg-type]
 
 
-class PostProcessorNode[TCtx: BaseModel, TIn: InferenceOutput, TResult: BaseModel](
-    BaseThreadProcessor[PipelineEvent[TCtx, TIn], PipelineEvent[TCtx, TResult]],
+class PostProcessorNode[TIn: InferenceOutput, TResult: BaseModel](
+    BaseThreadProcessor[TIn, TResult],
 ):
-    """PipelineEvent-aware postprocessor wrapper.
+    """Postprocessor wrapper that delegates to a user-supplied callable.
 
-    Delegates to a user-supplied postprocessor callable that transforms
-    ``InferenceOutput`` -> ``TResult``. Wraps the result back into
-    ``PipelineEvent[TCtx, TResult]``.
+    Transforms InferenceOutput -> TResult via the postprocessor callable.
     """
 
     def __init__(
@@ -217,12 +207,9 @@ class PostProcessorNode[TCtx: BaseModel, TIn: InferenceOutput, TResult: BaseMode
         super().__init__()
         self._postprocessor = postprocessor
 
-    def __call__(self, event: PipelineEvent[TCtx, TIn]) -> PipelineEvent[TCtx, TResult] | None:
-        """Run postprocessing and wrap result in PipelineEvent."""
-        result = self._postprocessor(event.payload)
-        if result is None:
-            return None
-        return PipelineEvent(fw=event.fw, context=event.context, payload=result)
+    def __call__(self, event: TIn) -> TResult | None:
+        """Run postprocessing and return result."""
+        return self._postprocessor(event)
 
 
 class LogErrorSinkNode(

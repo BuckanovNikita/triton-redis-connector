@@ -157,7 +157,7 @@ def discover_models(repository_root: Path) -> list[DiscoveredModel]:
         platform = platform_match.group(1)
         input_dims = _parse_dims_blocks(config_text, "input")
         output_dims = _parse_dims_blocks(config_text, "output")
-        is_end2end = len(output_dims) >= 3 and output_dims[-1] == _END2END_FEATURE_COUNT
+        is_end2end = len(output_dims) >= 2 and output_dims[-1] == _END2END_FEATURE_COUNT
 
         discovered.append(
             DiscoveredModel(
@@ -197,7 +197,7 @@ def load_export_config(config_path: Path) -> list[YoloModelVariant]:
         msg = f"Models config file not found: {config_path}"
         raise FileNotFoundError(msg)
 
-    raw = yaml.safe_load(config_path.read_text())  # type: ignore[no-untyped-call]
+    raw = yaml.safe_load(config_path.read_text())
 
     if not isinstance(raw, dict) or "models" not in raw:
         msg = f"Invalid models config: expected top-level 'models' key in {config_path}"

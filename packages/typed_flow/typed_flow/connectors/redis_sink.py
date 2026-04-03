@@ -1,7 +1,8 @@
 """Redis Stream sink variants for the typed-flow pipeline.
 
-Provides thread and process sink implementations that serialize PipelineEvents
+Provides thread and process sink implementations that serialize BaseModel events
 and write them to Redis Streams via RedisStreamOutputConnector.
+If the event has a flow_meta field (HasFlowMeta), it is stripped before writing.
 """
 
 from __future__ import annotations
@@ -11,8 +12,8 @@ from redis import Redis
 
 from typed_flow.config.schema import RedisConnectionConfig, SinkConfig  # noqa: TC001
 from typed_flow.connectors.redis_stream import RedisStreamOutputConnector
-from typed_flow.engine.events import PipelineEvent
 from typed_flow.protocols import BaseProcessSink, BaseThreadSink
+from typed_flow.protocols.messaging import HasFlowMeta
 
 
 def _build_output_connector(
@@ -29,21 +30,19 @@ def _build_output_connector(
     return RedisStreamOutputConnector(client=client, config=sink_cfg)
 
 
-def _serialize_event[TCtx: BaseModel, TResult: BaseModel](
-    event: PipelineEvent[TCtx, TResult],
-    connector: RedisStreamOutputConnector,
-) -> None:
-    """Serialize PipelineEvent context + payload and write to Redis."""
+def _serialize_event(event: BaseModel, connector: RedisStreamOutputConnector) -> None:
+    """Serialize a BaseModel event and write to Redis.
+
+    Strips flow_meta if the event satisfies HasFlowMeta.
+    """
+    exclude: set[str] = {"flow_meta"} if isinstance(event, HasFlowMeta) else set()
     data: dict[str, bytes] = {}
-    for key, value in event.context.model_dump().items():
+    for key, value in event.model_dump(exclude=exclude).items():
         data[key] = str(value).encode()
-    data["result"] = event.payload.model_dump_json().encode()
     connector.write(data)
 
 
-class RedisThreadSink[TCtx: BaseModel, TResult: BaseModel](
-    BaseThreadSink[PipelineEvent[TCtx, TResult]],
-):
+class RedisThreadSink[T: BaseModel](BaseThreadSink[T]):
     """Thread sink that eagerly connects to Redis on construction."""
 
     def __init__(
@@ -58,14 +57,12 @@ class RedisThreadSink[TCtx: BaseModel, TResult: BaseModel](
         self._connector = _build_output_connector(redis, sink)
         self.name = name or f"redis_thread_sink_{sink.stream_name}"
 
-    def __call__(self, event: PipelineEvent[TCtx, TResult]) -> None:
+    def __call__(self, event: T) -> None:
         """Serialize and write event to Redis."""
         _serialize_event(event, self._connector)
 
 
-class RedisProcessSink[TCtx: BaseModel, TResult: BaseModel](
-    BaseProcessSink[PipelineEvent[TCtx, TResult]],
-):
+class RedisProcessSink[T: BaseModel](BaseProcessSink[T]):
     """Process sink that lazily connects to Redis on first call.
 
     Stores only picklable config in ``__init__``. The Redis client and connector
@@ -86,7 +83,7 @@ class RedisProcessSink[TCtx: BaseModel, TResult: BaseModel](
         self._connector: RedisStreamOutputConnector | None = None
         self.name = name or f"redis_process_sink_{sink.stream_name}"
 
-    def __call__(self, event: PipelineEvent[TCtx, TResult]) -> None:
+    def __call__(self, event: T) -> None:
         """Lazily initialize connector, then serialize and write."""
         if self._connector is None:
             self._connector = _build_output_connector(self._redis_cfg, self._sink_cfg)

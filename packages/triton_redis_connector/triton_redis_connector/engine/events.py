@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from triton_shared_models.classification import ClassificationPrediction  # noqa: TC002
 from triton_shared_models.detection import Detection  # noqa: TC002
 from typed_flow.protocols import Counter, Gauge
+from typed_flow.protocols.messaging import BaseEvent, FrameworkMeta
 
 
 class InferenceTarget(BaseModel):
@@ -27,27 +28,28 @@ class InferenceTarget(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    flow_meta: FrameworkMeta = FrameworkMeta()
     target_model: str = ""
     target_model_version: str = ""
 
 
 class ImagePayload(BaseModel):
-    """Payload carrying image data for preprocessing nodes.
+    """Mixin carrying image data for preprocessing nodes.
 
     Either ``image_path`` (filesystem) or ``image_bytes`` (in-memory)
-    should be set for the preprocessor to consume.
+    should be set for the preprocessor to consume. Carries flow_meta
+    for error reporting in the preprocessor.
     """
 
     model_config = ConfigDict(frozen=True)
 
+    flow_meta: FrameworkMeta = FrameworkMeta()
     image_path: str = ""
     image_bytes: bytes | None = None
 
 
-class DetectionResult(BaseModel):
+class DetectionResult(BaseEvent):
     """Typed detection output with structured detections ready for Redis sink."""
-
-    model_config = ConfigDict(frozen=True)
 
     _metrics_: ClassVar[list[Counter]] = [Counter("detection_done")]
 
@@ -56,10 +58,8 @@ class DetectionResult(BaseModel):
     inference_time_ms: Annotated[float, Gauge("inference_time_ms")]
 
 
-class ClassificationResult(BaseModel):
+class ClassificationResult(BaseEvent):
     """Typed classification output with structured predictions ready for Redis sink."""
-
-    model_config = ConfigDict(frozen=True)
 
     _metrics_: ClassVar[list[Counter]] = [Counter("classification_done")]
 
@@ -68,7 +68,7 @@ class ClassificationResult(BaseModel):
     inference_time_ms: Annotated[float, Gauge("classification_inference_time_ms")]
 
 
-class TritonRequest(BaseModel):
+class TritonRequest(BaseEvent):
     """Input event for Triton inference processor.
 
     Carries the preprocessed tensor and metadata needed to dispatch

@@ -1,7 +1,7 @@
 """Redis Stream source variants for the typed-flow pipeline.
 
 Provides thread and process source implementations that read from Redis Streams,
-deserialize into typed PipelineEvents, and produce them into the pipeline graph.
+deserialize into typed user models with flow_meta, and produce them into the pipeline graph.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ from redis import Redis
 from typed_flow.config.schema import RedisConnectionConfig, SourceConfig  # noqa: TC001
 from typed_flow.connectors.consumer_group import ConsumerGroupManager
 from typed_flow.connectors.redis_stream import RedisStreamInputConnector, deserialize_envelope
-from typed_flow.engine.events import PipelineEvent, Unprocessed
 from typed_flow.errors.models import ConnectorError
 from typed_flow.protocols import BaseProcessSource, BaseThreadSource
 
@@ -36,7 +35,7 @@ def _build_input_connector(
     )
 
 
-class RedisThreadSource[T: BaseModel](BaseThreadSource[PipelineEvent[T, Unprocessed] | ConnectorError]):
+class RedisThreadSource[T: BaseModel](BaseThreadSource[T | ConnectorError]):
     """Thread source that eagerly connects to Redis on construction.
 
     The event model ``T`` is extracted from the generic parameter at subclass
@@ -73,7 +72,7 @@ class RedisThreadSource[T: BaseModel](BaseThreadSource[PipelineEvent[T, Unproces
         self._connector = _build_input_connector(redis, source)
         self.name = name or f"redis_thread_source_{source.stream_name}"
 
-    def __call__(self) -> PipelineEvent[T, Unprocessed] | ConnectorError | None:
+    def __call__(self) -> T | ConnectorError | None:
         """Read the next message, deserialize into ``T``, and return."""
         results = self._connector.read_new(count=1, block_ms=self._config.block_ms)
         if not results:
@@ -81,7 +80,7 @@ class RedisThreadSource[T: BaseModel](BaseThreadSource[PipelineEvent[T, Unproces
         return deserialize_envelope(results[0], self._event_model, self.name, priority=0)
 
 
-class RedisProcessSource[T: BaseModel](BaseProcessSource[PipelineEvent[T, Unprocessed] | ConnectorError]):
+class RedisProcessSource[T: BaseModel](BaseProcessSource[T | ConnectorError]):
     """Process source that lazily connects to Redis on first call.
 
     Stores only picklable config in ``__init__``. The Redis client and connector
@@ -119,7 +118,7 @@ class RedisProcessSource[T: BaseModel](BaseProcessSource[PipelineEvent[T, Unproc
         self._connector: RedisStreamInputConnector | None = None
         self.name = name or f"redis_process_source_{source.stream_name}"
 
-    def __call__(self) -> PipelineEvent[T, Unprocessed] | ConnectorError | None:
+    def __call__(self) -> T | ConnectorError | None:
         """Lazily initialize connector, then read and deserialize."""
         if self._connector is None:
             self._connector = _build_input_connector(self._redis_cfg, self._source_cfg)

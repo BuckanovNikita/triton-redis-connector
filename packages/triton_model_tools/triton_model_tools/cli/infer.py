@@ -165,7 +165,7 @@ def _run_triton(args: argparse.Namespace) -> None:
         match = next((m for m in discovered if m.name == model_name), None)
         if match is not None:
             end2end = match.is_end2end
-            if match.input_dims and len(match.input_dims) >= 4:
+            if match.input_dims and len(match.input_dims) >= 3:
                 h, w = match.input_dims[-2], match.input_dims[-1]
                 target_size = h if h == w else (h, w)
             logger.info("Auto-detected from repository: end2end={}, target_size={}", end2end, target_size)

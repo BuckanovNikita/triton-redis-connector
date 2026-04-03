@@ -8,11 +8,6 @@ from __future__ import annotations
 from typed_flow.config.schema import AppConfig
 from typed_flow.connectors.redis_stream import AutoRedisSource
 from typed_flow.engine.app import Application
-from typed_flow.engine.events import (
-    FrameworkMeta,
-    PipelineEvent,
-    Unprocessed,
-)
 from typed_flow.engine.metric_aggregator import MetricAggregator, Tracked
 from typed_flow.engine.registry import (
     ExecutionVariant,
@@ -21,6 +16,7 @@ from typed_flow.engine.registry import (
 )
 from typed_flow.errors.models import ConnectorError
 from typed_flow.protocols import (
+    BaseEvent,
     BaseProcessPoolProcessor,
     BaseProcessSink,
     BaseProcessSource,
@@ -29,8 +25,10 @@ from typed_flow.protocols import (
     BaseThreadSink,
     BaseThreadSource,
     Counter,
+    FrameworkMeta,
     Gauge,
     GroupBy,
+    HasFlowMeta,
     LifecycleService,
     MetricRecorder,
     ProcessorFactory,
@@ -48,6 +46,7 @@ __all__ = [
     "AppConfig",
     "Application",
     "AutoRedisSource",
+    "BaseEvent",
     "BaseProcessPoolProcessor",
     "BaseProcessSink",
     "BaseProcessSource",
@@ -62,10 +61,10 @@ __all__ = [
     "Gauge",
     "GraphNode",
     "GroupBy",
+    "HasFlowMeta",
     "LifecycleService",
     "MetricAggregator",
     "MetricRecorder",
-    "PipelineEvent",
     "PipelineRegistry",
     "ProcessPoolProcessor",
     "ProcessSink",
@@ -76,6 +75,5 @@ __all__ = [
     "ThreadSink",
     "ThreadSource",
     "Tracked",
-    "Unprocessed",
     "WrappedNode",
 ]

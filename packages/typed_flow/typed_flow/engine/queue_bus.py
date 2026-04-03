@@ -52,18 +52,27 @@ class QueueBus:
             logger.debug("Created queue {} with maxsize={}", name, effective_maxsize)
         return self._queues[name]
 
+    PUT_TIMEOUT_S: float = 5.0
+
     def put(self, name: str, item: object) -> QueueOverflow | None:
         """Put an item on a named queue with backpressure handling.
 
-        If the queue is full, drops the item and returns a
-        QueueOverflow indicator. Returns None on success.
+        Blocks up to PUT_TIMEOUT_S when the queue is full, applying
+        backpressure to the producer. If still full after timeout,
+        drops the item and returns a QueueOverflow indicator.
+        Returns None on success.
         """
         q = self.get_queue(name)
         try:
-            q.put_nowait(item)
+            q.put(item, timeout=self.PUT_TIMEOUT_S)
         except queue.Full:
             self._drop_counts[name] = self._drop_counts.get(name, 0) + 1
-            logger.warning("Queue {} is full (maxsize={}), dropping item", name, q.maxsize)
+            logger.warning(
+                "Queue {} is full (maxsize={}), dropping item after {}s backpressure",
+                name,
+                q.maxsize,
+                self.PUT_TIMEOUT_S,
+            )
             return QueueOverflow(queue_name=name)
         return None
 

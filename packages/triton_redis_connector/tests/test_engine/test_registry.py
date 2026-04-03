@@ -145,6 +145,244 @@ class TestTypeExtraction:
         assert EventB in node.input_types
 
 
+class EventD:
+    pass
+
+
+class ChildOfA(EventA):
+    pass
+
+
+class TestUnionInputExtraction:
+    def test_processor_with_union_input_registers_all_types(self, registry: PipelineRegistry) -> None:
+        class UnionProc(BaseThreadProcessor[EventA | EventB | EventC, EventD]):
+            def __call__(self, event: EventA | EventB | EventC) -> EventD | None:
+                return EventD()
+
+        registry.register("proc", UnionProc())
+        node = registry.get_node("proc")
+        assert node is not None
+        assert node.input_types == {EventA, EventB, EventC}
+        assert node.output_types == {EventD}
+
+    def test_sink_with_union_input_registers_all_types(self, registry: PipelineRegistry) -> None:
+        class UnionSink(BaseThreadSink[EventA | EventB]):
+            def __call__(self, event: EventA | EventB) -> None:
+                return None
+
+        registry.register("sink", UnionSink())
+        node = registry.get_node("sink")
+        assert node is not None
+        assert node.input_types == {EventA, EventB}
+
+    def test_union_input_processor_routes_from_multiple_sources(self, registry: PipelineRegistry) -> None:
+        class SrcA(BaseThreadSource[EventA]):
+            def __call__(self) -> EventA | None:
+                return EventA()
+
+        class SrcB(BaseThreadSource[EventB]):
+            def __call__(self) -> EventB | None:
+                return EventB()
+
+        class MergeProc(BaseThreadProcessor[EventA | EventB, EventC]):
+            def __call__(self, event: EventA | EventB) -> EventC | None:
+                return EventC()
+
+        registry.register("src_a", SrcA())
+        registry.register("src_b", SrcB())
+        registry.register("merge", MergeProc())
+        registry.register("sink", EventCSink())
+        errors = registry.validate()
+        assert errors == []
+
+        routing = registry.compute_routing_table()
+        assert ("merge", EventA) in routing["src_a"]
+        assert ("merge", EventB) in routing["src_b"]
+
+    def test_four_sources_one_union_processor_valid(self, registry: PipelineRegistry) -> None:
+        class SrcA(BaseThreadSource[EventA]):
+            def __call__(self) -> EventA | None:
+                return EventA()
+
+        class SrcB(BaseThreadSource[EventB]):
+            def __call__(self) -> EventB | None:
+                return EventB()
+
+        class SrcC(BaseThreadSource[EventC]):
+            def __call__(self) -> EventC | None:
+                return EventC()
+
+        class SrcD(BaseThreadSource[EventD]):
+            def __call__(self) -> EventD | None:
+                return EventD()
+
+        class Result:
+            pass
+
+        class MergeAll(BaseThreadProcessor[EventA | EventB | EventC | EventD, Result]):
+            def __call__(self, event: EventA | EventB | EventC | EventD) -> Result | None:
+                return Result()
+
+        class ResultSink(BaseThreadSink[Result]):
+            def __call__(self, event: Result) -> None:
+                return None
+
+        registry.register("src_a", SrcA())
+        registry.register("src_b", SrcB())
+        registry.register("src_c", SrcC())
+        registry.register("src_d", SrcD())
+        registry.register("merge", MergeAll())
+        registry.register("sink", ResultSink())
+
+        errors = registry.validate()
+        assert errors == []
+
+        routing = registry.compute_routing_table()
+        for src_name, event_type in [("src_a", EventA), ("src_b", EventB), ("src_c", EventC), ("src_d", EventD)]:
+            assert (
+                "merge",
+                event_type,
+            ) in routing[src_name], f"{src_name} should route to merge via {event_type.__name__}"
+
+
+class TestContainerTypeExtraction:
+    def test_list_output_extracts_element_type(self, registry: PipelineRegistry) -> None:
+        class BatchSource(BaseThreadSource[list[EventA]]):
+            def __call__(self) -> list[EventA] | None:
+                return [EventA()]
+
+        registry.register("src", BatchSource())
+        node = registry.get_node("src")
+        assert node is not None
+        assert EventA in node.output_types
+
+    def test_tuple_ellipsis_output_extracts_element_type(self, registry: PipelineRegistry) -> None:
+        class TupleSource(BaseThreadSource[tuple[EventB, ...]]):
+            def __call__(self) -> tuple[EventB, ...] | None:
+                return (EventB(),)
+
+        registry.register("src", TupleSource())
+        node = registry.get_node("src")
+        assert node is not None
+        assert EventB in node.output_types
+
+    def test_processor_list_output_routes_to_sink(self, registry: PipelineRegistry) -> None:
+        class BatchProc(BaseThreadProcessor[EventA, list[EventB]]):
+            def __call__(self, event: EventA) -> list[EventB] | None:
+                return [EventB()]
+
+        registry.register("src", SimpleSource())
+        registry.register("proc", BatchProc())
+        registry.register("sink", SimpleSink())
+
+        errors = registry.validate()
+        assert errors == []
+
+        routing = registry.compute_routing_table()
+        assert ("sink", EventB) in routing.get("proc", [])
+
+    def test_list_in_union_output(self, registry: PipelineRegistry) -> None:
+        class MixedProc(BaseThreadProcessor[EventA, list[EventB] | EventC]):
+            def __call__(self, event: EventA) -> list[EventB] | EventC | None:
+                return [EventB()]
+
+        registry.register("src", SimpleSource())
+        registry.register("proc", MixedProc())
+        registry.register("sink_b", SimpleSink())
+        registry.register("sink_c", EventCSink())
+
+        errors = registry.validate()
+        assert errors == []
+
+        node = registry.get_node("proc")
+        assert node is not None
+        assert EventB in node.output_types
+        assert EventC in node.output_types
+
+
+class TestInheritanceRouting:
+    def test_source_declares_parent_routes_to_parent_consumer(self, registry: PipelineRegistry) -> None:
+        class ParentSource(BaseThreadSource[EventA]):
+            def __call__(self) -> EventA | None:
+                return ChildOfA()
+
+        class ParentSink(BaseThreadSink[EventA]):
+            def __call__(self, event: EventA) -> None:
+                return None
+
+        registry.register("src", ParentSource())
+        registry.register("sink", ParentSink())
+
+        routing = registry.compute_routing_table()
+        expected_types = {t for _, t in routing.get("src", [])}
+        assert EventA in expected_types
+
+    def test_subclass_source_matched_by_parent_sink(self, registry: PipelineRegistry) -> None:
+        class ChildSource(BaseThreadSource[ChildOfA]):
+            def __call__(self) -> ChildOfA | None:
+                return ChildOfA()
+
+        class ParentSink(BaseThreadSink[EventA]):
+            def __call__(self, event: EventA) -> None:
+                return None
+
+        registry.register("src", ChildSource())
+        registry.register("sink", ParentSink())
+
+        errors = registry.validate()
+        assert errors == []
+
+    def test_subclass_routing_table_includes_parent_consumer(self, registry: PipelineRegistry) -> None:
+        class ChildSource(BaseThreadSource[ChildOfA]):
+            def __call__(self) -> ChildOfA | None:
+                return ChildOfA()
+
+        class ParentSink(BaseThreadSink[EventA]):
+            def __call__(self, event: EventA) -> None:
+                return None
+
+        registry.register("src", ChildSource())
+        registry.register("sink", ParentSink())
+
+        routing = registry.compute_routing_table()
+        assert ("sink", EventA) in routing.get("src", [])
+
+    def test_multi_level_inheritance_routing(self, registry: PipelineRegistry) -> None:
+        class GrandChildOfA(ChildOfA):
+            pass
+
+        class GrandChildSource(BaseThreadSource[GrandChildOfA]):
+            def __call__(self) -> GrandChildOfA | None:
+                return GrandChildOfA()
+
+        class ParentSink(BaseThreadSink[EventA]):
+            def __call__(self, event: EventA) -> None:
+                return None
+
+        registry.register("src", GrandChildSource())
+        registry.register("sink", ParentSink())
+
+        errors = registry.validate()
+        assert errors == []
+        routing = registry.compute_routing_table()
+        assert ("sink", EventA) in routing.get("src", [])
+
+    def test_subclass_connectivity_not_disconnected(self, registry: PipelineRegistry) -> None:
+        class ChildSource(BaseThreadSource[ChildOfA]):
+            def __call__(self) -> ChildOfA | None:
+                return ChildOfA()
+
+        class ParentSink(BaseThreadSink[EventA]):
+            def __call__(self, event: EventA) -> None:
+                return None
+
+        registry.register("src", ChildSource())
+        registry.register("sink", ParentSink())
+
+        errors = registry.validate()
+        assert not any("disconnected" in e for e in errors)
+
+
 class TestValidation:
     def test_valid_pipeline_passes(self, registry: PipelineRegistry) -> None:
         registry.register("src", SimpleSource())

@@ -4964,6 +4964,9 @@ requires-dist = [
 name = "triton-redis-connector-workspace"
 version = "0.0.0"
 source = { virtual = "." }
+dependencies = [
+    { name = "pyyaml" },
+]
 
 [package.optional-dependencies]
 triton-25-03 = [
@@ -5009,6 +5012,7 @@ dev = [
     { name = "types-pygments" },
     { name = "types-python-dateutil" },
     { name = "types-pywin32" },
+    { name = "types-pyyaml" },
     { name = "types-redis" },
     { name = "types-tabulate" },
     { name = "types-tqdm" },
@@ -5034,6 +5038,7 @@ lint = [
     { name = "types-pygments" },
     { name = "types-python-dateutil" },
     { name = "types-pywin32" },
+    { name = "types-pyyaml" },
     { name = "types-redis" },
     { name = "types-tabulate" },
     { name = "types-tqdm" },
@@ -5051,6 +5056,7 @@ test = [
 requires-dist = [
     { name = "numpy", marker = "extra == 'triton-25-03'", specifier = ">=1.26.0,<2.0.0" },
     { name = "numpy", marker = "extra == 'triton-26-02'", specifier = ">=2.4.0,<3.0.0" },
+    { name = "pyyaml", specifier = ">=6.0,<7.0" },
     { name = "torch", marker = "extra == 'triton-25-03'", specifier = ">=2.6.0,<2.7.0" },
     { name = "torch", marker = "extra == 'triton-26-02'", specifier = ">=2.11.0" },
     { name = "torchvision", marker = "extra == 'triton-25-03'", specifier = ">=0.21.0,<0.22.0" },
@@ -5089,6 +5095,7 @@ dev = [
     { name = "types-pygments", specifier = ">=2.19.0.20260402" },
     { name = "types-python-dateutil", specifier = ">=2.9.0.20260402" },
     { name = "types-pywin32", specifier = ">=311.0.0.20260402" },
+    { name = "types-pyyaml", specifier = ">=6.0.12,<7.0.0" },
     { name = "types-redis", specifier = ">=4.6.0.20241004,<5.0.0" },
     { name = "types-tabulate", specifier = ">=0.10.0.20260308" },
     { name = "types-tqdm", specifier = ">=4.66.0,<5.0.0" },
@@ -5113,6 +5120,7 @@ lint = [
     { name = "types-pygments", specifier = ">=2.19.0.20260402" },
     { name = "types-python-dateutil", specifier = ">=2.9.0.20260402" },
     { name = "types-pywin32", specifier = ">=311.0.0.20260402" },
+    { name = "types-pyyaml", specifier = ">=6.0.12,<7.0.0" },
     { name = "types-redis", specifier = ">=4.6.0.20241004,<5.0.0" },
     { name = "types-tabulate", specifier = ">=0.10.0.20260308" },
     { name = "types-tqdm", specifier = ">=4.66.0,<5.0.0" },
@@ -5504,6 +5512,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b3/f0/fc3c923b5d7822f3a93c7b242a69de0e1945e7c153cc5367074621a6509f/types_pywin32-311.0.0.20260402.tar.gz", hash = "sha256:637f041065f02fb49cbaba530ae8cf2e483b5d2c145a9bf97fd084c3e913c7e3", size = 332312, upload-time = "2026-04-02T04:18:52.748Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/80/0c/a2ee20785df4ebcda6d6ec62d58b7c08a37072f9d00cda4f9548e9c8e5aa/types_pywin32-311.0.0.20260402-py3-none-any.whl", hash = "sha256:4db644fcf40ee85a3ee2551f110d009e427c01569ed4670bb53cfe999df0929f", size = 395413, upload-time = "2026-04-02T04:18:51.529Z" },
+]
+
+[[package]]
+name = "types-pyyaml"
+version = "6.0.12.20250915"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7e/69/3c51b36d04da19b92f9e815be12753125bd8bc247ba0470a982e6979e71c/types_pyyaml-6.0.12.20250915.tar.gz", hash = "sha256:0f8b54a528c303f0e6f7165687dd33fafa81c807fcac23f632b63aa624ced1d3", size = 17522, upload-time = "2025-09-15T03:01:00.728Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bd/e0/1eed384f02555dde685fff1a1ac805c1c7dcb6dd019c916fe659b1c1f9ec/types_pyyaml-6.0.12.20250915-py3-none-any.whl", hash = "sha256:e7d4d9e064e89a3b3cae120b4990cd370874d2bf12fa5f46c97018dd5d3c9ab6", size = 20338, upload-time = "2025-09-15T03:00:59.218Z" },
 ]
 
 [[package]]
