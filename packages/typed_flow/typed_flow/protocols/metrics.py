@@ -7,8 +7,17 @@ protocol implemented by MetricBuffer for recording metric data points.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
+
+_METRIC_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _validate_metric_name(name: str) -> None:
+    if not _METRIC_NAME_RE.match(name):
+        msg = f"Invalid metric name {name!r}: must match [a-z][a-z0-9_]* (lowercase latin, digits, underscores)"
+        raise ValueError(msg)
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +32,9 @@ class Counter:
 
     name: str
 
+    def __post_init__(self) -> None:  # noqa: D105
+        _validate_metric_name(self.name)
+
 
 @dataclass(frozen=True, slots=True)
 class Gauge:
@@ -35,6 +47,9 @@ class Gauge:
     """
 
     name: str
+
+    def __post_init__(self) -> None:  # noqa: D105
+        _validate_metric_name(self.name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +64,9 @@ class GroupBy:
 
     name: str
     window_s: int = 60
+
+    def __post_init__(self) -> None:  # noqa: D105
+        _validate_metric_name(self.name)
 
 
 @runtime_checkable

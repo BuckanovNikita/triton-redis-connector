@@ -176,7 +176,14 @@ def main() -> None:
 
     app = Application.build(config, processors=processors)
 
+    shutting_down = False
+
     def handle_shutdown(signum: int, _frame: types.FrameType | None) -> None:
+        nonlocal shutting_down
+        if shutting_down:
+            logger.warning("Forced exit (second {})", signal.Signals(signum).name)
+            sys.exit(1)
+        shutting_down = True
         logger.info("Received {}, shutting down...", signal.Signals(signum).name)
         app.shutdown()
 

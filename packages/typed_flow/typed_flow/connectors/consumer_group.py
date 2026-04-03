@@ -61,19 +61,36 @@ class ConsumerGroupManager:
 
         Uses ">" as the message ID to receive only new messages.
         Blocks for up to block_ms milliseconds waiting for messages.
+        On NOGROUP error, re-creates the consumer group and retries once.
 
         Returns list of (message_id, fields) tuples.
         """
-        raw = cast(
-            "_StreamMessages | None",
-            client.xreadgroup(
-                groupname=group,
-                consumername=consumer,
-                streams={stream: ">"},
-                count=count,
-                block=block_ms,
-            ),
-        )
+        try:
+            raw = cast(
+                "_StreamMessages | None",
+                client.xreadgroup(
+                    groupname=group,
+                    consumername=consumer,
+                    streams={stream: ">"},
+                    count=count,
+                    block=block_ms,
+                ),
+            )
+        except ResponseError as exc:
+            if "NOGROUP" not in str(exc):
+                raise
+            logger.error("Consumer group {} lost on stream {}, re-creating", group, stream)
+            self.ensure_group_exists(client, stream, group)
+            raw = cast(
+                "_StreamMessages | None",
+                client.xreadgroup(
+                    groupname=group,
+                    consumername=consumer,
+                    streams={stream: ">"},
+                    count=count,
+                    block=block_ms,
+                ),
+            )
         if not raw:
             return []
 

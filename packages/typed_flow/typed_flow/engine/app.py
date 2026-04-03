@@ -160,6 +160,7 @@ class Application:
             for name, node in extra_nodes:
                 self._registry.register(name, node)
         self._restart_counts: dict[str, int] = {}
+        self._restart_times: dict[str, float] = {}
         self._metric_buffer = metric_buffer
         self._extra_service = extra_service
         self._metric_emitter = metric_emitter
@@ -406,7 +407,7 @@ class Application:
                 if stats is not None:
                     stats.record_error()
                 if not self._shutdown.is_set():
-                    time.sleep(0.1)
+                    time.sleep(1.0)
 
     def _handle_source_result(
         self,
@@ -544,23 +545,34 @@ class Application:
                 logger.warning("Parallel variant thread {} did not stop within timeout", name)
 
     def _check_parallel_health(self) -> None:
-        """Check if parallel variant threads are still alive, restart if crashed."""
+        """Check if parallel variant threads are still alive, restart if crashed.
+
+        Waits at least 1s between restarts to avoid BUSYGROUP spam
+        when sources reconnect repeatedly.
+        """
+        now = time.monotonic()
         for name, thread in list(self._parallel_threads.items()):
             if not thread.is_alive() and not self._shutdown.is_set():
                 node = self._registry.get_node(name)
-                if node is not None:
-                    self._restart_counts[name] = self._restart_counts.get(name, 0) + 1
-                    count = self._restart_counts[name]
-                    logger.warning("Restarting parallel variant {} (restart #{})", name, count)
+                if node is None:
+                    continue
+                last_restart = self._restart_times.get(name, 0.0)
+                if now - last_restart < 1.0:
+                    continue
 
-                    new_thread = threading.Thread(
-                        target=self._run_parallel_node,
-                        args=(node,),
-                        name=f"parallel-{name}",
-                        daemon=True,
-                    )
-                    self._parallel_threads[name] = new_thread
-                    new_thread.start()
+                self._restart_counts[name] = self._restart_counts.get(name, 0) + 1
+                self._restart_times[name] = now
+                count = self._restart_counts[name]
+                logger.warning("Restarting parallel variant {} (restart #{})", name, count)
+
+                new_thread = threading.Thread(
+                    target=self._run_parallel_node,
+                    args=(node,),
+                    name=f"parallel-{name}",
+                    daemon=True,
+                )
+                self._parallel_threads[name] = new_thread
+                new_thread.start()
 
     def _get_stop_event(self, instance: object) -> threading.Event | None:
         """Retrieve the stop event from a parallel variant using protocol isinstance checks."""
