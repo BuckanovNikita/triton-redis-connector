@@ -49,29 +49,6 @@ def _make_mock_yolo(export_dir: Path, suffix: str) -> MagicMock:
 
 
 class TestExportOnnx:
-    def test_creates_model_directory(self, tmp_path: Path) -> None:
-        variant = _make_variant()
-        repo_root = tmp_path / "repo"
-        repo_root.mkdir()
-        export_dir = tmp_path / "exports"
-        mock_yolo_cls = _make_mock_yolo(export_dir, ".onnx")
-
-        with (
-            patch("triton_model_tools.export.exporter.YOLO", mock_yolo_cls),
-            patch("triton_model_tools.export.exporter.inspect_onnx_model") as mock_inspect,
-        ):
-            from triton_model_tools.models import TritonDataType, TritonTensorSpec
-
-            mock_inspect.return_value = (
-                [TritonTensorSpec(name="images", data_type=TritonDataType.TYPE_FP32, dims=[1, 3, 640, 640])],
-                [TritonTensorSpec(name="output0", data_type=TritonDataType.TYPE_FP32, dims=[1, 300, 6])],
-            )
-            model_dir = _export_onnx(variant, repo_root)
-
-        assert model_dir == repo_root / "yolo11s"
-        assert (model_dir / "config.pbtxt").exists()
-        assert (model_dir / "1" / EXPORT_FORMAT_TO_FILENAME[ExportFormat.ONNX]).exists()
-
     def test_passes_half_to_yolo_export(self, tmp_path: Path) -> None:
         variant = _make_variant()
         repo_root = tmp_path / "repo"

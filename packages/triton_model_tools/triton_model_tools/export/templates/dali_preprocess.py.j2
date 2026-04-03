@@ -32,26 +32,26 @@ def pipe():
         interp_type=types.INTERP_LINEAR,
     )
 
-    pad_top = fn.cast((target_h - new_h) / 2, dtype=types.INT32)
-    pad_left = fn.cast((target_w - new_w) / 2, dtype=types.INT32)
-
-    max_target = {{ [target_h, target_w] | max }}
-    max_new = dmath.max(fn.cast(new_h, dtype=types.FLOAT), fn.cast(new_w, dtype=types.FLOAT))
-    paste_ratio = max_target / max_new
+    paste_ratio = dmath.max(
+        target_h / fn.cast(new_h, dtype=types.FLOAT),
+        target_w / fn.cast(new_w, dtype=types.FLOAT),
+    )
 
     padded = fn.paste(
         resized,
-        paste_x=fn.cast(pad_left, dtype=types.FLOAT) / (fn.cast(new_w, dtype=types.FLOAT) * paste_ratio),
-        paste_y=fn.cast(pad_top, dtype=types.FLOAT) / (fn.cast(new_h, dtype=types.FLOAT) * paste_ratio),
+        paste_x=0.5,
+        paste_y=0.5,
         ratio=paste_ratio,
         fill_value={{ pad_value }},
     )
     padded = fn.crop(
         padded,
-        crop_h={{ target_h }},
-        crop_w={{ target_w }},
-        crop_pos_x=0.0,
-        crop_pos_y=0.0,
+        crop_h=target_h,
+        crop_w=target_w,
+        crop_pos_x=0.5,
+        crop_pos_y=0.5,
+        out_of_bounds_policy="pad",
+        fill_values={{ pad_value }},
     )
 
     rgb = fn.color_space_conversion(padded, image_type=types.BGR, output_type=types.RGB)

@@ -57,8 +57,8 @@ class LetterBoxPreprocessor:
         orig_h, orig_w = image.shape[:2]
         scale = min(self._target_h / orig_h, self._target_w / orig_w)
 
-        new_w = int(orig_w * scale)
-        new_h = int(orig_h * scale)
+        new_w = round(orig_w * scale)
+        new_h = round(orig_h * scale)
 
         resized: npt.NDArray[np.uint8] = cv2.resize(  # type: ignore[assignment]
             image,
@@ -66,12 +66,12 @@ class LetterBoxPreprocessor:
             interpolation=cv2.INTER_LINEAR,
         )
 
-        pad_w = self._target_w - new_w
-        pad_h = self._target_h - new_h
-        pad_left = pad_w // 2
-        pad_top = pad_h // 2
-        pad_right = pad_w - pad_left
-        pad_bottom = pad_h - pad_top
+        dw = self._target_w - new_w
+        dh = self._target_h - new_h
+        pad_top = round(dh / 2 - 0.1)
+        pad_bottom = round(dh / 2 + 0.1)
+        pad_left = round(dw / 2 - 0.1)
+        pad_right = round(dw / 2 + 0.1)
 
         padded: npt.NDArray[np.uint8] = cv2.copyMakeBorder(  # type: ignore[assignment]
             resized,

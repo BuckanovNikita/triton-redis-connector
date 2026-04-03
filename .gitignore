@@ -2,6 +2,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Ultralytics reference tensors (generated, ~60MB)
+test_fixtures/ultralytics_tensors/
+
 build/
 dist/
 wheels/

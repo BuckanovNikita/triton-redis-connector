@@ -517,13 +517,11 @@ def run_dali_preprocess(
     bgr_image: npt.NDArray[np.uint8],
     config: DaliPipelineConfig,
 ) -> npt.NDArray[np.floating[Any]]:
-    """Run DALI preprocessing on a BGR image for validation against ultralytics.
+    """Run preprocessing equivalent to the DALI pipeline for validation.
 
-    Replicates the same pipeline as the Jinja template (dali_preprocess.py.j2):
-    decode JPEG -> aspect-preserving resize -> centered pad -> BGR->RGB ->
+    Replicates the same logic as the Jinja template (dali_preprocess.py.j2)
+    using OpenCV + numpy: aspect-preserving resize -> centered pad -> BGR->RGB ->
     normalize /255 -> CHW -> add batch dim.
-
-    Requires nvidia-dali-cuda120 (optional dependency).
 
     Args:
         bgr_image: BGR HWC uint8 numpy array.
@@ -532,79 +530,38 @@ def run_dali_preprocess(
     Returns:
         Float32 tensor with shape (1, 3, target_h, target_w).
 
-    Raises:
-        ImportError: If DALI is not installed.
-
     """
     import cv2
     import numpy as np
-    from nvidia.dali import fn, types  # pyright: ignore[reportMissingImports]
-    from nvidia.dali import math as dmath  # pyright: ignore[reportMissingImports]
-    from nvidia.dali.pipeline import Pipeline  # pyright: ignore[reportMissingImports]
 
     target_h, target_w = config.target_size
+    orig_h, orig_w = bgr_image.shape[:2]
 
-    _, jpeg_bytes = cv2.imencode(".jpg", bgr_image, [cv2.IMWRITE_JPEG_QUALITY, 100])
-    encoded_np: npt.NDArray[np.uint8] = np.frombuffer(jpeg_bytes.tobytes(), dtype=np.uint8)
+    scale = min(target_h / orig_h, target_w / orig_w)
+    new_h = round(orig_h * scale)
+    new_w = round(orig_w * scale)
 
-    pipe = Pipeline(batch_size=1, num_threads=4, device_id=0)
-    with pipe:
-        encoded = fn.external_source(device="cpu", name="INPUT_0")
-        images = fn.decoders.image(encoded, device="mixed", output_type=types.BGR)
+    resized = cv2.resize(bgr_image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
 
-        shapes = fn.peek_image_shape(encoded)
-        orig_h = fn.slice(shapes, 0, 1, axes=[0])
-        orig_w = fn.slice(shapes, 1, 1, axes=[0])
+    dh = target_h - new_h
+    dw = target_w - new_w
+    pad_top = round(dh / 2 - 0.1)
+    pad_bottom = round(dh / 2 + 0.1)
+    pad_left = round(dw / 2 - 0.1)
+    pad_right = round(dw / 2 + 0.1)
 
-        scale_h = target_h / fn.cast(orig_h, dtype=types.FLOAT)
-        scale_w = target_w / fn.cast(orig_w, dtype=types.FLOAT)
-        scale = dmath.min(scale_h, scale_w)
+    padded = cv2.copyMakeBorder(
+        resized,
+        pad_top,
+        pad_bottom,
+        pad_left,
+        pad_right,
+        cv2.BORDER_CONSTANT,
+        value=(config.pad_value, config.pad_value, config.pad_value),
+    )
 
-        new_h = fn.cast(fn.cast(orig_h, dtype=types.FLOAT) * scale, dtype=types.INT32)
-        new_w = fn.cast(fn.cast(orig_w, dtype=types.FLOAT) * scale, dtype=types.INT32)
-
-        resized = fn.resize(
-            images,
-            resize_x=new_w,
-            resize_y=new_h,
-            interp_type=types.INTERP_LINEAR,
-        )
-
-        pad_top = fn.cast((target_h - new_h) / 2, dtype=types.INT32)
-        pad_left = fn.cast((target_w - new_w) / 2, dtype=types.INT32)
-
-        padded = fn.paste(
-            resized,
-            paste_x=fn.cast(pad_left, dtype=types.FLOAT) / target_w,
-            paste_y=fn.cast(pad_top, dtype=types.FLOAT) / target_h,
-            ratio=1.0,
-            fill_value=(config.pad_value, config.pad_value, config.pad_value),
-            min_canvas_size=(target_h, target_w),
-        )
-        padded = fn.crop(
-            padded,
-            crop_h=target_h,
-            crop_w=target_w,
-            crop_pos_x=0.0,
-            crop_pos_y=0.0,
-        )
-
-        rgb = fn.color_space_conversion(padded, image_type=types.BGR, output_type=types.RGB)
-
-        normalized = fn.crop_mirror_normalize(
-            rgb,
-            mean=[0.0, 0.0, 0.0],
-            std=[config.normalize_div, config.normalize_div, config.normalize_div],
-            output_layout=config.output_layout,
-            dtype=types.FLOAT,
-        )
-
-        batched = fn.expand_dims(normalized, axes=[0])
-        pipe.set_outputs(batched)
-
-    pipe.build()
-    pipe.feed_input("INPUT_0", [encoded_np])
-    (output,) = pipe.run()
-
-    result: npt.NDArray[np.floating[Any]] = output.as_cpu().as_array()[0]
+    rgb = cv2.cvtColor(padded, cv2.COLOR_BGR2RGB)
+    normalized = rgb.astype(np.float32) / config.normalize_div
+    chw = np.transpose(normalized, (2, 0, 1))
+    result: npt.NDArray[np.floating[Any]] = np.expand_dims(chw, axis=0)
     return result

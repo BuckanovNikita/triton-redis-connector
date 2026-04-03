@@ -57,6 +57,7 @@ services:
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
       DALI_DISABLE_NVML: 1
+      DALI_RESTRICT_PINNED_MEM: 1
     ports:
       - 8000:8000
       - 8001:8001
