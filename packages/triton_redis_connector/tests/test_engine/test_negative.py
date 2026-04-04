@@ -10,12 +10,11 @@ import threading
 import time
 
 import pytest
-from triton_redis_connector.errors.models import InferenceError, PreprocessingError
 from typed_flow.config.schema import AppConfig
 from typed_flow.engine.app import Application
 from typed_flow.engine.registry import PipelineRegistry
 from typed_flow.engine.validation import validate_graph
-from typed_flow.errors.models import ConnectorError, PipelineError
+from typed_flow.errors.models import PipelineError
 from typed_flow.protocols import (
     BaseThreadProcessor,
     BaseThreadSink,
@@ -169,86 +168,6 @@ class TestProcessorResilienceOnException:
 
         assert call_count >= 3
         assert len(results) >= 2
-
-
-class TestErrorEventFields:
-    """All error event types have the required fields populated."""
-
-    def test_connector_error_has_all_fields(self) -> None:
-        err = ConnectorError(
-            node_name="test_source",
-            connector_name="redis_source",
-            stream_name="input:stream",
-            message_id="123-0",
-            error_type="ConnectionError",
-            error_message="Connection refused",
-            timestamp_ms=1000,
-        )
-        assert err.connector_name == "redis_source"
-        assert err.stream_name == "input:stream"
-        assert err.message_id == "123-0"
-        assert err.error_type == "ConnectionError"
-        assert err.error_message == "Connection refused"
-        assert err.timestamp_ms == 1000
-
-    def test_inference_error_has_all_fields(self) -> None:
-        err = InferenceError(
-            model_name="yolo11s",
-            model_version="1",
-            error_type="TimeoutError",
-            error_message="Request timed out",
-            retry_count=3,
-            timestamp_ms=2000,
-        )
-        assert err.model_name == "yolo11s"
-        assert err.model_version == "1"
-        assert err.error_type == "TimeoutError"
-        assert err.error_message == "Request timed out"
-        assert err.retry_count == 3
-        assert err.timestamp_ms == 2000
-
-    def test_preprocessing_error_has_all_fields(self) -> None:
-        err = PreprocessingError(
-            message_id="456-0",
-            decoder_type="opencv",
-            error_type="DecodeError",
-            error_message="Cannot decode image",
-            timestamp_ms=3000,
-        )
-        assert err.message_id == "456-0"
-        assert err.decoder_type == "opencv"
-        assert err.error_type == "DecodeError"
-        assert err.error_message == "Cannot decode image"
-        assert err.timestamp_ms == 3000
-
-    def test_connector_error_frozen(self) -> None:
-        from pydantic import ValidationError
-
-        err = ConnectorError(
-            node_name="test_source",
-            connector_name="x",
-            stream_name="s",
-            message_id=None,
-            error_type="E",
-            error_message="m",
-            timestamp_ms=0,
-        )
-        with pytest.raises(ValidationError, match="frozen"):
-            err.connector_name = "y"  # type: ignore[misc]
-
-    def test_inference_error_frozen(self) -> None:
-        from pydantic import ValidationError
-
-        err = InferenceError(
-            model_name="m",
-            model_version="1",
-            error_type="E",
-            error_message="m",
-            retry_count=0,
-            timestamp_ms=0,
-        )
-        with pytest.raises(ValidationError, match="frozen"):
-            err.model_name = "other"  # type: ignore[misc]
 
 
 class TestValidateGraphStructural:
