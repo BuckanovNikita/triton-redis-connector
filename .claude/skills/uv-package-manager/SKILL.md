@@ -47,7 +47,7 @@ uv init my-project                  # scaffold pyproject.toml + venv
 uv run pytest                          # all tests, parallel (-n auto)
 uv run pytest -x                       # stop on first failure
 uv run pre-commit run --all-files      # all checks in order
-uv run ruff format . && uv run ruff check --fix .  # format + lint
+uv run ruff format . && uv run ruff check .  # format + lint
 uv run mypy . && uv run pyright        # type check (both strict)
 uv run lint-imports                    # architecture layer contracts
 uv run vulture                         # dead code detection

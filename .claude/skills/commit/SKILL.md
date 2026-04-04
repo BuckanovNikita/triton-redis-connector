@@ -24,7 +24,7 @@ If you want to check early, run manually:
 uv run pre-commit run --all-files
 ```
 
-- **ruff check** — try `uv run ruff check --fix .` first, then fix manually
+- **ruff check** — try `uv run ruff check .` first, then fix manually
 - **mypy** — this project uses `strict = true`; all code must be fully typed
 - **pyright** — strict mode; resolve all type errors
 - **vulture** — remove dead code or add whitelist entry if false positive

@@ -32,7 +32,7 @@ This file teaches you HOW to write correct code with this project's specific too
 
 ## After Writing Code
 
-Ruff format + check --fix runs automatically on every file save (hook).
+Ruff format + check runs automatically on every file save (hook).
 Pre-commit runs automatically before every commit (hook).
 Run `uv run pre-commit run --all-files` manually to verify all checks pass early.
 

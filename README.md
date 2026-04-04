@@ -71,7 +71,7 @@ uv run pytest
 |---------|----------|
 | `uv run ruff format .` | Форматирование кода |
 | `uv run ruff check .` | Линтер (ruff) |
-| `uv run ruff check --fix .` | Автоисправление линтера |
+| `uv run ruff check .` | Автоисправление линтера |
 | `uv run mypy .` | Проверка типов (mypy strict) |
 | `uv run pyright` | Проверка типов (pyright strict) |
 | `uv run lint-imports` | Проверка архитектурных контрактов импортов |
