@@ -24,8 +24,6 @@ DEFAULT_MAXLEN = 100_000
 PIPELINE_BATCH = 100
 STATS_INTERVAL_S = 10.0
 NUM_CAMS = 6
-PATH_CAMS = {1, 2, 3, 4}
-BYTES_CAMS = {5, 6}
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,17 +54,16 @@ def _collect_images(images_dir: str) -> list[Path]:
 
 
 def _build_event(image_path: Path, cam_id: int) -> dict[str, str | bytes]:
-    """Build a Redis stream event dict for a camera image."""
-    fields: dict[str, str | bytes] = {
+    """Build a Redis stream event dict for a camera image.
+
+    All cams use image_path (filesystem reference) because typed-flow's Redis
+    connector decodes all fields as UTF-8 strings, which is incompatible with
+    raw binary image data.
+    """
+    return {
         "cam_id": str(cam_id),
+        "image_path": str(image_path.resolve()),
     }
-    if cam_id in BYTES_CAMS:
-        fields["image_bytes"] = image_path.read_bytes()
-        fields["image_path"] = ""
-    else:
-        fields["image_path"] = str(image_path.resolve())
-        fields["image_bytes"] = b""
-    return fields
 
 
 def run_generator(args: argparse.Namespace) -> None:

@@ -4,7 +4,7 @@ Triton-specific event models that extend the generic typed_flow
 framework with image processing and inference capabilities.
 """
 
-from typing import Annotated, ClassVar, Self
+from typing import Annotated, Any, ClassVar, Self
 
 import numpy as np
 import numpy.typing as npt
@@ -82,10 +82,12 @@ class TritonRequest(BaseEvent):
 
     model_name: str
     model_version: str = ""
-    raw_image: npt.NDArray[np.float32] | None = None
+    raw_image: npt.NDArray[np.floating[Any]] | None = None
     image_bytes: bytes | None = None
     input_name: str = "images"
     output_names: tuple[str, ...] = ("output0",)
+    preprocess_scale: float = 1.0
+    preprocess_pad: tuple[int, int] = (0, 0)
 
     @model_validator(mode="after")
     def _exactly_one_input(self) -> Self:
@@ -97,4 +99,14 @@ class TritonRequest(BaseEvent):
         return self
 
 
+class DetectionTritonRequest(TritonRequest):
+    """Routing marker for detection model inference requests."""
+
+
+class ClassificationTritonRequest(TritonRequest):
+    """Routing marker for classification model inference requests."""
+
+
 TritonRequest.model_rebuild()
+DetectionTritonRequest.model_rebuild()
+ClassificationTritonRequest.model_rebuild()

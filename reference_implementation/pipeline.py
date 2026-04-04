@@ -18,36 +18,37 @@ from pathlib import Path
 
 import yaml
 from loguru import logger
+from triton_redis_connector.config.schema import DecoderType
 from triton_redis_connector.engine.events import ClassificationResult, DetectionResult
-from triton_redis_connector.engine.shipped_processors import LogErrorSinkNode
+from triton_redis_connector.engine.shipped_processors import (
+    ClassificationInferenceNode,
+    ClassificationPostProcessorNode,
+    ClassificationPreprocessorNode,
+    ClientPreprocessorNode,
+    DetectionInferenceNode,
+    DetectionPostProcessorNode,
+    LogErrorSinkNode,
+)
 from typed_flow.config.schema import AppConfig
 from typed_flow.connectors import RedisThreadSink, RedisThreadSource
 from typed_flow.engine.app import Application
 from typed_flow.errors.models import PipelineError
 from typed_flow.protocols import BaseThreadSink
 
-from reference_implementation.models import CameraEvent
-from reference_implementation.processors import (
-    CameraRouterProcessor,
-    Model1InferenceNode,
-    Model1PostProc,
-    Model1Preprocessor,
-    Model2InferenceNode,
-    Model2PostProc,
-    Model2Preprocessor,
-    Model3InferenceNode,
-    Model3PostProc,
-    Model3Preprocessor,
-    Model4InferenceNode,
-    Model4PostProc,
-    Model4Preprocessor,
+from reference_implementation.models import (
+    CameraEvent,
+    ClassModel3Event,
+    DetModel1Event,
+    DetModel2Event,
+    DetModel4Event,
 )
+from reference_implementation.processors import CameraRouterProcessor, cls_postprocess, det_postprocess
 
 GRPC_URL = "localhost:8001"
-MODEL1_NAME = "yolo_640"
-MODEL2_NAME = "yolo_608x960"
-MODEL3_NAME = "cls_640"
-MODEL4_NAME = "yolo_1024"
+MODEL1_NAME = "yolo11s"
+MODEL2_NAME = "yolo11s_608x960"
+MODEL3_NAME = "yolo12s"
+MODEL4_NAME = "yolo11s"
 
 
 class CameraSource(RedisThreadSource[CameraEvent]):
@@ -101,18 +102,34 @@ def main() -> None:
     processors: list[object] = [
         source,
         CameraRouterProcessor(),
-        Model1Preprocessor(model_name=MODEL1_NAME),
-        Model2Preprocessor(model_name=MODEL2_NAME),
-        Model3Preprocessor(model_name=MODEL3_NAME),
-        Model4Preprocessor(model_name=MODEL4_NAME),
-        Model1InferenceNode(grpc_url),
-        Model2InferenceNode(grpc_url),
-        Model3InferenceNode(grpc_url),
-        Model4InferenceNode(grpc_url),
-        Model1PostProc(),
-        Model2PostProc(),
-        Model3PostProc(),
-        Model4PostProc(),
+        ClientPreprocessorNode[DetModel1Event](
+            decoder_type=DecoderType.TURBOJPEG,
+            target_size=640,
+            model_name=MODEL1_NAME,
+            use_shm=False,
+        ),
+        ClientPreprocessorNode[DetModel2Event](
+            decoder_type=DecoderType.OPENCV,
+            target_size=(608, 960),
+            model_name=MODEL2_NAME,
+            use_shm=False,
+        ),
+        ClientPreprocessorNode[DetModel4Event](
+            decoder_type=DecoderType.TURBOJPEG,
+            target_size=1024,
+            model_name=MODEL4_NAME,
+            use_shm=True,
+        ),
+        ClassificationPreprocessorNode[ClassModel3Event](
+            decoder_type=DecoderType.OPENCV,
+            crop_size=640,
+            model_name=MODEL3_NAME,
+            use_shm=False,
+        ),
+        DetectionInferenceNode(grpc_url),
+        ClassificationInferenceNode(grpc_url),
+        DetectionPostProcessorNode[DetectionResult](det_postprocess),
+        ClassificationPostProcessorNode[ClassificationResult](cls_postprocess),
         det_sink,
         cls_sink,
         LogErrorSinkNode(),

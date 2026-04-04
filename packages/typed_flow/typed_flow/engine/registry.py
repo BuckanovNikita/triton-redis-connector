@@ -178,11 +178,16 @@ def _unwrap_annotated(annotation: object) -> type:
     return annotation  # type: ignore[return-value]
 
 
-def _build_typevar_map(cls: type) -> dict[typing.TypeVar, type]:
+def _build_typevar_map(cls: type, node: object | None = None) -> dict[typing.TypeVar, type]:
     """Build a TypeVar -> concrete type mapping from the class hierarchy.
 
     Walks ``__orig_bases__`` and matches generic parameters to their
     concrete arguments at each subclass level.
+
+    When *node* is provided and has ``__orig_class__`` (set by Python 3.12+
+    when instantiating via ``SomeGeneric[ConcreteType](...)``), its type
+    arguments are merged into the map so that runtime-parameterized generics
+    are resolved without requiring an explicit subclass.
     """
     tv_map: dict[typing.TypeVar, type] = {}
     for klass in cls.__mro__:
@@ -197,6 +202,19 @@ def _build_typevar_map(cls: type) -> dict[typing.TypeVar, type]:
             tv_map.update(
                 {param: arg for param, arg in zip(params, args, strict=False) if not isinstance(arg, typing.TypeVar)}
             )
+
+    orig_class: object | None = getattr(node, "__orig_class__", None) if node is not None else None
+    if orig_class is not None:
+        orig_origin = typing.get_origin(orig_class)
+        orig_args = typing.get_args(orig_class)
+        if orig_origin is not None and orig_args:
+            orig_params: tuple[typing.TypeVar, ...] = getattr(orig_origin, "__type_params__", ()) or getattr(
+                orig_origin, "__parameters__", ()
+            )
+            tv_map.update(
+                {p: a for p, a in zip(orig_params, orig_args, strict=False) if not isinstance(a, typing.TypeVar)}
+            )
+
     return tv_map
 
 
@@ -261,7 +279,7 @@ def _extract_types_from_generics(node: object) -> tuple[set[type], set[type]]:
     Sinks: args[0] = input type (may be union)
     """
     cls = type(node)
-    tv_map = _build_typevar_map(cls)
+    tv_map = _build_typevar_map(cls, node)
 
     for klass in cls.__mro__:
         for base in getattr(klass, "__orig_bases__", ()):
@@ -278,7 +296,9 @@ def _extract_types_from_generics(node: object) -> tuple[set[type], set[type]]:
 
             min_args_for_processor = 2
             if origin in _PROCESSOR_BASE_CLASSES and len(args) >= min_args_for_processor:
-                return set(_flatten_union(args[0])), set(_flatten_union(args[1]))
+                resolved_in = _substitute_typevars(args[0], tv_map)
+                resolved_out = _substitute_typevars(args[1], tv_map)
+                return set(_flatten_union(resolved_in)), set(_flatten_union(resolved_out))
 
             if origin in _SINK_BASE_CLASSES:
                 resolved = _substitute_typevars(args[0], tv_map)

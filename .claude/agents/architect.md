@@ -151,9 +151,12 @@ processors = expand_bundle(bundle)  # returns flat list in pipeline order
 
 | Node | Input | Output |
 |---|---|---|
-| `ClientPreprocessorNode[TCtx, TPayload]` | `PipelineEvent[TCtx, TPayload]` | `PipelineEvent[TCtx, TritonRequest] \| PreprocessingError` |
-| `InferenceNode[TCtx, TReq, TOut]` | `PipelineEvent[TCtx, TReq]` | `PipelineEvent[TCtx, TOut] \| InferenceError` |
-| `PostProcessorNode[TCtx, TIn, TResult]` | `PipelineEvent[TCtx, TIn]` | `PipelineEvent[TCtx, TResult]` |
+| `ClientPreprocessorNode[TIn]` | `TIn: ImagePayload` | `DetectionTritonRequest \| PreprocessingError` |
+| `ClassificationPreprocessorNode[TIn]` | `TIn: ImagePayload` | `ClassificationTritonRequest \| PreprocessingError` |
+| `DetectionInferenceNode` | `DetectionTritonRequest` | `DetectionInferenceOutput \| InferenceError` |
+| `ClassificationInferenceNode` | `ClassificationTritonRequest` | `ClassificationInferenceOutput \| InferenceError` |
+| `DetectionPostProcessorNode[TResult]` | `DetectionInferenceOutput` | `TResult` |
+| `ClassificationPostProcessorNode[TResult]` | `ClassificationInferenceOutput` | `TResult` |
 | `LogErrorSinkNode` | `InferenceError \| ConnectorError \| PreprocessingError` | None |
 
 ---
@@ -181,12 +184,10 @@ User context and framework metadata travel together via `PipelineEvent`:
 
 ---
 
-## Inference via InferenceNode
+## Inference via Typed Inference Nodes
 
-`InferenceNode[TCtx, TReq, TOut]` is a shipped Node class that calls Triton gRPC.
-Takes `PipelineEvent[TCtx, TReq]`, returns `PipelineEvent[TCtx, TOut] | InferenceError`.
-
-Retry/concurrency handled by composing middleware.
+`DetectionInferenceNode` and `ClassificationInferenceNode` are shipped Node classes that call Triton gRPC.
+They accept typed routing markers (`DetectionTritonRequest`/`ClassificationTritonRequest`) and return typed outputs (`DetectionInferenceOutput`/`ClassificationInferenceOutput`), preserving preprocessing metadata (scale, pad) through the pipeline.
 
 ---
 

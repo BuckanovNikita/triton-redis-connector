@@ -6,9 +6,9 @@ import numpy as np
 from pydantic import ConfigDict
 from triton_redis_connector.config.schema import DecoderType
 from triton_redis_connector.engine.events import (
+    DetectionTritonRequest,
     ImagePayload,
     InferenceTarget,
-    TritonRequest,
 )
 from triton_redis_connector.engine.shipped_processors import ClientPreprocessorNode
 
@@ -52,7 +52,7 @@ class TestInferenceTargetRouting:
 
         result = node(event)
 
-        assert isinstance(result, TritonRequest)
+        assert isinstance(result, DetectionTritonRequest)
         assert result.model_name == "yolo26l"
 
     def test_uses_target_model_version_from_event(self) -> None:
@@ -65,7 +65,7 @@ class TestInferenceTargetRouting:
 
         result = node(event)
 
-        assert isinstance(result, TritonRequest)
+        assert isinstance(result, DetectionTritonRequest)
         assert result.model_name == "yolo26l"
         assert result.model_version == "2"
 
@@ -92,7 +92,7 @@ class TestInferenceTargetRouting:
         event = PlainImageEvent(image_bytes=b"fake-jpeg")
         result = node(event)
 
-        assert isinstance(result, TritonRequest)
+        assert isinstance(result, DetectionTritonRequest)
         assert result.model_name == "yolo11s"
         assert result.model_version == ""
 
@@ -102,5 +102,22 @@ class TestInferenceTargetRouting:
 
         result = node(event)
 
-        assert isinstance(result, TritonRequest)
+        assert isinstance(result, DetectionTritonRequest)
         assert result.model_name == "yolo11s"
+
+    def test_preserves_preprocess_scale_and_pad(self) -> None:
+        node = _make_node(model_name="yolo11s")
+        mock_preprocessor = MagicMock()
+        mock_preprocessor.preprocess.return_value = (
+            np.zeros((1, 3, 640, 640), dtype=np.float32),
+            0.75,
+            (32, 16),
+        )
+        node._preprocessor = mock_preprocessor  # pyright: ignore[reportPrivateUsage]
+
+        event = RoutedImageEvent(target_model="yolo11s", image_bytes=b"fake-jpeg")
+        result = node(event)
+
+        assert isinstance(result, DetectionTritonRequest)
+        assert result.preprocess_scale == 0.75
+        assert result.preprocess_pad == (32, 16)

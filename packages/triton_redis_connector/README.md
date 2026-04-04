@@ -76,9 +76,9 @@ from triton_redis_connector import Application, ModelBundle, expand_bundle
 
 bundle = ModelBundle(
     name="yolo",
-    preprocessor=ClientPreprocessorNode(...),
-    inference=InferenceNode(grpc_url="triton:8001"),
-    postprocessor=PostProcessorNode(postprocessor=yolo_bridge),
+    preprocessor=ClientPreprocessorNode[MyImageEvent](...),
+    inference=DetectionInferenceNode(grpc_url="triton:8001"),
+    postprocessor=DetectionPostProcessorNode[DetectionResult](det_postprocess),
     sink=LogErrorSinkNode(),
 )
 
@@ -89,7 +89,7 @@ app = Application.build(
 app.run()
 ```
 
-Shipped-процессоры (ClientPreprocessorNode, InferenceNode, PostProcessorNode, LogErrorSinkNode) регистрируются через `Application.build()` или передаются явным списком.
+Shipped-процессоры (ClientPreprocessorNode, DetectionInferenceNode, ClassificationInferenceNode, DetectionPostProcessorNode, ClassificationPostProcessorNode, LogErrorSinkNode) регистрируются через `Application.build()` или передаются явным списком.
 
 ## Построение графа
 
@@ -114,8 +114,8 @@ Union-типы в возвращаемом значении (`EventA | EventB | 
 graph LR
     redis_source([redis_source])
     preprocessor[ClientPreprocessorNode]
-    inference[InferenceNode]
-    postprocessor[PostProcessorNode]
+    inference[DetectionInferenceNode]
+    postprocessor[DetectionPostProcessorNode]
     error_sink[[LogErrorSinkNode]]
     redis_sink[[redis_sink]]
 

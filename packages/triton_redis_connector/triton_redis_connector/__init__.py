@@ -43,19 +43,28 @@ from triton_redis_connector.config.schema import TritonAppConfig
 from triton_redis_connector.engine.bundle import ModelBundle, expand_bundle
 from triton_redis_connector.engine.events import (
     ClassificationResult,
+    ClassificationTritonRequest,
     DetectionResult,
+    DetectionTritonRequest,
     ImagePayload,
     InferenceTarget,
     TritonRequest,
 )
 from triton_redis_connector.engine.shipped_processors import (
+    ClassificationInferenceNode,
+    ClassificationPostProcessorNode,
+    ClassificationPreprocessorNode,
     ClientPreprocessorNode,
-    InferenceNode,
+    DetectionInferenceNode,
+    DetectionPostProcessorNode,
     LogErrorSinkNode,
-    PostProcessorNode,
 )
 from triton_redis_connector.errors.models import InferenceError, PreprocessingError
-from triton_redis_connector.inference.request import InferenceOutput
+from triton_redis_connector.inference.request import (
+    ClassificationInferenceOutput,
+    DetectionInferenceOutput,
+    InferenceOutput,
+)
 from triton_redis_connector.preprocessing import (
     LetterBoxPreprocessor,
     OpenCVDecoder,
@@ -77,11 +86,20 @@ __all__ = [
     "BaseThreadProcessor",
     "BaseThreadSink",
     "BaseThreadSource",
+    "ClassificationInferenceNode",
+    "ClassificationInferenceOutput",
+    "ClassificationPostProcessorNode",
+    "ClassificationPreprocessorNode",
     "ClassificationResult",
+    "ClassificationTritonRequest",
     "ClientPreprocessorNode",
     "ConnectorError",
     "Counter",
+    "DetectionInferenceNode",
+    "DetectionInferenceOutput",
+    "DetectionPostProcessorNode",
     "DetectionResult",
+    "DetectionTritonRequest",
     "ExecutionVariant",
     "FrameworkMeta",
     "Gauge",
@@ -92,7 +110,6 @@ __all__ = [
     "ImagePayload",
     "ImagePreprocessorProtocol",
     "InferenceError",
-    "InferenceNode",
     "InferenceOutput",
     "InferenceTarget",
     "LetterBoxPreprocessor",
@@ -103,7 +120,6 @@ __all__ = [
     "ModelBundle",
     "OpenCVDecoder",
     "PipelineRegistry",
-    "PostProcessorNode",
     "PreprocessingError",
     "ProcessPoolProcessor",
     "ProcessSink",

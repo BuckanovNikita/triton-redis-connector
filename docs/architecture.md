@@ -117,9 +117,9 @@ from triton_redis_connector import Application, ModelBundle, expand_bundle
 
 bundle = ModelBundle(
     name="yolo",
-    preprocessor=ClientPreprocessorNode(...),
-    inference=InferenceNode(grpc_url="triton:8001"),
-    postprocessor=PostProcessorNode(postprocessor=my_postprocessor),
+    preprocessor=ClientPreprocessorNode[MyImageEvent](...),
+    inference=DetectionInferenceNode(grpc_url="triton:8001"),
+    postprocessor=DetectionPostProcessorNode[DetectionResult](my_postprocessor),
     sink=LogErrorSinkNode(),
 )
 
@@ -159,9 +159,12 @@ These inherit from Base* classes for variant declaration and use the `PipelineEv
 
 | Node | Location | Input | Output | Purpose |
 |---|---|---|---|---|
-| `ClientPreprocessorNode[TCtx, TPayload]` | connector | `PipelineEvent[TCtx, ImagePayload]` | `PipelineEvent[TCtx, TritonRequest]` or `PreprocessingError` | Decode + letterbox from ImagePayload |
-| `InferenceNode[TCtx, TReq, TOut]` | connector | `PipelineEvent[TCtx, TritonRequest]` | `PipelineEvent[TCtx, InferenceOutput]` or `InferenceError` | Send TritonRequest to Triton via gRPC |
-| `PostProcessorNode[TCtx, TIn, TResult]` | connector | `PipelineEvent[TCtx, InferenceOutput]` | `PipelineEvent[TCtx, TResult]` | Delegate to user postprocessor, wrap result |
+| `ClientPreprocessorNode[TIn]` | connector | `TIn: ImagePayload` | `DetectionTritonRequest` or `PreprocessingError` | Decode + letterbox, preserves scale/pad |
+| `ClassificationPreprocessorNode[TIn]` | connector | `TIn: ImagePayload` | `ClassificationTritonRequest` or `PreprocessingError` | Decode + center-crop for classification |
+| `DetectionInferenceNode` | connector | `DetectionTritonRequest` | `DetectionInferenceOutput` or `InferenceError` | Triton gRPC, preserves preprocessing metadata |
+| `ClassificationInferenceNode` | connector | `ClassificationTritonRequest` | `ClassificationInferenceOutput` or `InferenceError` | Triton gRPC for classification models |
+| `DetectionPostProcessorNode[TResult]` | connector | `DetectionInferenceOutput` | `TResult` | Delegate to user detection postprocessor |
+| `ClassificationPostProcessorNode[TResult]` | connector | `ClassificationInferenceOutput` | `TResult` | Delegate to user classification postprocessor |
 | `LogErrorSinkNode` | connector | `InferenceError` or `ConnectorError` or `PreprocessingError` | `None` | Log error events on dedicated thread |
 
 ## Domain Event Model
@@ -195,9 +198,9 @@ The framework routes events using **subtype-aware matching**:
 ```python
 bundle = ModelBundle(
     name="yolo",
-    preprocessor=ClientPreprocessorNode(...),
-    inference=InferenceNode(grpc_url="triton:8001"),
-    postprocessor=PostProcessorNode(postprocessor=yolo_bridge),
+    preprocessor=ClientPreprocessorNode[MyImageEvent](...),
+    inference=DetectionInferenceNode(grpc_url="triton:8001"),
+    postprocessor=DetectionPostProcessorNode[DetectionResult](det_postprocess),
     sink=LogErrorSinkNode(),
 )
 processors = expand_bundle(bundle)  # returns [preprocessor, inference, postprocessor, sink]

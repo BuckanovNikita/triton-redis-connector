@@ -30,6 +30,18 @@ class InferenceOutput(BaseEvent):
     model_version: str
     outputs: dict[str, npt.NDArray[np.float32]]
     inference_time_ms: TimeMetric
+    preprocess_scale: float = 1.0
+    preprocess_pad: tuple[int, int] = (0, 0)
+
+
+class DetectionInferenceOutput(InferenceOutput):
+    """Routing marker for detection model inference outputs."""
+
+
+class ClassificationInferenceOutput(InferenceOutput):
+    """Routing marker for classification model inference outputs."""
 
 
 InferenceOutput.model_rebuild()
+DetectionInferenceOutput.model_rebuild()
+ClassificationInferenceOutput.model_rebuild()
