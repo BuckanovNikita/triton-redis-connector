@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 # PreToolUse hook: run pre-commit before allowing git commit
 # Blocks commit, runs pre-commit, blocks if it fails
