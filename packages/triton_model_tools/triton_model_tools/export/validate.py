@@ -1,13 +1,8 @@
 """Model repository validation: check directory structure and config.pbtxt integrity."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from loguru import logger
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 REQUIRED_CONFIG_FILENAME = "config.pbtxt"
 VERSION_DIR_NAME = "1"

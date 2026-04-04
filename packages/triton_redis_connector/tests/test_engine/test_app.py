@@ -1,7 +1,5 @@
 """Tests for Application lifecycle — startup, shutdown, parallel dispatch."""
 
-from __future__ import annotations
-
 import threading
 import time
 

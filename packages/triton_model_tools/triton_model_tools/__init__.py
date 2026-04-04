@@ -3,8 +3,6 @@
 Public API re-exports for the triton-model-tools package.
 """
 
-from __future__ import annotations
-
 from triton_model_tools.api import (
     compare_classification_results,
     compare_detection_results,

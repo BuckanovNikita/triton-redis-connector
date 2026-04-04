@@ -1,7 +1,5 @@
 """Tests for detailed postprocessors with all-class scores."""
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 from triton_model_tools.inference.classification_postprocessing import (

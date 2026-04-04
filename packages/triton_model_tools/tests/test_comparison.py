@@ -1,7 +1,5 @@
 """Tests for detection comparison utilities."""
 
-from __future__ import annotations
-
 import pytest
 from triton_model_tools.benchmarks.comparison import (
     compare_backends,

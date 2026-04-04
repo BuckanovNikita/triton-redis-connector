@@ -4,8 +4,6 @@ Task 3.10 — detection drift with corrupted results.
 Task 3.11 — classification drift with corrupted results.
 """
 
-from __future__ import annotations
-
 import random
 from pathlib import Path
 

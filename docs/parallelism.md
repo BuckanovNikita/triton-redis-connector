@@ -67,8 +67,6 @@ Write processors as plain classes with `__call__`. No threading primitives, no
 queues, no `stop` events. The framework wraps them at assembly time using wrappers from `engine/wrappers.py`.
 
 ```python
-from __future__ import annotations
-
 import numpy as np
 import numpy.typing as npt
 
@@ -238,7 +236,6 @@ tables), use the factory pattern. The framework calls `create_shared()` once, th
 `create_processor(shared)` N times.
 
 ```python
-from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt

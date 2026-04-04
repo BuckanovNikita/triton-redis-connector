@@ -1,7 +1,5 @@
 """Pydantic models for YOLO model registry and re-exports of shared Triton types."""
 
-from __future__ import annotations
-
 import re
 from pathlib import Path
 from typing import Any

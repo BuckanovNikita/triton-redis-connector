@@ -1,7 +1,5 @@
 """Tests for PipelineRegistry — DAG construction, validation, and metric extraction."""
 
-from __future__ import annotations
-
 from typing import Annotated, ClassVar
 
 import pytest

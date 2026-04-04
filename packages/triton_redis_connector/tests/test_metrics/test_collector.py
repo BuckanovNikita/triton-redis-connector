@@ -1,7 +1,5 @@
 """Tests for MetricEvent model."""
 
-from __future__ import annotations
-
 import pytest
 from pydantic import ValidationError
 from typed_flow.metrics import MetricEvent

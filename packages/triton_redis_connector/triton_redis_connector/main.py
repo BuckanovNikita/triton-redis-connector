@@ -4,8 +4,6 @@ Composes the TritonAppConfig from Hydra YAML files, builds a PipelineRegistry
 and QueueBus, creates an Application, and runs the pipeline.
 """
 
-from __future__ import annotations
-
 import os
 from typing import Any
 

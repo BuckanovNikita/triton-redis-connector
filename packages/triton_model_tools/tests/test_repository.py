@@ -1,8 +1,6 @@
 """Tests for Triton model repository directory builder."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from triton_model_tools.export.repository import build_model_directory
 from triton_model_tools.models import (
@@ -10,9 +8,6 @@ from triton_model_tools.models import (
     TritonModelConfig,
     TritonTensorSpec,
 )
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def _make_dummy_model(path: Path) -> Path:

@@ -4,15 +4,11 @@ Manages named queues with configurable maxsize and backpressure
 via drop-and-log policy.
 """
 
-from __future__ import annotations
-
 import queue
-from typing import TYPE_CHECKING
 
 from loguru import logger
 
-if TYPE_CHECKING:
-    from typed_flow.config.schema import QueueConfig
+from typed_flow.config.schema import QueueConfig
 
 
 class QueueOverflow:

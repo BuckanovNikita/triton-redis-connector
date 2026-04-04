@@ -5,15 +5,13 @@ and write them to Redis Streams via RedisStreamOutputConnector.
 If the event has a flow_meta field (HasFlowMeta), it is stripped before writing.
 """
 
-from __future__ import annotations
-
 import time
 
 from loguru import logger
 from pydantic import BaseModel
 from redis import Redis
 
-from typed_flow.config.schema import RedisConnectionConfig, SinkConfig  # noqa: TC001
+from typed_flow.config.schema import RedisConnectionConfig, SinkConfig
 from typed_flow.connectors.redis_stream import RedisStreamOutputConnector
 from typed_flow.protocols import BaseProcessSink, BaseThreadSink
 from typed_flow.protocols.messaging import HasFlowMeta

@@ -3,8 +3,6 @@
 Public API re-exports for the typed-flow package.
 """
 
-from __future__ import annotations
-
 from typed_flow.config.schema import AppConfig
 from typed_flow.engine.app import Application
 from typed_flow.engine.metric_aggregator import MetricAggregator, Tracked

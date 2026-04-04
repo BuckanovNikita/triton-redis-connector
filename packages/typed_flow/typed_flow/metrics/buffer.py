@@ -4,13 +4,9 @@ Accumulates metrics from pipeline components and provides atomic flush
 for periodic emission to Redis.
 """
 
-from __future__ import annotations
-
 import threading
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from typed_flow.metrics.collector import MetricEvent
+from typed_flow.metrics.collector import MetricEvent
 
 
 class MetricBuffer:

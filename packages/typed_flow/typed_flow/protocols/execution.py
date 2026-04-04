@@ -5,8 +5,6 @@ Six concrete base classes provide default implementations (stop event, variant
 property) for user-defined pipeline nodes.
 """
 
-from __future__ import annotations
-
 import threading
 from typing import Any, Protocol, TypeVar, runtime_checkable
 

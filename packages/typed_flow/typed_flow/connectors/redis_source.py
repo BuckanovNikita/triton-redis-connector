@@ -4,12 +4,10 @@ Provides thread and process source implementations that read from Redis Streams,
 deserialize into typed user models with flow_meta, and produce them into the pipeline graph.
 """
 
-from __future__ import annotations
-
 from pydantic import BaseModel
 from redis import Redis
 
-from typed_flow.config.schema import RedisConnectionConfig, SourceConfig  # noqa: TC001
+from typed_flow.config.schema import RedisConnectionConfig, SourceConfig
 from typed_flow.connectors.consumer_group import ConsumerGroupManager
 from typed_flow.connectors.redis_stream import RedisStreamInputConnector, deserialize_envelope
 from typed_flow.errors.models import ConnectorError

@@ -1,7 +1,5 @@
 """Tests for error paths: connection failures, invalid input, service errors, timeouts."""
 
-from __future__ import annotations
-
 from unittest.mock import MagicMock, patch
 
 import numpy as np

@@ -1,8 +1,6 @@
 """Tests for resolution validation and end2end NMS behavior in convert pipeline."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -12,9 +10,6 @@ from triton_model_tools.export.dali import (
     DaliPipelineConfig,
 )
 from triton_model_tools.models import YoloModelVariant
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class TestResolutionValidationAcceptsValid:

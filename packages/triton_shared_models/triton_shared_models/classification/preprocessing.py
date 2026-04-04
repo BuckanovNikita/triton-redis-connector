@@ -1,14 +1,10 @@
 """Classification preprocessing: resize short edge + center crop + ImageNet normalize."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import cv2
 import numpy as np
-
-if TYPE_CHECKING:
-    import numpy.typing as npt
+import numpy.typing as npt
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)

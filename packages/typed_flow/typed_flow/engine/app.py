@@ -6,8 +6,6 @@ Resolved from the dishka container via EngineProvider, or via the
 ``Application.build()`` classmethod for explicit processor-list wiring.
 """
 
-from __future__ import annotations
-
 import concurrent.futures
 import multiprocessing
 import os
@@ -16,11 +14,12 @@ import threading
 import time
 from concurrent.futures import Future, ProcessPoolExecutor
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
+from typing import Protocol, Self, cast, runtime_checkable
 
 import redis as redis_lib
 from loguru import logger
 
+from typed_flow.config.schema import AppConfig
 from typed_flow.engine.diagram import generate_mermaid
 from typed_flow.engine.metric_aggregator import extract_and_record_metrics
 from typed_flow.engine.queue_bus import QueueBus
@@ -29,8 +28,10 @@ from typed_flow.engine.registry import (
     SINK_VARIANTS,
     SOURCE_VARIANTS,
     ExecutionVariant,
+    GraphNode,
     PipelineRegistry,
 )
+from typed_flow.engine.shared_memory import call_and_pack_shm, unpack_arrays_from_shm
 from typed_flow.engine.validation import validate_graph
 from typed_flow.errors.models import make_processing_error
 from typed_flow.metrics.buffer import MetricBuffer
@@ -46,10 +47,6 @@ from typed_flow.protocols import (
     ThreadSink,
     ThreadSource,
 )
-
-if TYPE_CHECKING:
-    from typed_flow.config.schema import AppConfig
-    from typed_flow.engine.registry import GraphNode
 
 
 def _pydantic_generic_match(result_type: type, expected_type: type) -> bool:
@@ -187,9 +184,9 @@ class Application:
         config: AppConfig,
         processors: list[object],
         *,
-        redis_client: redis_lib.Redis[bytes] | None = None,
+        redis_client: "redis_lib.Redis[bytes] | None" = None,
         extra_service: LifecycleService | None = None,
-    ) -> Application:
+    ) -> Self:
         """Build a fully wired Application from an explicit processor list.
 
         Each processor instance is registered using its ``name`` attribute
@@ -455,7 +452,7 @@ class Application:
                     if event is None:
                         break
                     t0 = time.perf_counter()
-                    future = executor.submit(node.instance, event)
+                    future = executor.submit(call_and_pack_shm, node.instance, event)
                     pending[future] = (event, t0)
 
                 if not pending:
@@ -492,6 +489,7 @@ class Application:
                 self._emit_processing_error(node, exc, original_event)
                 continue
             if result is not None:
+                result = unpack_arrays_from_shm(result)
                 if recorder is not None:
                     extract_and_record_metrics(result, recorder, node.name, elapsed_ms)
                 if stats is not None:

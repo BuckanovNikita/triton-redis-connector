@@ -8,8 +8,6 @@ All protocols are runtime_checkable for isinstance verification during
 graph construction.
 """
 
-from __future__ import annotations
-
 from typed_flow.protocols.execution import (
     BaseProcessPoolProcessor,
     BaseProcessSink,

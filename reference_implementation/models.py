@@ -4,13 +4,11 @@ Four distinct sensor event types are enriched by the processor into
 four corresponding enriched types, preserving domain-specific fields.
 """
 
-from __future__ import annotations
-
 from typing import Annotated, ClassVar
 
 from typed_flow.protocols import Counter, Gauge, GroupBy
 from typed_flow.protocols.messaging import BaseEvent
-from typed_flow.protocols.metrics import TimeMetric  # noqa: TC002
+from typed_flow.protocols.metrics import TimeMetric
 
 
 class TemperatureReading(BaseEvent):

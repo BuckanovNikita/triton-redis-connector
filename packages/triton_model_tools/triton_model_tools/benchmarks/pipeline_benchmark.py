@@ -1,11 +1,12 @@
 """End-to-end performance measurement of the Redis detection pipeline."""
 
-from __future__ import annotations
-
 import time
 import uuid
-from typing import TYPE_CHECKING, Any
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
 
+import redis
 import redis as redis_lib
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,12 +17,6 @@ from triton_model_tools.inference.detection_io import collect_image_paths
 from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
 from triton_model_tools.testing.e2e_test import CONSUMER_NAME, POLL_INTERVAL_S, ensure_consumer_group
 from triton_model_tools.testing.stream_populator import ImageStreamEntry, populate_stream
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-    from pathlib import Path
-
-    import redis
 
 BACKENDS: list[str] = ["onnx", "tensorrt"]
 PREPROCESS_MODES: list[str] = ["dali", "cv2"]
@@ -59,7 +54,7 @@ class PipelineBenchmarkResult(BaseModel):
 
 
 def _push_images(
-    redis_client: redis.Redis[bytes],
+    redis_client: "redis.Redis[bytes]",
     input_stream: str,
     image_paths: list[Path],
     model_name: str,
@@ -83,7 +78,7 @@ def _push_images(
 
 
 def _collect_with_timestamps(
-    redis_client: redis.Redis[bytes],
+    redis_client: "redis.Redis[bytes]",
     output_stream: str,
     consumer_group: str,
     expected_count: int,

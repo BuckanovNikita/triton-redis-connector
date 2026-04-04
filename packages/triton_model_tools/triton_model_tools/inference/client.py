@@ -1,14 +1,10 @@
 """Synchronous gRPC client for Triton Inference Server."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import tritonclient.grpc as grpcclient
-
-if TYPE_CHECKING:
-    import numpy.typing as npt
 
 
 class TritonInferenceClient:

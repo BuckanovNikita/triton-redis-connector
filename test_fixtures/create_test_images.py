@@ -6,8 +6,6 @@ Images are saved as JPEG files in the images/ subdirectory.
 Run: uv run python test_fixtures/create_test_images.py
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import cv2

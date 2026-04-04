@@ -1,7 +1,5 @@
 """Pydantic configuration models for the triton-redis-connector pipeline."""
 
-from __future__ import annotations
-
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field

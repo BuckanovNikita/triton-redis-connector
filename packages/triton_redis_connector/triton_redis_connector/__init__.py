@@ -4,8 +4,6 @@ Public API re-exports for the triton-redis-connector package.
 Re-exports key typed_flow types for convenience.
 """
 
-from __future__ import annotations
-
 from typed_flow import (
     AppConfig,
     Application,

@@ -1,7 +1,5 @@
 """Tests for TritonRequest mutual exclusion validator."""
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 from pydantic import ValidationError

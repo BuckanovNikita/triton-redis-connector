@@ -4,15 +4,11 @@ Logs each error at the appropriate severity level and records it
 into the ErrorCollector. Periodically logs an error summary.
 """
 
-from __future__ import annotations
-
 import threading
-from typing import TYPE_CHECKING
 
 from loguru import logger
 
-if TYPE_CHECKING:
-    from typed_flow.errors.collector import ErrorCollector
+from typed_flow.errors.collector import ErrorCollector
 
 
 class ErrorHandler:

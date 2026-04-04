@@ -4,8 +4,6 @@ ErrorCollector tracks error counts by type and stores error instances
 for periodic flush by the ErrorHandler.
 """
 
-from __future__ import annotations
-
 import threading
 from collections import Counter
 from typing import Protocol, runtime_checkable

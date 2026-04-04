@@ -5,11 +5,9 @@ PostProcessorNode, LogErrorSinkNode. Each processor is a simple Tin -> Tout
 transform, with flow_meta threaded through pipeline types.
 """
 
-from __future__ import annotations
-
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Protocol
 
 import numpy as np
 import tritonclient.grpc as grpcclient
@@ -19,6 +17,7 @@ from typed_flow.errors.models import ConnectorError
 from typed_flow.protocols import BaseProcessPoolProcessor, BaseThreadProcessor, BaseThreadSink
 from typed_flow.protocols.metrics import TimeMetric
 
+from triton_redis_connector.config.schema import DecoderType
 from triton_redis_connector.engine.events import (
     ImagePayload,
     InferenceTarget,
@@ -27,10 +26,7 @@ from triton_redis_connector.engine.events import (
 from triton_redis_connector.errors.models import InferenceError, PreprocessingError
 from triton_redis_connector.inference.request import InferenceOutput
 from triton_redis_connector.preprocessing.decoder import create_decoder
-
-if TYPE_CHECKING:
-    from triton_redis_connector.config.schema import DecoderType
-    from triton_redis_connector.preprocessing.protocols import ImageDecoderProtocol, ImagePreprocessorProtocol
+from triton_redis_connector.preprocessing.protocols import ImageDecoderProtocol, ImagePreprocessorProtocol
 
 
 class _PostprocessorCallable[TIn, TResult](Protocol):

@@ -1,16 +1,11 @@
 """Compare detection txt results from two folders (baseline vs candidate)."""
 
-from __future__ import annotations
-
+import argparse
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from loguru import logger
 
-if TYPE_CHECKING:
-    import argparse
-
-    from triton_model_tools.cli._types import SubParsers
+from triton_model_tools.cli._types import SubParsers
 
 
 def build_parser(subparsers: SubParsers) -> None:

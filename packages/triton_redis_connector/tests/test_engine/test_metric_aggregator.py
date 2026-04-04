@@ -1,7 +1,5 @@
 """Tests for MetricAggregator, Tracked/Counter/Gauge markers."""
 
-from __future__ import annotations
-
 import threading
 from typing import Annotated
 

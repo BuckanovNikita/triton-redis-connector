@@ -1,8 +1,6 @@
 """Tests for preprocessing verification utilities."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -14,9 +12,6 @@ from triton_model_tools.testing.preprocessing_verify import (
 )
 from triton_shared_models.classification.preprocessing import CenterCropPreprocessor
 from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 IMAGENET_MIN = -2.2
 IMAGENET_MAX = 2.7

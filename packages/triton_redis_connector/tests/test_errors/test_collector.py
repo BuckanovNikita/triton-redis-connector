@@ -1,7 +1,5 @@
 """Tests for ErrorCollector thread-safe counting and flush."""
 
-from __future__ import annotations
-
 import threading
 import time
 

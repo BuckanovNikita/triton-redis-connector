@@ -1,17 +1,12 @@
 """Tests for folder-level batch inference."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 from triton_model_tools.inference.folder_inference import run_folder_inference
 from triton_model_tools.models.detection import FolderInferenceResult
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class TestRunFolderInference:

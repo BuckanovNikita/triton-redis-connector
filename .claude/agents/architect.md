@@ -35,7 +35,7 @@ Before making architectural decisions, always read:
 - Strict typing enforced by mypy strict + pyright strict
 - No bare `except Exception` — catch specific exception types
 - Python 3.12+ features allowed (StrEnum, type statement, X | Y unions)
-- `from __future__ import annotations` in every module
+- Never use `from __future__ import annotations` (Python 3.12 doesn't need it, breaks Pydantic runtime evaluation)
 - Import-linter enforces layer architecture contracts (see below)
 
 ---
@@ -437,8 +437,8 @@ standalone. The shared `nms_postprocess` model is reused across all ensembles.
 - Define protocols in a dedicated module at each package boundary.
 - Protocol methods should use only stdlib and pydantic types in signatures
   (not library-specific types) to keep layers decoupled.
-- Use `from __future__ import annotations` in all modules (PEP 604 union syntax,
-  deferred evaluation for forward references).
+- Never use `from __future__ import annotations` — Python 3.12 has native union syntax
+  and the import breaks Pydantic runtime annotation evaluation. Use string quotes for forward refs.
 - Each execution variant defines `__call__` with its specific signature.
   Parallel variants additionally expose `stop: threading.Event`.
 

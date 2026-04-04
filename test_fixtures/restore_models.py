@@ -6,8 +6,6 @@ with zeroed-out first convolution layer weights.
 Run: uv run python test_fixtures/restore_models.py
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Any
 

@@ -1,7 +1,5 @@
 """Container factory for typed-flow applications."""
 
-from __future__ import annotations
-
 from dishka import Container, make_container
 
 from typed_flow.config.schema import AppConfig

@@ -1,7 +1,5 @@
 """CLI entry point for triton-model-tools: subcommand-based model management."""
 
-from __future__ import annotations
-
 import argparse
 import sys
 

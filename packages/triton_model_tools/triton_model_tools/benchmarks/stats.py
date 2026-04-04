@@ -1,7 +1,5 @@
 """Shared statistics computation for benchmark modules."""
 
-from __future__ import annotations
-
 import numpy as np
 
 from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND

@@ -1,7 +1,5 @@
 """Shared Triton type definitions for the triton-redis-connector workspace."""
 
-from __future__ import annotations
-
 from triton_shared_models.classification import ClassificationPrediction
 from triton_shared_models.classification.preprocessing import CenterCropPreprocessor
 from triton_shared_models.detection import Detection

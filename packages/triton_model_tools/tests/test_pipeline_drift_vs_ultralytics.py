@@ -5,8 +5,6 @@ reference predictions. Any significant drift indicates a bug in our preprocessin
 or postprocessing.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Any
 

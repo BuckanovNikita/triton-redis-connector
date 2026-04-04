@@ -4,17 +4,14 @@ FiftyOne is an optional dependency. Import errors are raised with a clear
 message directing the user to install fiftyone.
 """
 
-from __future__ import annotations
-
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import cv2
 from loguru import logger
 
-if TYPE_CHECKING:
-    from triton_model_tools.models.detection import Detection, ImageDetectionResult
+from triton_model_tools.models.detection import Detection, ImageDetectionResult
 
 FIFTYONE_INSTALL_MSG = "fiftyone is required for visual inspection. Install it with: pip install fiftyone"
 

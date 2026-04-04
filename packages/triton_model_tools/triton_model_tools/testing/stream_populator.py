@@ -1,17 +1,12 @@
 """Populate a Redis stream from an iterable of pydantic models or field dicts."""
 
-from __future__ import annotations
-
 import time
-from typing import TYPE_CHECKING, Any
+from collections.abc import Iterable
+from typing import Any
 
+import redis  # noqa: TC002 — used in function signatures (no future annotations)
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
-
-    import redis
 
 StreamFields = dict[str | bytes, str | bytes]
 
@@ -67,7 +62,7 @@ def _serialize_model(model: BaseModel) -> StreamFields:
 
 
 def populate_stream(
-    redis_client: redis.Redis[bytes],
+    redis_client: "redis.Redis[bytes]",
     stream: str,
     items: Iterable[BaseModel | StreamFields],
     *,

@@ -11,15 +11,10 @@ Requirements for integration tests:
 - Both model variants must be configured in Triton model repository
 """
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 from triton_model_tools.benchmarks.comparison import compare_inference
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 MIN_PRECISION = 0.99
 MIN_RECALL = 0.99

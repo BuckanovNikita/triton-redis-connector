@@ -1,13 +1,12 @@
 """Integration tests for generated config.pbtxt validation against Triton."""
 
-from __future__ import annotations
-
 import contextlib
 import shutil
 import time
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
+import tritonclient.grpc as grpcclient
 from triton_model_tools.triton_config import (
     DynamicBatchingConfig,
     TritonModelConfig,
@@ -17,11 +16,6 @@ from triton_shared_models.triton_types import (
     TritonInstanceKind,
     TritonTensorSpec,
 )
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    import tritonclient.grpc as grpcclient
 
 pytestmark = [pytest.mark.integration, pytest.mark.xdist_group(name="integration")]
 

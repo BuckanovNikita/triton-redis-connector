@@ -7,20 +7,15 @@ windows, and records aggregate metrics to a MetricBuffer.
 Built-in rules: CountByRule, SumByRule, AvgByRule.
 """
 
-from __future__ import annotations
-
 import threading
 import time
-from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from typed_flow.metrics.buffer import MetricBuffer
 from typed_flow.metrics.collector import MetricEvent
+from typed_flow.protocols import AggregationRuleProtocol
 from typed_flow.protocols.framework import BucketStats
-
-if TYPE_CHECKING:
-    from typed_flow.metrics.buffer import MetricBuffer
-    from typed_flow.protocols import AggregationRuleProtocol
 
 
 class CountByRule:

@@ -5,22 +5,17 @@ plus pure Source and Sink classes for the execution variant system.
 Concurrency wrapping is handled by framework wrappers at assembly time.
 """
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 from pydantic import BaseModel, ValidationError
+from redis import Redis  # noqa: TC002
 
+from typed_flow.config.schema import SinkConfig, SourceConfig
+from typed_flow.connectors.consumer_group import ConsumerGroupManager
 from typed_flow.errors.models import ConnectorError
 from typed_flow.protocols import Envelope
 from typed_flow.protocols.messaging import FrameworkMeta, HasFlowMeta
 from typed_flow.protocols.metrics import TimeMetric
-
-if TYPE_CHECKING:
-    from redis import Redis
-
-    from typed_flow.config.schema import SinkConfig, SourceConfig
-    from typed_flow.connectors.consumer_group import ConsumerGroupManager
 
 
 class RedisStreamInputConnector:
@@ -32,7 +27,7 @@ class RedisStreamInputConnector:
 
     def __init__(
         self,
-        client: Redis[bytes],
+        client: "Redis[bytes]",
         config: SourceConfig,
         group_manager: ConsumerGroupManager,
     ) -> None:
@@ -77,7 +72,7 @@ class RedisStreamOutputConnector:
     Redis pipelining for throughput.
     """
 
-    def __init__(self, client: Redis[bytes], config: SinkConfig) -> None:
+    def __init__(self, client: "Redis[bytes]", config: SinkConfig) -> None:
         """Initialize output connector with Redis client and sink config."""
         self._client = client
         self._config = config

@@ -6,13 +6,11 @@ inference layers can import it). Re-exported here for convenience.
 InferenceOutput carries raw numpy arrays for cross-process transport.
 """
 
-from __future__ import annotations
-
-import numpy as np  # noqa: TC002 — pydantic needs runtime access for model_rebuild()
-import numpy.typing as npt  # noqa: TC002
+import numpy as np
+import numpy.typing as npt
 from pydantic import ConfigDict
 from typed_flow.protocols.messaging import BaseEvent
-from typed_flow.protocols.metrics import TimeMetric  # noqa: TC002
+from typed_flow.protocols.metrics import TimeMetric
 
 from triton_redis_connector.engine.events import TritonRequest
 

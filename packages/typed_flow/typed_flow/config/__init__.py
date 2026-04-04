@@ -1,7 +1,5 @@
 """Configuration models for the typed-flow framework."""
 
-from __future__ import annotations
-
 from typed_flow.config.schema import (
     AppConfig,
     DebugConfig,

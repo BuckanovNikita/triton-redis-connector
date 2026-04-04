@@ -7,8 +7,6 @@ PipelineError is the base for all error events. Any sink accepting
 PipelineError will receive errors from every node in the graph.
 """
 
-from __future__ import annotations
-
 from pydantic import BaseModel, ConfigDict
 
 from typed_flow.protocols.metrics import TimeMetric

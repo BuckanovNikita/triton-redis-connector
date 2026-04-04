@@ -4,13 +4,10 @@ These protocols define the contract for image decoders and preprocessors.
 Multiple implementations (OpenCV, TurboJPEG) share the same interface.
 """
 
-from __future__ import annotations
+from typing import Protocol, runtime_checkable
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
-
-if TYPE_CHECKING:
-    import numpy as np
-    import numpy.typing as npt
+import numpy as np
+import numpy.typing as npt
 
 
 @runtime_checkable

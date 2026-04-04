@@ -1,18 +1,13 @@
 """YOLO postprocessing: NMS and confidence thresholding."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import numpy as np
+import numpy.typing as npt
 from loguru import logger
 from triton_shared_models.nms import nms
 
 from triton_model_tools.models.detection import Detection
-
-if TYPE_CHECKING:
-    import numpy.typing as npt
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.25
 DEFAULT_IOU_THRESHOLD = 0.45

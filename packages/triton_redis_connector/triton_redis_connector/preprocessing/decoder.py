@@ -7,8 +7,6 @@ Both release the GIL during decode, enabling concurrent execution
 in thread pool processors.
 """
 
-from __future__ import annotations
-
 import threading
 
 import cv2

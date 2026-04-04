@@ -5,8 +5,6 @@ Usage:
     uv run python reference_implementation/verify.py --input-streams sensor:temperature sensor:humidity
 """
 
-from __future__ import annotations
-
 import argparse
 import sys
 
@@ -46,7 +44,7 @@ def _decode_id(raw_id: bytes | str) -> str:
 
 
 def verify_data_streams(
-    client: Redis[bytes],
+    client: "Redis[bytes]",
     input_streams: list[str],
     output_stream: str,
 ) -> int:
@@ -95,7 +93,7 @@ def verify_data_streams(
     return max(missing, 0)
 
 
-def verify_metrics_stream(client: Redis[bytes], metrics_stream: str) -> None:
+def verify_metrics_stream(client: "Redis[bytes]", metrics_stream: str) -> None:
     """Check that metrics stream has events and report zero-value counters."""
     metrics_len = client.xlen(metrics_stream)
     logger.info("Metrics stream ({}): {} events", metrics_stream, metrics_len)

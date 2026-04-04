@@ -53,8 +53,8 @@ Follow the checklist below, section by section.
 
 - All functions have complete type annotations (params + return)
 - No `Any` types except where unavoidable (third-party libs without stubs)
-- `from __future__ import annotations` present in all modules
-- `TYPE_CHECKING` block used for type-only imports
+- No `from __future__ import annotations` (Python 3.12 doesn't need it; breaks Pydantic)
+- No `TYPE_CHECKING` blocks — all imports at top-level (no circular import issues in this codebase)
 - Generic types use modern syntax: `list[str]` not `List[str]`, `X | None` not `Optional[X]`
 - numpy arrays typed as `npt.NDArray[np.float32]` not bare `np.ndarray`
 - Pydantic models use v2 API (`model_config = ConfigDict(...)`, not `class Config`)

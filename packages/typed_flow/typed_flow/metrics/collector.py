@@ -5,8 +5,6 @@ queue overflow tracking, business aggregation) emit MetricEvent instances that
 flow into a MetricBuffer and are periodically flushed to Redis by MetricEmitter.
 """
 
-from __future__ import annotations
-
 from pydantic import BaseModel, ConfigDict
 
 

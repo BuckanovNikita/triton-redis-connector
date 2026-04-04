@@ -1,12 +1,11 @@
 """Benchmark engine for Triton inference performance measurement."""
 
-from __future__ import annotations
-
 import csv
 import platform
 import time
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Literal
+from pathlib import Path
+from typing import Any, Literal
 
 import numpy as np
 from loguru import logger
@@ -24,9 +23,6 @@ from triton_model_tools.inference.postprocessing import (
     YoloPostprocessor,
 )
 from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class BenchmarkConfig(BaseModel):

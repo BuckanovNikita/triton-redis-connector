@@ -1,7 +1,5 @@
 """Tests for MetricEmitter resend behavior: prefix, accumulation, periodic flush."""
 
-from __future__ import annotations
-
 import time
 from unittest.mock import MagicMock
 

@@ -1,7 +1,5 @@
 """Tests for ErrorHandler logging and ErrorCollector recording."""
 
-from __future__ import annotations
-
 import time
 
 from triton_redis_connector.errors.models import (

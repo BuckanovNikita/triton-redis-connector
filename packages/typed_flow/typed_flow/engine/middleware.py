@@ -4,15 +4,10 @@ Each middleware satisfies the Processor[TIn, TOut] protocol so they
 compose naturally via nesting.
 """
 
-from __future__ import annotations
-
 import time
-from typing import TYPE_CHECKING
+from collections.abc import Callable
 
 from loguru import logger
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 
 class RetryMiddleware[TIn, TOut]:

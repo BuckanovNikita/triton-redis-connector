@@ -4,18 +4,16 @@ Triton-specific event models that extend the generic typed_flow
 framework with image processing and inference capabilities.
 """
 
-from __future__ import annotations
-
 from typing import Annotated, ClassVar, Self
 
-import numpy as np  # noqa: TC002 — pydantic needs runtime access for model_rebuild()
-import numpy.typing as npt  # noqa: TC002
+import numpy as np
+import numpy.typing as npt
 from pydantic import BaseModel, ConfigDict, model_validator
-from triton_shared_models.classification import ClassificationPrediction  # noqa: TC002
-from triton_shared_models.detection import Detection  # noqa: TC002
+from triton_shared_models.classification import ClassificationPrediction
+from triton_shared_models.detection import Detection
 from typed_flow.protocols import Counter, Gauge
 from typed_flow.protocols.messaging import BaseEvent, FrameworkMeta
-from typed_flow.protocols.metrics import TimeMetric  # noqa: TC002
+from typed_flow.protocols.metrics import TimeMetric
 
 
 class InferenceTarget(BaseModel):

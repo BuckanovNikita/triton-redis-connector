@@ -1,10 +1,8 @@
 """Bridge ClassificationPostprocessor into the pipeline as a callable processor."""
 
-from __future__ import annotations
-
 from triton_redis_connector.engine.events import ClassificationResult
 from triton_redis_connector.inference.request import (
-    InferenceOutput,  # noqa: TC002 — required at runtime for annotation resolution
+    InferenceOutput,
 )
 
 from triton_model_tools.inference.classification_postprocessing import (

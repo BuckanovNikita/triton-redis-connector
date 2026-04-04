@@ -5,8 +5,6 @@ source metadata (stream, message_id, priority) through the pipeline.
 HasFlowMeta is a runtime-checkable protocol for types that carry flow_meta.
 """
 
-from __future__ import annotations
-
 import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
@@ -79,7 +77,7 @@ class Envelope[T]:
         """Return elapsed time in milliseconds since envelope creation."""
         return (time.monotonic() - self.created_at) * 1000.0
 
-    def derive[U](self, new_payload: U) -> Envelope[U]:
+    def derive[U](self, new_payload: U) -> "Envelope[U]":
         """Create a new Envelope carrying a different payload type.
 
         Preserves source_stream, message_id, created_at, and copies the
@@ -95,6 +93,6 @@ class Envelope[T]:
             original_fields=dict(self.original_fields),
         )
 
-    def __lt__(self, other: Envelope[Any]) -> bool:
+    def __lt__(self, other: "Envelope[Any]") -> bool:
         """Compare by created_at for PriorityQueue ordering (oldest first)."""
         return self.created_at < other.created_at

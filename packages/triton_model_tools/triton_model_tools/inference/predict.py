@@ -1,9 +1,8 @@
 """Run ultralytics YOLO prediction on an image folder and save results as txt files."""
 
-from __future__ import annotations
-
 import time
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -14,9 +13,6 @@ from triton_model_tools.inference.detection_io import collect_image_paths, save_
 from triton_model_tools.inference.postprocessing import DEFAULT_CONFIDENCE_THRESHOLD, DEFAULT_IOU_THRESHOLD
 from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
 from triton_model_tools.models.detection import Detection, FolderInferenceResult, ImageDetectionResult
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class PredictConfig(BaseModel):

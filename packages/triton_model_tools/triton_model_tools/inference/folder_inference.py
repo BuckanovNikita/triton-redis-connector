@@ -1,8 +1,6 @@
 """Folder-level batch inference using Triton and YOLO pre/postprocessing."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from triton_shared_models.preprocessing import LetterBoxPreprocessor as YoloPreprocessor
 
@@ -14,11 +12,7 @@ from triton_model_tools.inference.postprocessing import (
     DEFAULT_IOU_THRESHOLD,
     YoloPostprocessor,
 )
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from triton_model_tools.models.detection import FolderInferenceResult
+from triton_model_tools.models.detection import FolderInferenceResult
 
 
 def run_folder_inference(  # noqa: PLR0913

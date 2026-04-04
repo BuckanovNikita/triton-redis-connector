@@ -1,11 +1,7 @@
 """Convert YOLO .pt weights to Triton model repository format."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any, Literal
-
-if TYPE_CHECKING:
-    from pathlib import Path
+from pathlib import Path
+from typing import Any, Literal
 
 from loguru import logger
 

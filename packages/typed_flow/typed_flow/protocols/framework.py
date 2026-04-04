@@ -4,8 +4,6 @@ WrappedNode declares execution variant for fast-path detection.
 AggregationRuleProtocol defines time-windowed event aggregation.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Protocol, TypeVar, runtime_checkable
 

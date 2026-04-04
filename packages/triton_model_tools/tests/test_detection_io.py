@@ -1,13 +1,8 @@
 """Tests for detection I/O utilities (txt format reading/writing)."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
-
-if TYPE_CHECKING:
-    from pathlib import Path
 from triton_model_tools.inference.detection_io import (
     load_detections_from_txt,
     load_folder_detections,

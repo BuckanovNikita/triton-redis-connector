@@ -12,8 +12,6 @@ Usage::
     TrackedProcessor = Annotated[MyProcessor, Tracked("my-processor")]
 """
 
-from __future__ import annotations
-
 import threading
 import typing
 from dataclasses import dataclass

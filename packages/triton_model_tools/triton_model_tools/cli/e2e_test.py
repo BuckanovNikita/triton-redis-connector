@@ -1,23 +1,16 @@
 """Run E2E test: push images to Redis, connector processes via Triton, collect results."""
 
-from __future__ import annotations
-
+import argparse
 import time
+from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+import redis
 import redis as redis_lib
 from loguru import logger
 
-if TYPE_CHECKING:
-    import argparse
-    from collections.abc import Iterator
-
-    import redis
-
-    from triton_model_tools.cli._types import SubParsers
-
-from triton_model_tools.cli._types import parse_image_size
+from triton_model_tools.cli._types import SubParsers, parse_image_size
 from triton_model_tools.testing.stream_populator import InspectionStreamEntry, populate_stream
 
 _IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"})
@@ -152,7 +145,7 @@ def _collect_images(image_dir: Path, max_count: int | None) -> list[Path]:
 
 
 def _push_images(
-    redis_client: redis.Redis[bytes],
+    redis_client: "redis.Redis[bytes]",
     stream: str,
     image_paths: list[Path],
     event_type: str,
@@ -181,7 +174,7 @@ def _push_images(
 
 
 def _verify_messages(
-    redis_client: redis.Redis[bytes],
+    redis_client: "redis.Redis[bytes]",
     stream: str,
     message_ids: list[str],
 ) -> bool:

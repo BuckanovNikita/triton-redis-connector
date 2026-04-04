@@ -1,7 +1,5 @@
 """Tests for Envelope event wrapper."""
 
-from __future__ import annotations
-
 import time
 
 from typed_flow.protocols import Envelope

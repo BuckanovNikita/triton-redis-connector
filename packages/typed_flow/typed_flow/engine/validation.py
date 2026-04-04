@@ -6,14 +6,7 @@ graph is connected. Called by ``Application.build()`` before
 returning the wired application.
 """
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-from typed_flow.engine.registry import SINK_VARIANTS, SOURCE_VARIANTS
-
-if TYPE_CHECKING:
-    from typed_flow.engine.registry import PipelineRegistry
+from typed_flow.engine.registry import SINK_VARIANTS, SOURCE_VARIANTS, PipelineRegistry
 
 
 def validate_graph(registry: PipelineRegistry) -> list[str]:

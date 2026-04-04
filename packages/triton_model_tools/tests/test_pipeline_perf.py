@@ -7,20 +7,15 @@ All tests require a running Triton server with loaded models and are
 skipped automatically when Triton is unavailable.
 """
 
-from __future__ import annotations
-
 import concurrent.futures
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any
 
 import pytest
 from loguru import logger
 from triton_model_tools.inference.folder_inference import run_folder_inference
 from triton_model_tools.models.detection import FolderInferenceResult
-
-if TYPE_CHECKING:
-    from typing import Any
 
 pytestmark = [pytest.mark.benchmark, pytest.mark.integration]
 

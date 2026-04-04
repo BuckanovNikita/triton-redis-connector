@@ -1,15 +1,10 @@
 """Tests for CLI argument parsing and subcommand structure."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from triton_model_tools.__main__ import main
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class TestMainEntryPoint:

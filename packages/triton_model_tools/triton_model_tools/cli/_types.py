@@ -1,7 +1,5 @@
 """Shared type definitions for CLI subcommand modules."""
 
-from __future__ import annotations
-
 import argparse
 from typing import Any, Protocol
 
@@ -11,8 +9,7 @@ _YOLO_STRIDE = 32
 class SubParsers(Protocol):
     """Protocol for argparse subparsers action (avoids private _SubParsersAction)."""
 
-    def add_parser(self, name: str, **kwargs: Any) -> argparse.ArgumentParser:  # noqa: ANN401
-        ...
+    def add_parser(self, name: str, **kwargs: Any) -> argparse.ArgumentParser: ...  # noqa: ANN401
 
 
 def parse_image_size(s: str) -> int | tuple[int, int]:

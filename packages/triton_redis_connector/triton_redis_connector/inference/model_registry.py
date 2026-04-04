@@ -5,8 +5,6 @@ create its own tracker with its own tritonclient instance (gRPC channels
 are not fork-safe).
 """
 
-from __future__ import annotations
-
 import threading
 from typing import Any
 
@@ -23,7 +21,7 @@ class ModelVersionTracker:
 
     def __init__(
         self,
-        triton_client: Any,  # noqa: ANN401 — tritonclient has no type stubs
+        triton_client: Any,  # noqa: ANN401
         poll_interval_s: float = 5.0,
     ) -> None:
         """Initialize tracker with Triton client and poll interval."""
@@ -78,7 +76,7 @@ class ModelVersionTracker:
     def _poll_once(self) -> None:
         try:
             index = self._client.get_model_repository_index()
-        except Exception as exc:  # noqa: BLE001 — tritonclient raises undocumented exception types
+        except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to poll Triton model repository index: {}", exc)
             return
 

@@ -4,12 +4,9 @@ LifecycleService for start/stop services, Startable/Stoppable for optional
 lifecycle hooks, and ObserverProtocol for envelope observation.
 """
 
-from __future__ import annotations
+from typing import Protocol, TypeVar, runtime_checkable
 
-from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
-
-if TYPE_CHECKING:
-    from typed_flow.protocols.messaging import Envelope
+from typed_flow.protocols.messaging import Envelope
 
 TObserved = TypeVar("TObserved")
 

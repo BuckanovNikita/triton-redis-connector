@@ -1,9 +1,7 @@
 """Core export logic: Ultralytics YOLO -> ONNX/TensorRT -> Triton model repository."""
 
-from __future__ import annotations
-
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import onnx
 from loguru import logger
@@ -20,9 +18,7 @@ from triton_model_tools.models import (
     TritonModelConfig,
     TritonTensorSpec,
 )
-
-if TYPE_CHECKING:
-    from triton_model_tools.models.registry import YoloModelVariant
+from triton_model_tools.models.registry import YoloModelVariant
 
 ONNX_DTYPE_TO_TRITON: dict[int, TritonDataType] = {
     1: TritonDataType.TYPE_FP32,

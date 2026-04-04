@@ -1,18 +1,13 @@
 """Preprocessing verification utilities for YOLO and classification models."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 import cv2
+import numpy as np
 from pydantic import BaseModel, ConfigDict
 from triton_shared_models.classification.preprocessing import CenterCropPreprocessor
 from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    import numpy as np
 
 
 class PreprocessingResult(BaseModel):

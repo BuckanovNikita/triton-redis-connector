@@ -4,8 +4,6 @@ Verifies that the pipeline framework correctly rejects invalid configurations,
 handles processor failures gracefully, and enforces exact type matching.
 """
 
-from __future__ import annotations
-
 import threading
 import time
 

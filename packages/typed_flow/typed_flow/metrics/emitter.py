@@ -10,21 +10,15 @@ at flush time. The ``measure`` field is the metric's own unique name
 without any app/host prefix.
 """
 
-from __future__ import annotations
-
 import socket
 import threading
-from typing import TYPE_CHECKING
 
 from loguru import logger
+from redis import Redis
 from redis import exceptions as redis_exceptions
 
+from typed_flow.metrics.buffer import MetricBuffer
 from typed_flow.metrics.collector import MetricEvent
-
-if TYPE_CHECKING:
-    from redis import Redis
-
-    from typed_flow.metrics.buffer import MetricBuffer
 
 
 def _sanitize_prefix(raw: str) -> str:
@@ -47,7 +41,7 @@ class MetricEmitter:
     def __init__(  # noqa: PLR0913
         self,
         buffer: MetricBuffer,
-        client: Redis[bytes],
+        client: "Redis[bytes]",
         stream: str,
         interval_s: float,
         known_metrics: set[str] | None = None,

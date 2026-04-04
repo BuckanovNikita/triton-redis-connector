@@ -4,8 +4,6 @@ A convenience wrapper so users can declare per-model processor sets
 and expand them into the flat list expected by ``Application.build()``.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 

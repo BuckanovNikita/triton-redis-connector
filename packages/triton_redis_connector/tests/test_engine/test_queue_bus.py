@@ -1,7 +1,5 @@
 """Tests for QueueBus — queue creation, put/get, and backpressure."""
 
-from __future__ import annotations
-
 import queue
 
 import pytest

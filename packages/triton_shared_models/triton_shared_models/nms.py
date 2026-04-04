@@ -1,15 +1,9 @@
 """Non-Maximum Suppression via torchvision."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
+import numpy as np
+import numpy.typing as npt
 import torch
 import torchvision
-
-if TYPE_CHECKING:
-    import numpy as np
-    import numpy.typing as npt
 
 
 def nms(

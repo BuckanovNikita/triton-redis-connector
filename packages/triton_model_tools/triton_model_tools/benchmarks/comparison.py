@@ -4,17 +4,12 @@ Provides detection matching with greedy algorithm,
 multi-backend comparison summaries, and classification accuracy metrics.
 """
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
 import torch
 import torchvision.ops
 from pydantic import BaseModel, ConfigDict, Field
 
-if TYPE_CHECKING:
-    from triton_model_tools.models.classification import ImageClassificationResult
-    from triton_model_tools.models.detection import Detection, ImageDetectionResult
+from triton_model_tools.models.classification import ImageClassificationResult
+from triton_model_tools.models.detection import Detection, ImageDetectionResult
 
 
 class ComparisonMetrics(BaseModel):

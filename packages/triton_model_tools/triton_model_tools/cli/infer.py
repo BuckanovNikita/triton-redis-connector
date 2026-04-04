@@ -1,18 +1,11 @@
 """Run YOLO inference on a folder of images via Triton or local ONNX."""
 
-from __future__ import annotations
-
+import argparse
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from loguru import logger
 
-if TYPE_CHECKING:
-    import argparse
-
-    from triton_model_tools.cli._types import SubParsers
-
-from triton_model_tools.cli._types import parse_image_size
+from triton_model_tools.cli._types import SubParsers, parse_image_size
 
 
 def build_parser(subparsers: SubParsers) -> None:

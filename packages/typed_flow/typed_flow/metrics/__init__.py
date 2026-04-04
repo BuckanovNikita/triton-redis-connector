@@ -1,7 +1,5 @@
 """Metrics collection and emission for the typed-flow pipeline."""
 
-from __future__ import annotations
-
 from typed_flow.metrics.aggregation import (
     AvgByRule,
     CountByRule,

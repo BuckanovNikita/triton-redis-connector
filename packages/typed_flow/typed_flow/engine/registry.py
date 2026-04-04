@@ -6,16 +6,12 @@ where union return types create multiple edges. Validates graph
 integrity before the pipeline starts.
 """
 
-from __future__ import annotations
-
 import pickle
 import types
 import typing
+from collections.abc import Callable
 from enum import StrEnum, auto
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
+from typing import Any
 
 from loguru import logger
 

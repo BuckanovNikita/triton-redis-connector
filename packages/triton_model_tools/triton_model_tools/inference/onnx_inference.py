@@ -1,15 +1,11 @@
 """Local ONNX inference client using onnxruntime."""
 
-from __future__ import annotations
-
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import onnxruntime as ort
-
-if TYPE_CHECKING:
-    import numpy.typing as npt
 
 _ort: Any = ort
 

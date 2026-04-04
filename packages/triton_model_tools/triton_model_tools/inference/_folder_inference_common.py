@@ -1,27 +1,20 @@
 """Shared image-loop logic for folder-level inference (Triton and local ONNX)."""
 
-from __future__ import annotations
-
 import time
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
 
 from loguru import logger
+from numpy.typing import NDArray
 from tqdm import tqdm
+from triton_shared_models.preprocessing import LetterBoxPreprocessor as YoloPreprocessor
 from typed_flow.protocols.metrics import TimeMetric
 
 from triton_model_tools.inference.detection_io import load_image
+from triton_model_tools.inference.postprocessing import YoloPostprocessor
 from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
 from triton_model_tools.models.detection import FolderInferenceResult, ImageDetectionResult
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
-    from pathlib import Path
-    from typing import Any
-
-    from numpy.typing import NDArray
-    from triton_shared_models.preprocessing import LetterBoxPreprocessor as YoloPreprocessor
-
-    from triton_model_tools.inference.postprocessing import YoloPostprocessor
 
 
 def run_image_loop(  # noqa: PLR0913

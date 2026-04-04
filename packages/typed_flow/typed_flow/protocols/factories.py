@@ -4,8 +4,6 @@ Framework calls create_shared() once, then create_processor(shared)
 N times (one per worker).
 """
 
-from __future__ import annotations
-
 from typing import Protocol, TypeVar, runtime_checkable
 
 TShared = TypeVar("TShared")

@@ -5,12 +5,9 @@ They are internal to the connector layer -- user-facing code interacts
 with the execution variant wrappers (RedisThreadSource, RedisStreamSink).
 """
 
-from __future__ import annotations
+from typing import Protocol, runtime_checkable
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
-
-if TYPE_CHECKING:
-    from typed_flow.protocols import Envelope
+from typed_flow.protocols import Envelope
 
 
 @runtime_checkable

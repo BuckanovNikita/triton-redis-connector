@@ -1,7 +1,5 @@
 """NMS postprocessing model generation for Triton Python backend."""
 
-from __future__ import annotations
-
 import shutil
 from pathlib import Path
 

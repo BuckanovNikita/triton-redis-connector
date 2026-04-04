@@ -1,12 +1,13 @@
 """E2E test harness: push images to Redis, wait for connector to process, collect results."""
 
-from __future__ import annotations
-
 import json
 import time
 import uuid
-from typing import TYPE_CHECKING, Any
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
 
+import redis
 import redis as redis_lib
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -21,12 +22,6 @@ from triton_model_tools.models.detection import (
     ImageDetectionResult,
 )
 from triton_model_tools.testing.stream_populator import ImageStreamEntry, populate_stream
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-    from pathlib import Path
-
-    import redis
 
 POLL_INTERVAL_S = 0.5
 CONSUMER_NAME = "e2e-harness"
@@ -58,7 +53,7 @@ class E2ETestConfig(BaseModel):
 
 
 def ensure_consumer_group(
-    redis_client: redis.Redis[bytes],
+    redis_client: "redis.Redis[bytes]",
     stream: str,
     group: str,
 ) -> None:

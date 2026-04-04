@@ -1,14 +1,10 @@
 """Shared letterbox preprocessing for YOLO model inference."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import cv2
 import numpy as np
-
-if TYPE_CHECKING:
-    import numpy.typing as npt
+import numpy.typing as npt
 
 LETTERBOX_PAD_VALUE = 114
 YOLO_NORMALIZE_DIVISOR = 255.0

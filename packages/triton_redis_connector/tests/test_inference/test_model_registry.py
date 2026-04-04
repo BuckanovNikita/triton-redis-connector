@@ -1,7 +1,5 @@
 """Tests for ModelVersionTracker with mock Triton client."""
 
-from __future__ import annotations
-
 import time
 from dataclasses import dataclass
 

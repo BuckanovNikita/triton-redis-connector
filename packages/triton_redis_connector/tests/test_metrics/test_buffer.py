@@ -1,7 +1,5 @@
 """Tests for MetricBuffer thread safety and flush semantics."""
 
-from __future__ import annotations
-
 import threading
 import time
 

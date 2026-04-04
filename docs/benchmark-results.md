@@ -52,6 +52,43 @@ Process-pool is best for CPU-bound work that does NOT release the GIL (pure Pyth
 
 ---
 
+## Round 4: Shared Memory Process Pool (2026-04-04)
+
+**Date**: 2026-04-04
+**GPU**: NVIDIA GeForce RTX 5090 (32GB VRAM, sm_120 Blackwell)
+**Triton**: 26.02 (ONNX Runtime backend, GPU mode)
+**Change**: `SharedMemory` transport replaces pickle for numpy arrays across process-pool boundaries
+**Tool**: `scripts/bench_pool.py` + isolated cross-process microbenchmark
+
+### Cross-Process Transfer Microbenchmark (4.7 MB float32 tensor, 200 iterations, 4 workers)
+
+| Method | Per-transfer time | Speedup |
+|--------|------------------|---------|
+| Pickle (standard) | **6.60 ms** | 1x |
+| SharedMemory | **1.64 ms** | **4.0x** |
+
+SharedMemory eliminates pickle serialization of large numpy arrays. Instead of serializing ~4.9 MB through the pipe, a ~100 byte `SharedArrayDescriptor` is pickled and the coordinator reconstructs the array via zero-copy mmap + memcpy.
+
+### End-to-End Pipeline (yolo11s, 640x640, 200 images, both preproc and inference as process-pool)
+
+| Preproc Workers | Inference Workers | Throughput (fps) | Avg Latency (ms) |
+|-----------------|-------------------|-----------------|------------------|
+| 1 | 1 | **51.4** | 19.5 |
+| 2 | 1 | **76.5** | 13.1 |
+| 4 | 1 | **71.9** | 13.9 |
+| 8 | 1 | **73.4** | 13.6 |
+| 1 | 4 | **97.2** | 10.3 |
+| 8 | 4 | **76.1** | 13.1 |
+
+### Key Findings
+
+1. **SharedMemory is 4x faster** for cross-process numpy transfer in isolation (6.60 ms → 1.64 ms per 4.7 MB tensor).
+2. **E2E pipeline improvement is modest** because the transfer time (~5 ms savings) is small relative to total per-image time (preprocessing + gRPC inference + GPU compute = 10-20 ms).
+3. **Round 3 recommendation unchanged**: single-thread preprocessing + thread-pool inference remains optimal for this GIL-releasing pipeline. SharedMemory benefits pure-Python CPU-bound process-pool workloads more.
+4. **SharedMemory is always-on** for process-pool nodes — transparent, no opt-in needed. For pipelines where pickle was the dominant bottleneck, this is a significant win.
+
+---
+
 ## Round 2: Dynamic Batching (2026-04-03)
 
 **Date**: 2026-04-03

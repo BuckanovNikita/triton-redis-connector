@@ -1,8 +1,6 @@
 """Tests for stream_populator module."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
+from collections.abc import Iterator
 from unittest.mock import MagicMock
 
 from pydantic import BaseModel, ConfigDict
@@ -13,9 +11,6 @@ from triton_model_tools.testing.stream_populator import (
     StreamFields,
     populate_stream,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
 
 
 def _single_field() -> StreamFields:

@@ -5,19 +5,14 @@ or their fields via ``_metrics_`` and ``Annotated``. MetricRecorder is the
 protocol implemented by MetricBuffer for recording metric data points.
 """
 
-from __future__ import annotations
-
 import re
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Protocol, Self, runtime_checkable
+from typing import Protocol, Self, runtime_checkable
 
-from pydantic_core import core_schema
-
-if TYPE_CHECKING:
-    from pydantic import GetCoreSchemaHandler
-    from pydantic_core import CoreSchema
+from pydantic import GetCoreSchemaHandler
+from pydantic_core import CoreSchema, core_schema
 
 _METRIC_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -51,17 +46,17 @@ class TimeMetric(int):
         return super().__new__(cls, int(value))
 
     @classmethod
-    def now(cls) -> TimeMetric:
+    def now(cls) -> Self:
         """Return current wall-clock time as integer milliseconds."""
         return cls(int(time.time() * 1000))
 
     @classmethod
-    def from_seconds(cls, seconds: float) -> TimeMetric:
+    def from_seconds(cls, seconds: float) -> Self:
         """Convert seconds (float) to integer milliseconds."""
         return cls(int(seconds * 1000))
 
     @classmethod
-    def from_datetime(cls, dt: datetime) -> TimeMetric:
+    def from_datetime(cls, dt: datetime) -> Self:
         """Convert a datetime to integer milliseconds since epoch."""
         return cls(int(dt.timestamp() * 1000))
 
@@ -77,7 +72,7 @@ class TimeMetric(int):
         )
 
     @classmethod
-    def _pydantic_validate(cls, value: object) -> TimeMetric:
+    def _pydantic_validate(cls, value: object) -> Self:
         if isinstance(value, datetime):
             return cls.from_datetime(value)
         if isinstance(value, (int, float)):

@@ -4,16 +4,12 @@ Runs in a background daemon thread, converting Triton stats into
 MetricEvent instances for downstream consumption.
 """
 
-from __future__ import annotations
-
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from loguru import logger
+from typed_flow.metrics.buffer import MetricBuffer
 from typed_flow.metrics.collector import MetricEvent
-
-if TYPE_CHECKING:
-    from typed_flow.metrics.buffer import MetricBuffer
 
 NANOS_PER_MS = 1_000_000
 
@@ -28,7 +24,7 @@ class TritonMetricsCollector:
 
     def __init__(
         self,
-        client: Any,  # noqa: ANN401 — tritonclient has no type stubs
+        client: Any,  # noqa: ANN401
         buffer: MetricBuffer,
         poll_interval_s: float,
     ) -> None:
@@ -77,7 +73,7 @@ class TritonMetricsCollector:
     def _poll_stats(self) -> None:
         try:
             response = self._client.get_inference_statistics()
-        except Exception:  # noqa: BLE001 — tritonclient raises undocumented exception types
+        except Exception:  # noqa: BLE001
             logger.warning("Failed to poll Triton inference statistics")
             return
 

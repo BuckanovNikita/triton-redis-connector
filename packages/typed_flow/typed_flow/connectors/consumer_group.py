@@ -4,15 +4,11 @@ Wraps Redis consumer group operations: creation and reading new messages.
 All operations use synchronous redis.Redis client.
 """
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 from loguru import logger
+from redis import Redis  # noqa: TC002
 from redis.exceptions import ResponseError
-
-if TYPE_CHECKING:
-    from redis import Redis
 
 type _StreamMessages = list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]]
 
@@ -22,7 +18,7 @@ class ConsumerGroupManager:
 
     def ensure_group_exists(
         self,
-        client: Redis[bytes],
+        client: "Redis[bytes]",
         stream: str,
         group: str,
         *,
@@ -50,7 +46,7 @@ class ConsumerGroupManager:
 
     def read_new(  # noqa: PLR0913
         self,
-        client: Redis[bytes],
+        client: "Redis[bytes]",
         stream: str,
         group: str,
         consumer: str,

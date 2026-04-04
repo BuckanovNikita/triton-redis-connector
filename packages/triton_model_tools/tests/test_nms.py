@@ -1,9 +1,7 @@
 """Tests for NMS postprocessing model generation."""
 
-from __future__ import annotations
-
 import ast
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from triton_model_tools.export.nms import (
     NMS_MODEL_NAME,
@@ -11,9 +9,6 @@ from triton_model_tools.export.nms import (
     build_nms_model_config,
     build_nms_model_directory,
 )
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class TestBuildNmsModelConfig:

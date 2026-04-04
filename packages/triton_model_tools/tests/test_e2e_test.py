@@ -1,10 +1,8 @@
 """Tests for E2E test harness."""
 
-from __future__ import annotations
-
 import argparse
 import json
-from typing import TYPE_CHECKING
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,9 +15,6 @@ from triton_model_tools.testing.e2e_test import (
     E2ETestConfig,
     _deserialize_detections,
 )
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class TestE2ETestConfig:

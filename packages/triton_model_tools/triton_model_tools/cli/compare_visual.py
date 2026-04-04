@@ -1,17 +1,13 @@
 """Visual comparison of local vs Triton detection results using FiftyOne."""
 
-from __future__ import annotations
-
+import argparse
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from loguru import logger
 
-if TYPE_CHECKING:
-    import argparse
-
-    from triton_model_tools.cli._types import SubParsers
-    from triton_model_tools.models.detection import ImageDetectionResult
+from triton_model_tools.cli._types import SubParsers
+from triton_model_tools.models.detection import ImageDetectionResult
 
 
 def build_parser(subparsers: SubParsers) -> None:

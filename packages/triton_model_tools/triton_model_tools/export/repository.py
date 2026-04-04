@@ -1,16 +1,11 @@
 """Triton model repository directory builder."""
 
-from __future__ import annotations
-
 import shutil
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from loguru import logger
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from triton_model_tools.models.registry import TritonModelConfig
+from triton_model_tools.models.registry import TritonModelConfig
 
 EXTENSION_TO_FILENAME: dict[str, str] = {
     ".onnx": "model.onnx",

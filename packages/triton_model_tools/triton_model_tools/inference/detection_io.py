@@ -6,21 +6,15 @@ Txt format: one detection per line, fields separated by spaces:
 Coordinates are absolute pixel values (not normalized).
 """
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import cv2
+import numpy as np
+import numpy.typing as npt
 from loguru import logger
 from typed_flow.protocols.metrics import TimeMetric
 
 from triton_model_tools.models.detection import Detection, ImageDetectionResult
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    import numpy as np
-    import numpy.typing as npt
 
 IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"})
 TXT_EXTENSION = ".txt"

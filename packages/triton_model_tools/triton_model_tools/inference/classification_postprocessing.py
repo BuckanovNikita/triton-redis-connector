@@ -1,17 +1,11 @@
 """Postprocessing for classification model outputs."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
 import numpy as np
+import numpy.typing as npt
 from triton_shared_models.classification import (
     ClassificationPrediction,
     DetailedClassificationPrediction,
 )
-
-if TYPE_CHECKING:
-    import numpy.typing as npt
 
 
 class ClassificationPostprocessor:

@@ -1,9 +1,7 @@
 """Tests for benchmark engine."""
 
-from __future__ import annotations
-
 import json
-from typing import TYPE_CHECKING
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -15,9 +13,6 @@ from triton_model_tools.benchmarks.benchmark import (
     run_benchmark,
 )
 from triton_model_tools.benchmarks.stats import compute_statistics
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class TestBenchmarkConfig:

@@ -1,7 +1,5 @@
 """Tests for OpenCVDecoder and TurboJPEGDecoder with real image bytes."""
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 import turbojpeg as _tjpeg

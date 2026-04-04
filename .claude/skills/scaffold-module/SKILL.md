@@ -30,7 +30,7 @@ For a new package (e.g., `triton_shared_models`):
 packages/<name>/
 ├── pyproject.toml
 ├── <name>/
-│   ├── __init__.py        # with from __future__ import annotations + docstring
+│   ├── __init__.py        # with docstring
 │   └── py.typed           # empty PEP 561 marker
 └── tests/
     └── test_placeholder.py
@@ -47,16 +47,12 @@ Follow the pattern from `packages/triton_model_tools/pyproject.toml`:
 ### 2A.3 Write __init__.py
 
 ```python
-from __future__ import annotations
-
 """<Package description>."""
 ```
 
 ### 2A.4 Write test_placeholder.py
 
 ```python
-from __future__ import annotations
-
 def test_<package>_import() -> None:
     import <package_name>  # noqa: F401, PLC0415
 ```
@@ -93,7 +89,7 @@ For a new submodule within an existing package (e.g., `connectors` in `triton_re
 
 ```
 packages/<parent>/<parent>/<submodule>/
-├── __init__.py    # with from __future__ import annotations + docstring
+├── __init__.py    # with docstring
 ```
 
 ### 2B.2 Verify import-linter contracts

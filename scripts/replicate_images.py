@@ -1,7 +1,5 @@
 """Replicate (tile) images to fill a target resolution for benchmarking."""
 
-from __future__ import annotations
-
 import argparse
 from pathlib import Path
 

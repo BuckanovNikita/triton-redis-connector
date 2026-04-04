@@ -1,18 +1,11 @@
 """Convert YOLO .pt weights to Triton format with optional local verification."""
 
-from __future__ import annotations
-
+import argparse
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from triton_model_tools.cli._types import parse_image_size
-
-if TYPE_CHECKING:
-    import argparse
-
-    from triton_model_tools.cli._types import SubParsers
+from triton_model_tools.cli._types import SubParsers, parse_image_size
 
 
 def build_parser(subparsers: SubParsers) -> None:

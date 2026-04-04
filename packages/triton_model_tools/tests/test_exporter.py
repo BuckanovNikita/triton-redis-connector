@@ -1,8 +1,7 @@
 """Tests for YOLO model export to ONNX and TensorRT with Triton repository building."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from triton_model_tools.export.exporter import (
@@ -16,9 +15,6 @@ from triton_model_tools.models import (
     ExportFormat,
     YoloModelVariant,
 )
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def _make_variant(

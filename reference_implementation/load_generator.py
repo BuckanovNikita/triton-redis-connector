@@ -9,20 +9,15 @@ Usage:
     uv run python reference_implementation/load_generator.py --rate 0 --maxlen 50000
 """
 
-from __future__ import annotations
-
 import argparse
 import math
 import signal
 import threading
 import time
-from typing import TYPE_CHECKING
+import types
 
 from loguru import logger
 from redis import Redis
-
-if TYPE_CHECKING:
-    import types
 
 STREAMS: list[str] = [
     "sensor:temperature",

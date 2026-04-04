@@ -9,14 +9,12 @@ Usage:
     PYTHONPATH=. uv run python reference_implementation/pipeline.py --config reference_implementation/config.yaml
 """
 
-from __future__ import annotations
-
 import argparse
 import random
 import signal
 import sys
+import types
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import yaml
 from loguru import logger
@@ -39,9 +37,6 @@ from reference_implementation.models import (
     TemperatureReading,
     WindReading,
 )
-
-if TYPE_CHECKING:
-    import types
 
 
 class TemperatureSource(RedisThreadSource[TemperatureReading]):

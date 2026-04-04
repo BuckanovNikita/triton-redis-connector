@@ -1,7 +1,5 @@
 """Tests for ConsumerGroupManager with mocked Redis client."""
 
-from __future__ import annotations
-
 from unittest.mock import MagicMock
 
 import pytest

@@ -3,13 +3,11 @@
 These errors flow through the pipeline graph as events, never raised.
 """
 
-from __future__ import annotations
-
 from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict
 from typed_flow.protocols import Counter
-from typed_flow.protocols.metrics import TimeMetric  # noqa: TC002
+from typed_flow.protocols.metrics import TimeMetric
 
 
 class InferenceError(BaseModel):

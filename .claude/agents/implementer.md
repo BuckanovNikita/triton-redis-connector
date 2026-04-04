@@ -44,7 +44,7 @@ Run `uv run pre-commit run --all-files` manually to verify all checks pass early
 - **No dynamic access**: avoid `getattr`/`hasattr`/`__dict__`
 - **Avoid too-short functions**: inline functions under 4 lines if used fewer than 4 times
 - **Avoid comments**: improve names and code structure instead
-- **Imports**: use `from __future__ import annotations` in every module
+- **Imports**: never use `from __future__ import annotations` (Python 3.12 doesn't need it; breaks Pydantic). Use string quotes for forward refs like `"Redis[bytes]"`
 
 ---
 
@@ -174,7 +174,6 @@ User processors inherit from base classes in `protocols.py` to declare their var
 Base classes provide `__call__` with built-in metrics/error handling. Users override `process()`.
 
 ```python
-from __future__ import annotations
 from triton_redis_connector.protocols import BaseThreadProcessor
 
 class MyProcessor(BaseThreadProcessor[InputEvent, OutputEvent]):
@@ -200,7 +199,6 @@ This approach is retained for backward compatibility and advanced scenarios wher
 control over wrapping is needed.
 
 ```python
-from __future__ import annotations
 
 class ImagePreprocessor:
     def __init__(self, target_size: tuple[int, int]) -> None:
@@ -271,7 +269,6 @@ Framework sets/resets context before/after dispatch. Envelope is framework-inter
 `InferenceWorker` is pure `__call__` — no retry, no semaphore, no threading:
 
 ```python
-from __future__ import annotations
 
 class InferenceWorker:
     def __init__(self, model_name: str, triton_url: str) -> None:
@@ -295,7 +292,6 @@ By default, pool variant instances have isolated state. For shared state, use
 the factory pattern:
 
 ```python
-from __future__ import annotations
 from dataclasses import dataclass
 import numpy.typing as npt
 import numpy as np
@@ -356,7 +352,6 @@ The main loop has three responsibilities:
    are alive. On crash: logs error, restarts the variant, re-wires queues.
 
 ```python
-from __future__ import annotations
 
 class MainLoop:
     def run(self) -> None:
@@ -390,7 +385,6 @@ class MainLoop:
 No primitive raises exceptions during normal operation. Errors become typed events:
 
 ```python
-from __future__ import annotations
 from pydantic import BaseModel
 
 class DecodeError(BaseModel):
@@ -646,8 +640,8 @@ request = InferenceRequest.model_validate(message_fields)
 
 - Pydantic v2 uses `model_config = ConfigDict(...)` NOT `class Config:`.
 - `model_dump()` replaces `.dict()`. `model_validate()` replaces `.parse_obj()`.
-- `from __future__ import annotations` works with pydantic v2 but requires
-  `model_rebuild()` if you use forward references in complex cases.
+- Never use `from __future__ import annotations` — it defers annotation evaluation which
+  breaks Pydantic runtime field resolution. Use string quotes for forward references instead.
 - For strict typing: use `ConfigDict(strict=True)` to disable coercion.
 
 ---
@@ -655,7 +649,6 @@ request = InferenceRequest.model_validate(message_fields)
 ## numpy Typing Patterns
 
 ```python
-from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
@@ -700,7 +693,6 @@ Gotchas:
 ## TYPE_CHECKING Import Pattern
 
 ```python
-from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -800,7 +792,6 @@ with ProcessPoolExecutor(max_workers=4) as pool:
 ### Provider Definition
 
 ```python
-from __future__ import annotations
 
 from dishka import Provider, Scope, provide
 
@@ -856,7 +847,6 @@ Each `ProcessPoolProcessor` worker creates a fresh container. The factory captur
 only picklable config (pydantic models):
 
 ```python
-from __future__ import annotations
 
 from dishka import Provider, make_container, provide
 

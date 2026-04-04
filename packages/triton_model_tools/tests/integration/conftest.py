@@ -1,16 +1,10 @@
 """Fixtures for Triton config validation integration tests."""
 
-from __future__ import annotations
-
 import os
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    import tritonclient.grpc as grpcclient
+import tritonclient.grpc as grpcclient
 
 
 @pytest.fixture(scope="session")

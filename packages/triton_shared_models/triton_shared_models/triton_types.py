@@ -1,7 +1,5 @@
 """Triton Inference Server data types and tensor specifications."""
 
-from __future__ import annotations
-
 from enum import StrEnum
 
 from pydantic import BaseModel

@@ -4,22 +4,17 @@ Provides convenient functions for detection, classification, and model compariso
 without needing to know internal module structure.
 """
 
-from __future__ import annotations
+from pathlib import Path
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from triton_model_tools.benchmarks.comparison import (
-        ClassificationComparisonSummary,
-        ComparisonSummary,
-    )
-    from triton_model_tools.models.classification import ImageClassificationResult
-    from triton_model_tools.models.detection import (
-        FolderInferenceResult,
-        ImageDetectionResult,
-    )
+from triton_model_tools.benchmarks.comparison import (
+    ClassificationComparisonSummary,
+    ComparisonSummary,
+)
+from triton_model_tools.models.classification import ImageClassificationResult
+from triton_model_tools.models.detection import (
+    FolderInferenceResult,
+    ImageDetectionResult,
+)
 
 
 def run_detection(  # noqa: PLR0913

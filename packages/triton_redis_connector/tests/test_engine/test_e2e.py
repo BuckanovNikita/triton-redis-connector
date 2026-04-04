@@ -5,12 +5,11 @@ Task 5.4: Error event creation and properties (partial, no Docker needed).
 Task 5.1/5.2: Full pipeline smoke test (requires Redis + Triton).
 """
 
-from __future__ import annotations
-
 import threading
 import time
 import uuid
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -23,10 +22,6 @@ from typed_flow.protocols import (
     BaseThreadSink,
     BaseThreadSource,
 )
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
 
 # ---------------------------------------------------------------------------
 # Shared test types

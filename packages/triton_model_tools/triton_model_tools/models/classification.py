@@ -1,7 +1,5 @@
 """Pydantic models for classification results."""
 
-from __future__ import annotations
-
 from pydantic import BaseModel, ConfigDict, Field
 from triton_shared_models.classification import ClassificationPrediction
 from typed_flow.protocols.metrics import TimeMetric

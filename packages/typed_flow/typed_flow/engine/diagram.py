@@ -5,16 +5,9 @@ sources, processors, sinks, and event type edges between them.
 Error and metric edges are excluded to keep the diagram readable.
 """
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-from typed_flow.engine.registry import SINK_VARIANTS, SOURCE_VARIANTS
+from typed_flow.engine.registry import SINK_VARIANTS, SOURCE_VARIANTS, PipelineRegistry
 from typed_flow.errors.models import PipelineError
 from typed_flow.metrics.collector import MetricEvent
-
-if TYPE_CHECKING:
-    from typed_flow.engine.registry import PipelineRegistry
 
 
 def _is_excluded_type(t: type) -> bool:

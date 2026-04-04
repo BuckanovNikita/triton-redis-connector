@@ -1,10 +1,10 @@
 """DALI preprocessing pipeline and ensemble config generation for Triton."""
 
-from __future__ import annotations
-
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+import numpy as np
+import numpy.typing as npt
 from jinja2 import Environment, FileSystemLoader
 from loguru import logger
 from pydantic import BaseModel
@@ -17,10 +17,6 @@ from triton_model_tools.models import (
     TritonModelConfig,
     TritonTensorSpec,
 )
-
-if TYPE_CHECKING:
-    import numpy as np
-    import numpy.typing as npt
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 _JINJA_ENV = Environment(

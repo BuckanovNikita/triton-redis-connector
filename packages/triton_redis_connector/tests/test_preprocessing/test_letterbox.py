@@ -1,7 +1,5 @@
 """Tests for LetterBoxPreprocessor: shape, dtype, padding, aspect ratio."""
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 from triton_shared_models.preprocessing import (
