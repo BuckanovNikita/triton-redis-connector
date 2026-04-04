@@ -195,10 +195,11 @@ class BaseProcessPoolProcessor[TIn, TOut]:
     also be picklable.  Does NOT preserve event ordering.
     """
 
-    def __init__(self, num_workers: int = 8) -> None:
-        """Initialize with worker count and stop event."""
+    def __init__(self, num_workers: int = 8, *, use_shm: bool = True) -> None:
+        """Initialize with worker count, stop event, and shared memory toggle."""
         self.stop = threading.Event()
         self.num_workers = num_workers
+        self.use_shm = use_shm
 
     def __getstate__(self) -> dict[str, object]:
         """Exclude unpicklable stop event for process-pool serialization."""

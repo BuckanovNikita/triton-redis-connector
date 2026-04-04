@@ -4,38 +4,25 @@ redis:
   db: 0
 
 sources:
-  - stream_name: "sensor:temperature"
-    consumer_group: "merger-group"
-    event_model: "TemperatureReading"
+  - stream_name: "camera:input"
+    consumer_group: "cv-pipeline"
+    event_model: "CameraEvent"
     batch_size: 1
     block_ms: 0
 
-  - stream_name: "sensor:humidity"
-    consumer_group: "merger-group"
-    event_model: "HumidityReading"
-    batch_size: 100
-    block_ms: 0
-
-  - stream_name: "sensor:pressure"
-    consumer_group: "merger-group"
-    event_model: "PressureReading"
-    batch_size: 100
-    block_ms: 0
-
-  - stream_name: "sensor:wind"
-    consumer_group: "merger-group"
-    event_model: "WindReading"
-    batch_size: 100
-    block_ms: 0
-
 sinks:
-  - stream_name: "sensor:enriched"
+  - stream_name: "results:detection"
+    maxlen: 100000
+    approximate_maxlen: true
+    block_ms: 0
+
+  - stream_name: "results:classification"
     maxlen: 100000
     approximate_maxlen: true
     block_ms: 0
 
 metrics:
-  output_stream: "metrics:reference"
+  output_stream: "metrics:cv-pipeline"
   emit_interval_s: 60.0
   stats_log_interval_s: 5.0
 

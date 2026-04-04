@@ -52,11 +52,12 @@ class ClientPreprocessorNode[TIn: ImagePayload](
         model_name: str,
         *,
         num_workers: int = 8,
+        use_shm: bool = True,
         input_name: str = "images",
         output_names: tuple[str, ...] = ("output0",),
     ) -> None:
         """Initialize preprocessor with picklable config for process-pool."""
-        super().__init__(num_workers=num_workers)
+        super().__init__(num_workers=num_workers, use_shm=use_shm)
         self._decoder_type = decoder_type
         self._target_size = target_size
         self._model_name = model_name
@@ -125,6 +126,96 @@ class ClientPreprocessorNode[TIn: ImagePayload](
         )
 
 
+class ClassificationPreprocessorNode[TIn: ImagePayload](
+    BaseProcessPoolProcessor[TIn, TritonRequest | PreprocessingError],
+):
+    """Client-side preprocessor for classification models.
+
+    Uses CenterCropPreprocessor (ImageNet-style) instead of LetterBox.
+    Returns TritonRequest with preprocessed NCHW tensor.
+    """
+
+    def __init__(  # noqa: PLR0913
+        self,
+        decoder_type: DecoderType,
+        crop_size: int,
+        model_name: str,
+        *,
+        num_workers: int = 8,
+        use_shm: bool = True,
+        input_name: str = "images",
+        output_names: tuple[str, ...] = ("output0",),
+    ) -> None:
+        """Initialize classification preprocessor with picklable config."""
+        super().__init__(num_workers=num_workers, use_shm=use_shm)
+        self._decoder_type = decoder_type
+        self._crop_size = crop_size
+        self._model_name = model_name
+        self._input_name = input_name
+        self._output_names = tuple(output_names)
+        self._decoder: ImageDecoderProtocol | None = None
+        self._preprocessor: object | None = None
+
+    def _ensure_initialized(self) -> tuple[ImageDecoderProtocol, object]:
+        if self._decoder is None or self._preprocessor is None:
+            from triton_shared_models.classification.preprocessing import CenterCropPreprocessor  # noqa: PLC0415
+
+            self._decoder = create_decoder(self._decoder_type)
+            self._preprocessor = CenterCropPreprocessor(crop_size=self._crop_size)
+        return self._decoder, self._preprocessor
+
+    def __call__(self, event: TIn) -> TritonRequest | PreprocessingError | None:
+        """Read image, preprocess with center crop, and produce TritonRequest."""
+        decoder, preprocessor = self._ensure_initialized()
+
+        raw_bytes: bytes
+        if event.image_bytes is not None:
+            raw_bytes = event.image_bytes
+        elif event.image_path:
+            try:
+                raw_bytes = Path(event.image_path).read_bytes()
+            except (FileNotFoundError, PermissionError, OSError) as exc:
+                return PreprocessingError(
+                    message_id=event.flow_meta.message_id,
+                    decoder_type="filesystem",
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                    timestamp_ms=TimeMetric.now(),
+                )
+        else:
+            return None
+
+        try:
+            decoded = decoder.decode(raw_bytes)
+        except ValueError as exc:
+            return PreprocessingError(
+                message_id=event.flow_meta.message_id,
+                decoder_type="decode",
+                error_type="DecodeError",
+                error_message=str(exc),
+                timestamp_ms=TimeMetric.now(),
+            )
+
+        tensor = preprocessor.preprocess(decoded)  # type: ignore[attr-defined]
+
+        model = self._model_name
+        version = ""
+        if isinstance(event, InferenceTarget):
+            if event.target_model:
+                model = event.target_model
+            if event.target_model_version:
+                version = event.target_model_version
+
+        return TritonRequest(
+            flow_meta=event.flow_meta,
+            model_name=model,
+            model_version=version,
+            raw_image=tensor,
+            input_name=self._input_name,
+            output_names=self._output_names,
+        )
+
+
 class InferenceNode(
     BaseThreadProcessor[TritonRequest, InferenceOutput | InferenceError],
 ):
@@ -145,7 +236,8 @@ class InferenceNode(
         start = time.monotonic()
 
         if event.raw_image is not None:
-            input_tensor = self._grpcclient.InferInput(event.input_name, event.raw_image.shape, "FP32")
+            dtype_str = "FP16" if event.raw_image.dtype == np.float16 else "FP32"
+            input_tensor = self._grpcclient.InferInput(event.input_name, event.raw_image.shape, dtype_str)
             input_tensor.set_data_from_numpy(event.raw_image)
         elif event.image_bytes is not None:
             data = np.frombuffer(event.image_bytes, dtype=np.uint8)

@@ -122,6 +122,14 @@ def unpack_arrays_from_shm(obj: object) -> object:
     return type(obj).model_construct(**all_fields)
 
 
+def call_plain(processor: object, event: object) -> object | None:
+    """Call processor without shared memory packing.
+
+    Module-level function (picklable for ProcessPoolExecutor).
+    """
+    return processor(event)  # type: ignore[operator,no-any-return]
+
+
 def call_and_pack_shm(processor: object, event: object) -> object | None:
     """Call processor and pack result arrays into shared memory.
 

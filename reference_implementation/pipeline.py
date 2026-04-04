@@ -1,8 +1,9 @@
-"""Multi-source enrichment pipeline: 4 sensor streams -> 1 enriched output.
+"""CV inference pipeline: camera events → 4 models → detection/classification results.
 
-Reads four different event types from four Redis streams, enriches each
-with random fields, and writes to a single output stream via a union sink.
-Demonstrates typed-flow's type-based routing with multiple sources and metrics.
+Routes camera events by cam_id to model-specific processing branches:
+  - Cams 1-2 → Model 1 (640x640 TurboJPEG detection) + Model 3 (640x640 classification)
+  - Cams 3-4 → Model 2 (608x960 FP16 OpenCV detection)
+  - Cams 5-6 → Model 4 (1024x1024 TurboJPEG detection with shared memory)
 
 Usage:
     PYTHONPATH=. uv run python reference_implementation/pipeline.py
@@ -10,7 +11,6 @@ Usage:
 """
 
 import argparse
-import random
 import signal
 import sys
 import types
@@ -18,113 +18,55 @@ from pathlib import Path
 
 import yaml
 from loguru import logger
+from triton_redis_connector.engine.events import ClassificationResult, DetectionResult
+from triton_redis_connector.engine.shipped_processors import LogErrorSinkNode
 from typed_flow.config.schema import AppConfig
 from typed_flow.connectors import RedisThreadSink, RedisThreadSource
 from typed_flow.engine.app import Application
 from typed_flow.errors.models import PipelineError
-from typed_flow.protocols import BaseThreadProcessor, BaseThreadSink
-from typed_flow.protocols.metrics import TimeMetric
+from typed_flow.protocols import BaseThreadSink
 
-from reference_implementation.models import (
-    EnrichedHumidity,
-    EnrichedPressure,
-    EnrichedReading,
-    EnrichedTemperature,
-    EnrichedWind,
-    HumidityReading,
-    PressureReading,
-    SensorReading,
-    TemperatureReading,
-    WindReading,
+from reference_implementation.models import CameraEvent
+from reference_implementation.processors import (
+    CameraRouterProcessor,
+    Model1InferenceNode,
+    Model1PostProc,
+    Model1Preprocessor,
+    Model2InferenceNode,
+    Model2PostProc,
+    Model2Preprocessor,
+    Model3InferenceNode,
+    Model3PostProc,
+    Model3Preprocessor,
+    Model4InferenceNode,
+    Model4PostProc,
+    Model4Preprocessor,
 )
 
-
-class TemperatureSource(RedisThreadSource[TemperatureReading]):
-    """Reads TemperatureReading from its Redis stream."""
-
-
-class HumiditySource(RedisThreadSource[HumidityReading]):
-    """Reads HumidityReading from its Redis stream."""
+GRPC_URL = "localhost:8001"
+MODEL1_NAME = "yolo_640"
+MODEL2_NAME = "yolo_608x960"
+MODEL3_NAME = "cls_640"
+MODEL4_NAME = "yolo_1024"
 
 
-class PressureSource(RedisThreadSource[PressureReading]):
-    """Reads PressureReading from its Redis stream."""
+class CameraSource(RedisThreadSource[CameraEvent]):
+    """Reads CameraEvent from Redis stream."""
 
 
-class WindSource(RedisThreadSource[WindReading]):
-    """Reads WindReading from its Redis stream."""
+class DetectionSink(RedisThreadSink[DetectionResult]):
+    """Writes detection results to Redis stream."""
 
 
-class EnrichedSink(RedisThreadSink[EnrichedReading]):
-    """Writes enriched events to the output Redis stream."""
-
-
-class EnrichProcessor(
-    BaseThreadProcessor[SensorReading, EnrichedReading],
-):
-    """Enriches any sensor reading with random fields."""
-
-    def __call__(self, event: SensorReading) -> EnrichedReading:  # noqa: D102
-        now = TimeMetric.now()
-        score = random.random()  # noqa: S311
-
-        match event:
-            case TemperatureReading():
-                return EnrichedTemperature(
-                    flow_meta=event.flow_meta,
-                    sensor_id=event.sensor_id,
-                    celsius=event.celsius,
-                    location=event.location,
-                    sensor_source="temperature",
-                    random_score=score,
-                    processed_at=now,
-                )
-            case HumidityReading():
-                return EnrichedHumidity(
-                    flow_meta=event.flow_meta,
-                    sensor_id=event.sensor_id,
-                    humidity_pct=event.humidity_pct,
-                    zone=event.zone,
-                    sensor_source="humidity",
-                    random_score=score,
-                    processed_at=now,
-                )
-            case PressureReading():
-                return EnrichedPressure(
-                    flow_meta=event.flow_meta,
-                    sensor_id=event.sensor_id,
-                    hpa=event.hpa,
-                    altitude_m=event.altitude_m,
-                    sensor_source="pressure",
-                    random_score=score,
-                    processed_at=now,
-                )
-            case WindReading():
-                return EnrichedWind(
-                    flow_meta=event.flow_meta,
-                    sensor_id=event.sensor_id,
-                    speed_mps=event.speed_mps,
-                    direction_deg=event.direction_deg,
-                    gust_mps=event.gust_mps,
-                    sensor_source="wind",
-                    random_score=score,
-                    processed_at=now,
-                )
+class ClassificationSink(RedisThreadSink[ClassificationResult]):
+    """Writes classification results to Redis stream."""
 
 
 class ErrorSink(BaseThreadSink[PipelineError]):
-    """Logs all pipeline errors (connector, processing, etc.)."""
+    """Logs pipeline errors."""
 
     def __call__(self, event: PipelineError) -> None:  # noqa: D102
         logger.error("[{}] {}: {}", event.node_name, event.error_type, event.error_message)
-
-
-SOURCE_CLASSES: list[type[RedisThreadSource]] = [  # type: ignore[type-arg]
-    TemperatureSource,
-    HumiditySource,
-    PressureSource,
-    WindSource,
-]
 
 
 def load_config(path: str) -> AppConfig:
@@ -134,38 +76,46 @@ def load_config(path: str) -> AppConfig:
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse CLI arguments for the enrichment pipeline."""
-    parser = argparse.ArgumentParser(description="Multi-source enrichment pipeline")
-    parser.add_argument(
-        "--config",
-        default="reference_implementation/config.yaml",
-    )
+    """Parse CLI arguments for the CV pipeline."""
+    parser = argparse.ArgumentParser(description="CV inference pipeline")
+    parser.add_argument("--config", default="reference_implementation/config.yaml")
+    parser.add_argument("--grpc-url", default=GRPC_URL)
     return parser.parse_args()
 
 
 def main() -> None:
-    """Build and run the multi-source enrichment pipeline from YAML config."""
+    """Build and run the CV inference pipeline."""
     args = parse_args()
     config = load_config(args.config)
+    grpc_url: str = args.grpc_url
     redis_cfg = config.redis
 
-    expected_sources = 4
-    if len(config.sources) != expected_sources:
-        logger.error("Expected {} source configs, got {}", expected_sources, len(config.sources))
-        sys.exit(1)
+    source_cfg = config.sources[0]
+    source = CameraSource(redis=redis_cfg, source=source_cfg, name="camera_source")
 
-    sources = [
-        cls(redis=redis_cfg, source=src_cfg, name=f"source_{src_cfg.stream_name}")
-        for cls, src_cfg in zip(SOURCE_CLASSES, config.sources, strict=True)
-    ]
-
-    sink_cfg = config.sinks[0]
-    sink = EnrichedSink(redis=redis_cfg, sink=sink_cfg, name="enriched_sink")
+    det_sink_cfg = config.sinks[0]
+    cls_sink_cfg = config.sinks[1]
+    det_sink = DetectionSink(redis=redis_cfg, sink=det_sink_cfg, name="detection_sink")
+    cls_sink = ClassificationSink(redis=redis_cfg, sink=cls_sink_cfg, name="classification_sink")
 
     processors: list[object] = [
-        *sources,
-        EnrichProcessor(),
-        sink,
+        source,
+        CameraRouterProcessor(),
+        Model1Preprocessor(model_name=MODEL1_NAME),
+        Model2Preprocessor(model_name=MODEL2_NAME),
+        Model3Preprocessor(model_name=MODEL3_NAME),
+        Model4Preprocessor(model_name=MODEL4_NAME),
+        Model1InferenceNode(grpc_url),
+        Model2InferenceNode(grpc_url),
+        Model3InferenceNode(grpc_url),
+        Model4InferenceNode(grpc_url),
+        Model1PostProc(),
+        Model2PostProc(),
+        Model3PostProc(),
+        Model4PostProc(),
+        det_sink,
+        cls_sink,
+        LogErrorSinkNode(),
         ErrorSink(),
     ]
 
@@ -185,8 +135,16 @@ def main() -> None:
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
 
-    stream_names = [s.stream_name for s in config.sources]
-    logger.info("Enrichment pipeline: {} -> {}", stream_names, sink_cfg.stream_name)
+    logger.info(
+        "CV pipeline: {} → [{}, {}, {}, {}] → [{}, {}]",
+        source_cfg.stream_name,
+        MODEL1_NAME,
+        MODEL2_NAME,
+        MODEL3_NAME,
+        MODEL4_NAME,
+        det_sink_cfg.stream_name,
+        cls_sink_cfg.stream_name,
+    )
 
     try:
         app.run()

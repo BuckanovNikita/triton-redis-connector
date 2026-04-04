@@ -31,7 +31,7 @@ from typed_flow.engine.registry import (
     GraphNode,
     PipelineRegistry,
 )
-from typed_flow.engine.shared_memory import call_and_pack_shm, unpack_arrays_from_shm
+from typed_flow.engine.shared_memory import call_and_pack_shm, call_plain, unpack_arrays_from_shm
 from typed_flow.engine.validation import validate_graph
 from typed_flow.errors.models import make_processing_error
 from typed_flow.metrics.buffer import MetricBuffer
@@ -452,7 +452,8 @@ class Application:
                     if event is None:
                         break
                     t0 = time.perf_counter()
-                    future = executor.submit(call_and_pack_shm, node.instance, event)
+                    submit_fn = call_and_pack_shm if getattr(node.instance, "use_shm", True) else call_plain
+                    future = executor.submit(submit_fn, node.instance, event)
                     pending[future] = (event, t0)
 
                 if not pending:
@@ -489,7 +490,8 @@ class Application:
                 self._emit_processing_error(node, exc, original_event)
                 continue
             if result is not None:
-                result = unpack_arrays_from_shm(result)
+                if getattr(node.instance, "use_shm", True):
+                    result = unpack_arrays_from_shm(result)
                 if recorder is not None:
                     extract_and_record_metrics(result, recorder, node.name, elapsed_ms)
                 if stats is not None:

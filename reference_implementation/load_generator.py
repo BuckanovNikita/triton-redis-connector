@@ -1,87 +1,76 @@
-"""Load generator: continuously pushes sensor events to 4 Redis streams.
+"""Camera image load generator: pushes camera events to Redis stream.
 
-Standalone script using raw redis-py. No typed-flow dependency.
-Uses Redis pipelining in batches for high throughput.
-Runs until SIGINT/SIGTERM, respecting an optional max rate.
+Reads JPEG images from a directory and cycles through cam_ids 1-6.
+Cams 1-4 send image_path (filesystem), cams 5-6 send image_bytes (in-memory).
 
 Usage:
-    uv run python reference_implementation/load_generator.py --rate 5000
-    uv run python reference_implementation/load_generator.py --rate 0 --maxlen 50000
+    uv run python reference_implementation/load_generator.py --images-dir /path/to/images
+    uv run python reference_implementation/load_generator.py --images-dir /path/to/images --rate 100
 """
 
 import argparse
-import math
+import itertools
 import signal
 import threading
 import time
 import types
+from pathlib import Path
 
 from loguru import logger
 from redis import Redis
 
-STREAMS: list[str] = [
-    "sensor:temperature",
-    "sensor:humidity",
-    "sensor:pressure",
-    "sensor:wind",
-]
-
-LOCATIONS = ["roof", "basement", "lab-A", "lab-B", "outdoor"]
-ZONES = ["north", "south", "east", "west", "center"]
+STREAM = "camera:input"
 DEFAULT_MAXLEN = 100_000
-PIPELINE_BATCH = 500
+PIPELINE_BATCH = 100
 STATS_INTERVAL_S = 10.0
-
-
-def _temperature_fields(i: int) -> dict[str, str]:
-    return {
-        "sensor_id": f"temp-{i % 10}",
-        "celsius": f"{20.0 + 10.0 * math.sin(i / 50.0):.2f}",
-        "location": LOCATIONS[i % len(LOCATIONS)],
-    }
-
-
-def _humidity_fields(i: int) -> dict[str, str]:
-    return {
-        "sensor_id": f"hum-{i % 8}",
-        "humidity_pct": f"{40.0 + 30.0 * math.cos(i / 40.0):.2f}",
-        "zone": ZONES[i % len(ZONES)],
-    }
-
-
-def _pressure_fields(i: int) -> dict[str, str]:
-    return {
-        "sensor_id": f"press-{i % 6}",
-        "hpa": f"{1013.25 + 5.0 * math.sin(i / 100.0):.2f}",
-        "altitude_m": f"{100.0 + (i % 5) * 50.0:.1f}",
-    }
-
-
-def _wind_fields(i: int) -> dict[str, str]:
-    return {
-        "sensor_id": f"wind-{i % 4}",
-        "speed_mps": f"{0.5 + (i * 7.3 % 24.5):.2f}",
-        "direction_deg": str(i * 37 % 360),
-        "gust_mps": f"{1.0 + (i * 11.7 % 34.0):.2f}",
-    }
-
-
-FIELD_BUILDERS = [_temperature_fields, _humidity_fields, _pressure_fields, _wind_fields]
+NUM_CAMS = 6
+PATH_CAMS = {1, 2, 3, 4}
+BYTES_CAMS = {5, 6}
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse CLI arguments for the load generator."""
-    parser = argparse.ArgumentParser(description="Continuous multi-stream sensor load generator")
-    parser.add_argument("--rate", type=float, default=0.0, help="Max events/sec total, 0=unlimited")
+    """Parse CLI arguments for the camera load generator."""
+    parser = argparse.ArgumentParser(description="Camera image load generator for CV pipeline")
+    parser.add_argument("--images-dir", required=True, help="Directory with JPEG images")
+    parser.add_argument("--stream", default=STREAM, help="Redis stream name")
+    parser.add_argument("--rate", type=float, default=0.0, help="Max events/sec, 0=unlimited")
     parser.add_argument("--batch", type=int, default=PIPELINE_BATCH, help="Redis pipeline batch size")
-    parser.add_argument("--maxlen", type=int, default=DEFAULT_MAXLEN, help="Max stream length per stream")
+    parser.add_argument("--maxlen", type=int, default=DEFAULT_MAXLEN, help="Max stream length")
     parser.add_argument("--redis-host", default="localhost")
     parser.add_argument("--redis-port", type=int, default=6379)
     return parser.parse_args()
 
 
+def _collect_images(images_dir: str) -> list[Path]:
+    """Collect JPEG/PNG image paths from a directory."""
+    path = Path(images_dir)
+    if not path.is_dir():
+        msg = f"Images directory does not exist: {images_dir}"
+        raise FileNotFoundError(msg)
+    extensions = {".jpg", ".jpeg", ".png", ".webp"}
+    images = sorted(p for p in path.iterdir() if p.suffix.lower() in extensions)
+    if not images:
+        msg = f"No images found in {images_dir}"
+        raise FileNotFoundError(msg)
+    return images
+
+
+def _build_event(image_path: Path, cam_id: int) -> dict[str, str | bytes]:
+    """Build a Redis stream event dict for a camera image."""
+    fields: dict[str, str | bytes] = {
+        "cam_id": str(cam_id),
+    }
+    if cam_id in BYTES_CAMS:
+        fields["image_bytes"] = image_path.read_bytes()
+        fields["image_path"] = ""
+    else:
+        fields["image_path"] = str(image_path.resolve())
+        fields["image_bytes"] = b""
+    return fields
+
+
 def run_generator(args: argparse.Namespace) -> None:
-    """Continuously push events to all 4 sensor Redis streams until shutdown."""
+    """Continuously push camera events to Redis stream until shutdown."""
     client: Redis[bytes] = Redis(
         host=args.redis_host,
         port=args.redis_port,
@@ -89,17 +78,19 @@ def run_generator(args: argparse.Namespace) -> None:
         decode_responses=False,
     )
     client.ping()
+    client.delete(args.stream)
 
-    for stream in STREAMS:
-        client.delete(stream)
-    logger.info("Cleared all input streams")
+    images = _collect_images(args.images_dir)
+    image_cycle = itertools.cycle(images)
+    cam_cycle = itertools.cycle(range(1, NUM_CAMS + 1))
 
     rate_desc = f"{args.rate:.0f} events/sec" if args.rate > 0 else "unlimited"
     logger.info(
-        "Connected to Redis at {}:{}. Generating to {} (rate={}, maxlen={}, batch={})",
+        "Connected to Redis at {}:{}. Generating to {} ({} images, rate={}, maxlen={}, batch={})",
         args.redis_host,
         args.redis_port,
-        STREAMS,
+        args.stream,
+        len(images),
         rate_desc,
         args.maxlen,
         args.batch,
@@ -114,24 +105,23 @@ def run_generator(args: argparse.Namespace) -> None:
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
-    events_per_batch = args.batch * len(STREAMS)
-    target_batch_time = events_per_batch / args.rate if args.rate > 0 else 0.0
+    target_batch_time = args.batch / args.rate if args.rate > 0 else 0.0
 
     start = time.monotonic()
     total_pushed = 0
-    seq = 0
     prev_stats_time = start
     prev_stats_count = 0
 
     while not shutdown.is_set():
         batch_start = time.monotonic()
         pipe = client.pipeline(transaction=False)
-        for i in range(seq, seq + args.batch):
-            for stream, builder in zip(STREAMS, FIELD_BUILDERS, strict=True):
-                pipe.xadd(stream, builder(i), maxlen=args.maxlen, approximate=True)
+        for _ in range(args.batch):
+            image = next(image_cycle)
+            cam_id = next(cam_cycle)
+            fields = _build_event(image, cam_id)
+            pipe.xadd(args.stream, fields, maxlen=args.maxlen, approximate=True)
         pipe.execute()
-        seq += args.batch
-        total_pushed += events_per_batch
+        total_pushed += args.batch
 
         now = time.monotonic()
         if now - prev_stats_time >= STATS_INTERVAL_S:
@@ -155,9 +145,8 @@ def run_generator(args: argparse.Namespace) -> None:
     total_elapsed = time.monotonic() - start
     actual_rate = total_pushed / total_elapsed if total_elapsed > 0 else 0.0
     logger.info(
-        "Stopped: {} events across {} streams in {:.2f}s ({:.0f} events/sec)",
+        "Stopped: {} events in {:.2f}s ({:.0f} events/sec)",
         total_pushed,
-        len(STREAMS),
         total_elapsed,
         actual_rate,
     )
@@ -165,7 +154,7 @@ def run_generator(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    """Entry point for the load generator."""
+    """Entry point for the camera load generator."""
     args = parse_args()
     run_generator(args)
 

@@ -1,109 +1,150 @@
-"""Pydantic event models for the multi-source enrichment pipeline.
+"""Event models for the CV inference pipeline.
 
-Four distinct sensor event types are enriched by the processor into
-four corresponding enriched types, preserving domain-specific fields.
+Camera events are read from Redis, routed by cam_id to typed per-model
+events, processed through model-specific preprocessors and inference,
+and written as detection/classification results.
 """
 
-from typing import Annotated, ClassVar
+from typing import ClassVar
 
-from typed_flow.protocols import Counter, Gauge, GroupBy
+from pydantic import ConfigDict
+from triton_redis_connector.engine.events import (
+    ClassificationResult,
+    DetectionResult,
+    ImagePayload,
+    TritonRequest,
+)
+from triton_redis_connector.inference.request import InferenceOutput
+from typed_flow.protocols import Counter
 from typed_flow.protocols.messaging import BaseEvent
-from typed_flow.protocols.metrics import TimeMetric
 
 
-class TemperatureReading(BaseEvent):
-    """Temperature sensor event with Celsius value and sensor location."""
+class CameraEvent(BaseEvent):
+    """Raw camera event from Redis stream."""
 
-    _metrics_: ClassVar[list[Counter]] = [Counter("temperature_received")]
+    _metrics_: ClassVar[list[Counter]] = [Counter("camera_events_received")]
 
-    sensor_id: str
-    celsius: float
-    location: str
-
-
-class HumidityReading(BaseEvent):
-    """Humidity sensor event with relative humidity percentage."""
-
-    _metrics_: ClassVar[list[Counter]] = [Counter("humidity_received")]
-
-    sensor_id: str
-    humidity_pct: float
-    zone: str
+    cam_id: int
+    image_path: str = ""
+    image_bytes: bytes | None = None
 
 
-class PressureReading(BaseEvent):
-    """Atmospheric pressure sensor event in hectopascals."""
+class DetModel1Event(ImagePayload):
+    """640x640 TurboJPEG detection event (cams 1-2)."""
 
-    _metrics_: ClassVar[list[Counter]] = [Counter("pressure_received")]
-
-    sensor_id: str
-    hpa: float
-    altitude_m: float
+    cam_id: int
 
 
-class WindReading(BaseEvent):
-    """Wind sensor event with speed and direction."""
+class ClassModel3Event(ImagePayload):
+    """640x640 classification event (cams 1-2)."""
 
-    _metrics_: ClassVar[list[Counter]] = [Counter("wind_received")]
-
-    sensor_id: str
-    speed_mps: float
-    direction_deg: int
-    gust_mps: float
+    cam_id: int
 
 
-class EnrichedTemperature(BaseEvent):
-    """Enriched temperature reading with random score and processing timestamp."""
+class DetModel2Event(ImagePayload):
+    """608x960 FP16 OpenCV detection event (cams 3-4)."""
 
-    _metrics_: ClassVar[list[Counter]] = [Counter("enriched_events")]
-
-    sensor_id: str
-    celsius: Annotated[float, Gauge("sensor_celsius")]
-    location: str
-    sensor_source: Annotated[str, GroupBy("events_by_source", window_s=60)]
-    random_score: Annotated[float, Gauge("random_score")]
-    processed_at: TimeMetric
+    cam_id: int
 
 
-class EnrichedHumidity(BaseEvent):
-    """Enriched humidity reading with random score and processing timestamp."""
+class DetModel4Event(ImagePayload):
+    """1024x1024 TurboJPEG stream-bytes detection event (cams 5-6)."""
 
-    _metrics_: ClassVar[list[Counter]] = [Counter("enriched_events")]
-
-    sensor_id: str
-    humidity_pct: Annotated[float, Gauge("sensor_humidity_pct")]
-    zone: str
-    sensor_source: Annotated[str, GroupBy("events_by_source", window_s=60)]
-    random_score: Annotated[float, Gauge("random_score")]
-    processed_at: TimeMetric
+    cam_id: int
 
 
-class EnrichedPressure(BaseEvent):
-    """Enriched pressure reading with random score and processing timestamp."""
+class Model1Request(TritonRequest):
+    """TritonRequest carrying letterbox scale/pad for model 1 postprocessing."""
 
-    _metrics_: ClassVar[list[Counter]] = [Counter("enriched_events")]
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
-    sensor_id: str
-    hpa: Annotated[float, Gauge("sensor_hpa")]
-    altitude_m: float
-    sensor_source: Annotated[str, GroupBy("events_by_source", window_s=60)]
-    random_score: Annotated[float, Gauge("random_score")]
-    processed_at: TimeMetric
+    preprocess_scale: float = 1.0
+    preprocess_pad: tuple[int, int] = (0, 0)
 
 
-class EnrichedWind(BaseEvent):
-    """Enriched wind reading with random score and processing timestamp."""
+class Model2Request(TritonRequest):
+    """TritonRequest carrying letterbox scale/pad for model 2 postprocessing."""
 
-    _metrics_: ClassVar[list[Counter]] = [Counter("enriched_events")]
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
-    sensor_id: str
-    speed_mps: Annotated[float, Gauge("sensor_speed_mps")]
-    direction_deg: int
-    gust_mps: float
-    sensor_source: Annotated[str, GroupBy("events_by_source", window_s=60)]
-    random_score: Annotated[float, Gauge("random_score")]
-    processed_at: TimeMetric
+    preprocess_scale: float = 1.0
+    preprocess_pad: tuple[int, int] = (0, 0)
 
 
-SensorReading = TemperatureReading | HumidityReading | PressureReading | WindReading
-EnrichedReading = EnrichedTemperature | EnrichedHumidity | EnrichedPressure | EnrichedWind
+class Model3Request(TritonRequest):
+    """TritonRequest for classification model 3 (no scale/pad needed)."""
+
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+
+class Model4Request(TritonRequest):
+    """TritonRequest carrying letterbox scale/pad for model 4 postprocessing."""
+
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    preprocess_scale: float = 1.0
+    preprocess_pad: tuple[int, int] = (0, 0)
+
+
+class Model1InfOut(InferenceOutput):
+    """InferenceOutput for model 1 with preprocessing metadata."""
+
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    preprocess_scale: float = 1.0
+    preprocess_pad: tuple[int, int] = (0, 0)
+
+
+class Model2InfOut(InferenceOutput):
+    """InferenceOutput for model 2 with preprocessing metadata."""
+
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    preprocess_scale: float = 1.0
+    preprocess_pad: tuple[int, int] = (0, 0)
+
+
+class Model3InfOut(InferenceOutput):
+    """InferenceOutput for classification model 3."""
+
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+
+class Model4InfOut(InferenceOutput):
+    """InferenceOutput for model 4 with preprocessing metadata."""
+
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    preprocess_scale: float = 1.0
+    preprocess_pad: tuple[int, int] = (0, 0)
+
+
+Model1Request.model_rebuild()
+Model2Request.model_rebuild()
+Model3Request.model_rebuild()
+Model4Request.model_rebuild()
+Model1InfOut.model_rebuild()
+Model2InfOut.model_rebuild()
+Model3InfOut.model_rebuild()
+Model4InfOut.model_rebuild()
+
+RouteEvent = DetModel1Event | ClassModel3Event | DetModel2Event | DetModel4Event
+ResultEvent = DetectionResult | ClassificationResult
+
+__all__ = [
+    "CameraEvent",
+    "ClassModel3Event",
+    "DetModel1Event",
+    "DetModel2Event",
+    "DetModel4Event",
+    "Model1InfOut",
+    "Model1Request",
+    "Model2InfOut",
+    "Model2Request",
+    "Model3InfOut",
+    "Model3Request",
+    "Model4InfOut",
+    "Model4Request",
+    "ResultEvent",
+    "RouteEvent",
+]
