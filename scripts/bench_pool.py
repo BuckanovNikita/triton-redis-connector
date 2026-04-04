@@ -1,7 +1,7 @@
 """Benchmark pool variant preprocessing throughput.
 
 Measures end-to-end throughput with different num_workers settings
-for ClientPreprocessorNode (BaseProcessPoolProcessor).
+for PreprocessorNode (BaseProcessPoolProcessor).
 
 Usage:
     uv run python scripts/bench_pool.py --image-dir benchmarks/data/val2017
@@ -83,8 +83,6 @@ class BenchPreprocessor(BaseProcessPoolProcessor[BenchImageEvent, TritonRequest 
             model_name=self._model_name,
             model_version="",
             raw_image=tensor,
-            input_name="images",
-            output_names=("output0",),
         )
 
 
@@ -96,14 +94,18 @@ class BenchInference(BaseProcessPoolProcessor[TritonRequest, InferenceOutput | I
         self._grpc_url = grpc_url
         self._grpcclient: object | None = None
         self._client: object | None = None
+        self._metadata_cache: object | None = None
 
-    def _ensure_client(self) -> tuple[object, object]:
+    def _ensure_client(self) -> tuple[object, object, object]:
         if self._grpcclient is None:
             import tritonclient.grpc as grpcclient  # noqa: PLC0415
 
+            from triton_redis_connector.inference.model_metadata import ModelMetadataCache  # noqa: PLC0415
+
             self._grpcclient = grpcclient
             self._client = grpcclient.InferenceServerClient(url=self._grpc_url)
-        return self._grpcclient, self._client
+            self._metadata_cache = ModelMetadataCache(self._client)
+        return self._grpcclient, self._client, self._metadata_cache
 
     def __call__(self, event: TritonRequest) -> InferenceOutput | InferenceError | None:
         import numpy as np  # noqa: PLC0415
@@ -113,10 +115,11 @@ class BenchInference(BaseProcessPoolProcessor[TritonRequest, InferenceOutput | I
         if event.raw_image is None:
             return None
 
-        grpcclient, client = self._ensure_client()
-        input_tensor = grpcclient.InferInput(event.input_name, event.raw_image.shape, "FP32")  # type: ignore[attr-defined]
+        grpcclient, client, metadata_cache = self._ensure_client()
+        meta = metadata_cache.get(event.model_name, event.model_version)  # type: ignore[attr-defined]
+        input_tensor = grpcclient.InferInput(meta.input_name, event.raw_image.shape, "FP32")  # type: ignore[attr-defined]
         input_tensor.set_data_from_numpy(event.raw_image)
-        outputs = [grpcclient.InferRequestedOutput(name) for name in event.output_names]  # type: ignore[attr-defined]
+        outputs = [grpcclient.InferRequestedOutput(name) for name in meta.output_names]  # type: ignore[attr-defined]
 
         try:
             result = client.infer(  # type: ignore[attr-defined]
@@ -136,7 +139,7 @@ class BenchInference(BaseProcessPoolProcessor[TritonRequest, InferenceOutput | I
             )
 
         elapsed = time.monotonic() - start
-        output_arrays = {name: np.asarray(result.as_numpy(name), dtype=np.float32) for name in event.output_names}
+        output_arrays = {name: np.asarray(result.as_numpy(name), dtype=np.float32) for name in meta.output_names}
         return InferenceOutput(
             flow_meta=event.flow_meta,
             model_name=event.model_name,

@@ -1,14 +1,17 @@
 """Reusable shipped Node classes for common pipeline patterns.
 
-Provides ready-made building blocks for detection and classification
-CV inference pipelines: preprocessors, inference nodes, postprocessors,
-and error sinks.
+Provides ready-made building blocks for CV inference pipelines:
+unified generic preprocessor, inference, and postprocessor nodes,
+plus error sinks. All nodes are parameterized with marker types
+for type-driven routing.
 """
 
 import time
 import types as stdtypes
+import typing
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -19,26 +22,20 @@ from typed_flow.errors.models import ConnectorError
 from typed_flow.protocols import BaseProcessPoolProcessor, BaseThreadProcessor, BaseThreadSink
 from typed_flow.protocols.metrics import TimeMetric
 
-from triton_redis_connector.config.schema import DecoderType
+from triton_redis_connector.config.schema import DecoderType, PreprocessStrategy
 from triton_redis_connector.engine.events import (
-    ClassificationTritonRequest,
-    DetectionTritonRequest,
     ImagePayload,
-    InferenceTarget,
     TritonRequest,
 )
 from triton_redis_connector.errors.models import InferenceError, PreprocessingError
+from triton_redis_connector.inference.model_metadata import ModelMetadata, ModelMetadataCache
 from triton_redis_connector.inference.request import (
-    ClassificationInferenceOutput,
-    DetectionInferenceOutput,
     InferenceOutput,
 )
 from triton_redis_connector.preprocessing.decoder import create_decoder
-from triton_redis_connector.preprocessing.protocols import ImageDecoderProtocol, ImagePreprocessorProtocol
+from triton_redis_connector.preprocessing.protocols import ImageDecoderProtocol
 
-
-class _PostprocessorCallable[TIn, TResult](Protocol):
-    def __call__(self, event: TIn) -> TResult | None: ...
+type _PostprocessorCallable[TIn, TResult] = Callable[[TIn], TResult | None] | Callable[[TIn], TResult]
 
 
 def _read_and_decode(
@@ -75,137 +72,89 @@ def _read_and_decode(
         )
 
 
-def _resolve_model(
-    event: ImagePayload,
-    default_model: str,
-) -> tuple[str, str]:
-    """Resolve model name and version from event or defaults."""
-    model = default_model
-    version = ""
-    if isinstance(event, InferenceTarget):
-        if event.target_model:
-            model = event.target_model
-        if event.target_model_version:
-            version = event.target_model_version
-    return model, version
-
-
-class ClientPreprocessorNode[TIn: ImagePayload](
-    BaseProcessPoolProcessor[TIn, DetectionTritonRequest | PreprocessingError],
+class PreprocessorNode[TIn: ImagePayload, TOut: TritonRequest](
+    BaseProcessPoolProcessor[TIn, TOut | PreprocessingError],
 ):
-    """Client-side detection preprocessor: read, decode, letterbox, produce DetectionTritonRequest.
+    """Unified preprocessor: read, decode, preprocess, produce typed TritonRequest.
 
-    Preserves preprocessing scale and pad_offset for postprocessing.
-    Stores only picklable config — decoder and preprocessor are
-    lazy-initialized on first call in each child process.
+    Supports both letterbox (detection) and center-crop (classification)
+    strategies. Auto-detects target_size and dtype from Triton model metadata.
+
+    ``output_cls`` must be passed explicitly because ``__orig_class__``
+    does not survive process-pool pickling.
     """
 
     def __init__(  # noqa: PLR0913
         self,
         decoder_type: DecoderType,
-        target_size: int | tuple[int, int],
-        model_name: str,
+        strategy: PreprocessStrategy,
+        grpc_url: str,
+        output_cls: type[TOut],
         *,
         num_workers: int = 8,
         use_shm: bool = True,
-        dtype: type[np.floating[Any]] = np.float32,
-        input_name: str = "images",
-        output_names: tuple[str, ...] = ("output0",),
     ) -> None:
         """Initialize preprocessor with picklable config for process-pool."""
         super().__init__(num_workers=num_workers, use_shm=use_shm)
         self._decoder_type = decoder_type
-        self._target_size = target_size
-        self._model_name = model_name
-        self._dtype = dtype
-        self._input_name = input_name
-        self._output_names = tuple(output_names)
-        self._decoder: ImageDecoderProtocol | None = None
-        self._preprocessor: ImagePreprocessorProtocol | None = None
-
-    def _ensure_initialized(self) -> tuple[ImageDecoderProtocol, ImagePreprocessorProtocol]:
-        if self._decoder is None or self._preprocessor is None:
-            from triton_shared_models.preprocessing import LetterBoxPreprocessor  # noqa: PLC0415
-
-            self._decoder = create_decoder(self._decoder_type)
-            self._preprocessor = LetterBoxPreprocessor(self._target_size, dtype=self._dtype)
-        return self._decoder, self._preprocessor
-
-    def __call__(self, event: TIn) -> DetectionTritonRequest | PreprocessingError | None:
-        """Read image, preprocess, and produce DetectionTritonRequest with flow_meta."""
-        decoder, preprocessor = self._ensure_initialized()
-
-        decoded = _read_and_decode(event, decoder)
-        if not isinstance(decoded, np.ndarray):
-            return decoded
-
-        tensor, scale, pad_offset = preprocessor.preprocess(decoded)
-        model, version = _resolve_model(event, self._model_name)
-
-        return DetectionTritonRequest(
-            flow_meta=event.flow_meta,
-            model_name=model,
-            model_version=version,
-            raw_image=tensor,
-            input_name=self._input_name,
-            output_names=self._output_names,
-            preprocess_scale=scale,
-            preprocess_pad=pad_offset,
-        )
-
-
-class ClassificationPreprocessorNode[TIn: ImagePayload](
-    BaseProcessPoolProcessor[TIn, ClassificationTritonRequest | PreprocessingError],
-):
-    """Client-side classification preprocessor: read, decode, center-crop, produce ClassificationTritonRequest."""
-
-    def __init__(  # noqa: PLR0913
-        self,
-        decoder_type: DecoderType,
-        crop_size: int,
-        model_name: str,
-        *,
-        num_workers: int = 8,
-        use_shm: bool = True,
-        input_name: str = "images",
-        output_names: tuple[str, ...] = ("output0",),
-    ) -> None:
-        """Initialize classification preprocessor with picklable config."""
-        super().__init__(num_workers=num_workers, use_shm=use_shm)
-        self._decoder_type = decoder_type
-        self._crop_size = crop_size
-        self._model_name = model_name
-        self._input_name = input_name
-        self._output_names = tuple(output_names)
+        self._strategy = strategy
+        self._grpc_url = grpc_url
+        self._output_cls = output_cls
         self._decoder: ImageDecoderProtocol | None = None
         self._preprocessor: object | None = None
+        self._metadata_cache: ModelMetadataCache | None = None
+        self._model_metadata: dict[str, ModelMetadata] = {}
 
-    def _ensure_initialized(self) -> tuple[ImageDecoderProtocol, object]:
-        if self._decoder is None or self._preprocessor is None:
-            from triton_shared_models.classification.preprocessing import CenterCropPreprocessor  # noqa: PLC0415
+    def _ensure_initialized(self, model_name: str) -> tuple[ImageDecoderProtocol, object, ModelMetadata]:
+        if self._metadata_cache is None:
+            client = grpcclient.InferenceServerClient(url=self._grpc_url)
+            self._metadata_cache = ModelMetadataCache(client)
 
+        if model_name not in self._model_metadata:
+            self._model_metadata[model_name] = self._metadata_cache.get(model_name)
+
+        meta = self._model_metadata[model_name]
+
+        if self._decoder is None:
             self._decoder = create_decoder(self._decoder_type)
-            self._preprocessor = CenterCropPreprocessor(crop_size=self._crop_size)
-        return self._decoder, self._preprocessor
 
-    def __call__(self, event: TIn) -> ClassificationTritonRequest | PreprocessingError | None:
-        """Read image, preprocess with center crop, and produce ClassificationTritonRequest."""
-        decoder, preprocessor = self._ensure_initialized()
+        if self._preprocessor is None:
+            target_size = meta.target_size
+            dtype: type[np.floating[Any]] = np.float16 if meta.input_dtype_str == "FP16" else np.float32
+            if self._strategy == PreprocessStrategy.LETTERBOX:
+                from triton_shared_models.preprocessing import LetterBoxPreprocessor  # noqa: PLC0415
+
+                self._preprocessor = LetterBoxPreprocessor(target_size, dtype=dtype)
+            else:
+                from triton_shared_models.classification.preprocessing import CenterCropPreprocessor  # noqa: PLC0415
+
+                self._preprocessor = CenterCropPreprocessor(crop_size=target_size[0])
+
+        return self._decoder, self._preprocessor, meta
+
+    def __call__(self, event: TIn) -> TOut | PreprocessingError | None:
+        """Read image, preprocess, and produce typed TritonRequest with flow_meta."""
+        decoder, preprocessor, _meta = self._ensure_initialized(event.model_name)
 
         decoded = _read_and_decode(event, decoder)
         if not isinstance(decoded, np.ndarray):
             return decoded
 
-        tensor = preprocessor.preprocess(decoded)  # type: ignore[attr-defined]
-        model, version = _resolve_model(event, self._model_name)
+        if self._strategy == PreprocessStrategy.LETTERBOX:
+            tensor, scale, pad_offset = preprocessor.preprocess(decoded)  # type: ignore[attr-defined]
+            return self._output_cls(
+                flow_meta=event.flow_meta,
+                model_name=event.model_name,
+                raw_image=tensor,
+                preprocess_scale=scale,
+                preprocess_pad=pad_offset,
+            )
 
-        return ClassificationTritonRequest(
+        tensor = preprocessor.preprocess(decoded)  # type: ignore[attr-defined]
+        return self._output_cls(
             flow_meta=event.flow_meta,
-            model_name=model,
-            model_version=version,
+            model_name=event.model_name,
             raw_image=tensor,
-            input_name=self._input_name,
-            output_names=self._output_names,
         )
 
 
@@ -214,22 +163,23 @@ def _run_inference(
     grpcclient_module: stdtypes.ModuleType,
     event: TritonRequest,
     output_cls: type[InferenceOutput],
+    metadata: ModelMetadata,
 ) -> InferenceOutput | InferenceError | None:
     """Shared inference logic: build gRPC request, call Triton, wrap result."""
     start = time.monotonic()
 
     if event.raw_image is not None:
         dtype_str = "FP16" if event.raw_image.dtype == np.float16 else "FP32"
-        input_tensor = grpcclient_module.InferInput(event.input_name, event.raw_image.shape, dtype_str)
+        input_tensor = grpcclient_module.InferInput(metadata.input_name, event.raw_image.shape, dtype_str)
         input_tensor.set_data_from_numpy(event.raw_image)
     elif event.image_bytes is not None:
         data = np.frombuffer(event.image_bytes, dtype=np.uint8)
-        input_tensor = grpcclient_module.InferInput(event.input_name, [len(data)], "UINT8")
+        input_tensor = grpcclient_module.InferInput(metadata.input_name, [len(data)], "UINT8")
         input_tensor.set_data_from_numpy(data)
     else:
         return None
 
-    outputs = [grpcclient_module.InferRequestedOutput(name) for name in event.output_names]
+    outputs = [grpcclient_module.InferRequestedOutput(name) for name in metadata.output_names]
 
     try:
         result = client.infer(
@@ -260,7 +210,7 @@ def _run_inference(
 
     elapsed = time.monotonic() - start
     output_arrays: dict[str, npt.NDArray[np.float32]] = {
-        name: np.asarray(result.as_numpy(name), dtype=np.float32) for name in event.output_names
+        name: np.asarray(result.as_numpy(name), dtype=np.float32) for name in metadata.output_names
     }
 
     return output_cls(
@@ -274,64 +224,49 @@ def _run_inference(
     )
 
 
-class DetectionInferenceNode(
-    BaseThreadProcessor[DetectionTritonRequest, DetectionInferenceOutput | InferenceError],
+class InferenceNode[TIn: TritonRequest, TOut: InferenceOutput](
+    BaseThreadProcessor[TIn, TOut | InferenceError],
 ):
-    """Triton inference for detection models. Preserves preprocessing metadata."""
+    """Generic Triton inference node parameterized by request and output types.
 
-    def __init__(self, grpc_url: str) -> None:
-        """Initialize with a Triton gRPC endpoint URL."""
+    Resolves ``TOut`` via ``__orig_class__`` on first call (lazy, thread-safe).
+    Reads tensor names from ``ModelMetadataCache``.
+    """
+
+    _output_cls: type[InferenceOutput] | None = None
+
+    def __init__(self, grpc_url: str, metadata_cache: ModelMetadataCache) -> None:
+        """Initialize with a Triton gRPC endpoint URL and metadata cache."""
         super().__init__()
         self._grpcclient = grpcclient
         self._client: grpcclient.InferenceServerClient = grpcclient.InferenceServerClient(url=grpc_url)
+        self._metadata_cache = metadata_cache
 
-    def __call__(self, event: DetectionTritonRequest) -> DetectionInferenceOutput | InferenceError | None:
-        """Run detection inference and return typed output."""
-        return _run_inference(self._client, self._grpcclient, event, DetectionInferenceOutput)  # type: ignore[return-value]
+    def _resolve_output_cls(self) -> type[InferenceOutput]:
+        cls = self._output_cls
+        if cls is None:
+            cls = typing.get_args(self.__orig_class__)[1]  # type: ignore[attr-defined]
+            self._output_cls = cls
+        return cls
+
+    def __call__(self, event: TIn) -> TOut | InferenceError | None:
+        """Run inference and return typed output."""
+        output_cls = self._resolve_output_cls()
+        meta = self._metadata_cache.get(event.model_name, event.model_version)
+        return _run_inference(self._client, self._grpcclient, event, output_cls, meta)  # type: ignore[return-value]
 
 
-class ClassificationInferenceNode(
-    BaseThreadProcessor[ClassificationTritonRequest, ClassificationInferenceOutput | InferenceError],
+class PostProcessorNode[TIn: InferenceOutput, TResult: BaseModel](
+    BaseThreadProcessor[TIn, TResult],
 ):
-    """Triton inference for classification models."""
+    """Generic postprocessor wrapper parameterized by input and result types."""
 
-    def __init__(self, grpc_url: str) -> None:
-        """Initialize with a Triton gRPC endpoint URL."""
-        super().__init__()
-        self._grpcclient = grpcclient
-        self._client: grpcclient.InferenceServerClient = grpcclient.InferenceServerClient(url=grpc_url)
-
-    def __call__(self, event: ClassificationTritonRequest) -> ClassificationInferenceOutput | InferenceError | None:
-        """Run classification inference and return typed output."""
-        return _run_inference(self._client, self._grpcclient, event, ClassificationInferenceOutput)  # type: ignore[return-value]
-
-
-class DetectionPostProcessorNode[TResult: BaseModel](
-    BaseThreadProcessor[DetectionInferenceOutput, TResult],
-):
-    """Postprocessor wrapper for detection inference outputs."""
-
-    def __init__(self, postprocessor: _PostprocessorCallable[DetectionInferenceOutput, TResult]) -> None:
+    def __init__(self, postprocessor: _PostprocessorCallable[TIn, TResult]) -> None:
         """Initialize with a postprocessor callable."""
         super().__init__()
         self._postprocessor = postprocessor
 
-    def __call__(self, event: DetectionInferenceOutput) -> TResult | None:
-        """Run postprocessing and return result."""
-        return self._postprocessor(event)
-
-
-class ClassificationPostProcessorNode[TResult: BaseModel](
-    BaseThreadProcessor[ClassificationInferenceOutput, TResult],
-):
-    """Postprocessor wrapper for classification inference outputs."""
-
-    def __init__(self, postprocessor: _PostprocessorCallable[ClassificationInferenceOutput, TResult]) -> None:
-        """Initialize with a postprocessor callable."""
-        super().__init__()
-        self._postprocessor = postprocessor
-
-    def __call__(self, event: ClassificationInferenceOutput) -> TResult | None:
+    def __call__(self, event: TIn) -> TResult | None:
         """Run postprocessing and return result."""
         return self._postprocessor(event)
 

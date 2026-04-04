@@ -14,6 +14,13 @@ class DecoderType(StrEnum):
     DALI = "dali"
 
 
+class PreprocessStrategy(StrEnum):
+    """Preprocessing strategy for the unified PreprocessorNode."""
+
+    LETTERBOX = "letterbox"
+    CENTER_CROP = "center_crop"
+
+
 class DecoderPoolType(StrEnum):
     """Execution pool type for image decoding."""
 
@@ -54,20 +61,6 @@ class PreprocessingConfig(BaseModel):
         return self.decoder_pool_workers
 
 
-class PipelineConfig(BaseModel):
-    """Shipped processor configuration resolved by Application.build().
-
-    Infrastructure params for shipped processors. All class references
-    (event model, user processors) come from code, not config.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    model_name: str = ""
-    model_input_name: str = "images"
-    model_output_names: list[str] = Field(default_factory=lambda: ["output0"])
-
-
 class TritonAppConfig(AppConfig):
     """Triton-specific application configuration extending the base typed-flow config."""
 
@@ -75,4 +68,3 @@ class TritonAppConfig(AppConfig):
 
     inference: InferenceConfig = InferenceConfig()
     preprocessing: PreprocessingConfig = PreprocessingConfig()
-    pipeline: PipelineConfig = PipelineConfig()

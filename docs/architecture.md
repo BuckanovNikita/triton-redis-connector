@@ -117,9 +117,12 @@ from triton_redis_connector import Application, ModelBundle, expand_bundle
 
 bundle = ModelBundle(
     name="yolo",
-    preprocessor=ClientPreprocessorNode[MyImageEvent](...),
-    inference=DetectionInferenceNode(grpc_url="triton:8001"),
-    postprocessor=DetectionPostProcessorNode[DetectionResult](my_postprocessor),
+    preprocessor=PreprocessorNode[MyImageEvent, MyTritonRequest](
+        DecoderType.OPENCV, PreprocessStrategy.LETTERBOX, grpc_url,
+        output_cls=MyTritonRequest,
+    ),
+    inference=InferenceNode[MyTritonRequest, MyInferenceOutput](grpc_url, metadata_cache),
+    postprocessor=PostProcessorNode[MyInferenceOutput, DetectionResult](det_postprocess),
     sink=LogErrorSinkNode(),
 )
 
@@ -159,12 +162,9 @@ These inherit from Base* classes for variant declaration and use the `PipelineEv
 
 | Node | Location | Input | Output | Purpose |
 |---|---|---|---|---|
-| `ClientPreprocessorNode[TIn]` | connector | `TIn: ImagePayload` | `DetectionTritonRequest` or `PreprocessingError` | Decode + letterbox, preserves scale/pad |
-| `ClassificationPreprocessorNode[TIn]` | connector | `TIn: ImagePayload` | `ClassificationTritonRequest` or `PreprocessingError` | Decode + center-crop for classification |
-| `DetectionInferenceNode` | connector | `DetectionTritonRequest` | `DetectionInferenceOutput` or `InferenceError` | Triton gRPC, preserves preprocessing metadata |
-| `ClassificationInferenceNode` | connector | `ClassificationTritonRequest` | `ClassificationInferenceOutput` or `InferenceError` | Triton gRPC for classification models |
-| `DetectionPostProcessorNode[TResult]` | connector | `DetectionInferenceOutput` | `TResult` | Delegate to user detection postprocessor |
-| `ClassificationPostProcessorNode[TResult]` | connector | `ClassificationInferenceOutput` | `TResult` | Delegate to user classification postprocessor |
+| `PreprocessorNode[TIn, TOut]` | connector | `TIn: ImagePayload` | `TOut: TritonRequest` or `PreprocessingError` | Decode + preprocess (letterbox/center-crop), auto-detects target size and dtype from Triton metadata |
+| `InferenceNode[TIn, TOut]` | connector | `TIn: TritonRequest` | `TOut: InferenceOutput` or `InferenceError` | Triton gRPC, resolves tensor names from ModelMetadataCache |
+| `PostProcessorNode[TIn, TResult]` | connector | `TIn: InferenceOutput` | `TResult` | Delegate to user postprocessor callable |
 | `LogErrorSinkNode` | connector | `InferenceError` or `ConnectorError` or `PreprocessingError` | `None` | Log error events on dedicated thread |
 
 ## Domain Event Model
@@ -198,9 +198,12 @@ The framework routes events using **subtype-aware matching**:
 ```python
 bundle = ModelBundle(
     name="yolo",
-    preprocessor=ClientPreprocessorNode[MyImageEvent](...),
-    inference=DetectionInferenceNode(grpc_url="triton:8001"),
-    postprocessor=DetectionPostProcessorNode[DetectionResult](det_postprocess),
+    preprocessor=PreprocessorNode[MyImageEvent, MyTritonRequest](
+        DecoderType.OPENCV, PreprocessStrategy.LETTERBOX, grpc_url,
+        output_cls=MyTritonRequest,
+    ),
+    inference=InferenceNode[MyTritonRequest, MyInferenceOutput](grpc_url, metadata_cache),
+    postprocessor=PostProcessorNode[MyInferenceOutput, DetectionResult](det_postprocess),
     sink=LogErrorSinkNode(),
 )
 processors = expand_bundle(bundle)  # returns [preprocessor, inference, postprocessor, sink]

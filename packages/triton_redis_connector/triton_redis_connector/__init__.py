@@ -39,30 +39,28 @@ from typed_flow import (
     WrappedNode,
 )
 
-from triton_redis_connector.config.schema import TritonAppConfig
+from triton_redis_connector.config.schema import PreprocessStrategy, TritonAppConfig
 from triton_redis_connector.engine.bundle import ModelBundle, expand_bundle
 from triton_redis_connector.engine.events import (
     ClassificationResult,
-    ClassificationTritonRequest,
     DetectionResult,
-    DetectionTritonRequest,
     ImagePayload,
     InferenceTarget,
     TritonRequest,
 )
 from triton_redis_connector.engine.shipped_processors import (
-    ClassificationInferenceNode,
-    ClassificationPostProcessorNode,
-    ClassificationPreprocessorNode,
-    ClientPreprocessorNode,
-    DetectionInferenceNode,
-    DetectionPostProcessorNode,
+    InferenceNode,
     LogErrorSinkNode,
+    PostProcessorNode,
+    PreprocessorNode,
 )
 from triton_redis_connector.errors.models import InferenceError, PreprocessingError
+from triton_redis_connector.inference.model_metadata import (
+    ModelMetadata,
+    ModelMetadataCache,
+    TensorSpec,
+)
 from triton_redis_connector.inference.request import (
-    ClassificationInferenceOutput,
-    DetectionInferenceOutput,
     InferenceOutput,
 )
 from triton_redis_connector.preprocessing import (
@@ -86,20 +84,10 @@ __all__ = [
     "BaseThreadProcessor",
     "BaseThreadSink",
     "BaseThreadSource",
-    "ClassificationInferenceNode",
-    "ClassificationInferenceOutput",
-    "ClassificationPostProcessorNode",
-    "ClassificationPreprocessorNode",
     "ClassificationResult",
-    "ClassificationTritonRequest",
-    "ClientPreprocessorNode",
     "ConnectorError",
     "Counter",
-    "DetectionInferenceNode",
-    "DetectionInferenceOutput",
-    "DetectionPostProcessorNode",
     "DetectionResult",
-    "DetectionTritonRequest",
     "ExecutionVariant",
     "FrameworkMeta",
     "Gauge",
@@ -110,6 +98,7 @@ __all__ = [
     "ImagePayload",
     "ImagePreprocessorProtocol",
     "InferenceError",
+    "InferenceNode",
     "InferenceOutput",
     "InferenceTarget",
     "LetterBoxPreprocessor",
@@ -118,13 +107,19 @@ __all__ = [
     "MetricAggregator",
     "MetricRecorder",
     "ModelBundle",
+    "ModelMetadata",
+    "ModelMetadataCache",
     "OpenCVDecoder",
     "PipelineRegistry",
+    "PostProcessorNode",
+    "PreprocessStrategy",
     "PreprocessingError",
+    "PreprocessorNode",
     "ProcessPoolProcessor",
     "ProcessSink",
     "ProcessSource",
     "ProcessorFactory",
+    "TensorSpec",
     "ThreadPoolProcessor",
     "ThreadProcessor",
     "ThreadSink",

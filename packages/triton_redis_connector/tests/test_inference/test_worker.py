@@ -2,14 +2,27 @@
 
 import types
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 from triton_redis_connector.config.schema import InferenceConfig
+from triton_redis_connector.inference.model_metadata import ModelMetadata, ModelMetadataCache, TensorSpec
 from triton_redis_connector.inference.request import InferenceOutput, TritonRequest
 from triton_redis_connector.inference.worker import InferenceWorker, InferenceWorkerFactory
 from typed_flow.engine.middleware import RetryMiddleware
+
+_FAKE_METADATA = ModelMetadata(
+    name="yolo11s",
+    inputs=(TensorSpec(name="images", datatype="FP32", shape=(-1, 3, 640, 640)),),
+    outputs=(TensorSpec(name="output0", datatype="FP32", shape=(-1, 84, 8400)),),
+)
+
+
+def _make_metadata_cache() -> ModelMetadataCache:
+    cache = MagicMock(spec=ModelMetadataCache)
+    cache.get.return_value = _FAKE_METADATA
+    return cache
 
 
 def _make_input(model_name: str = "yolo11s") -> TritonRequest:
@@ -49,6 +62,12 @@ def _build_fake_grpc_module(*, fail_count: int = 0) -> types.ModuleType:
         def __init__(self, name: str) -> None:
             self.name = name
 
+    class _FakeModelMetadataResponse:
+        def __init__(self) -> None:
+            self.name = "yolo11s"
+            self.inputs = [type("T", (), {"name": "images", "datatype": "FP32", "shape": [-1, 3, 640, 640]})()]
+            self.outputs = [type("T", (), {"name": "output0", "datatype": "FP32", "shape": [-1, 84, 8400]})()]
+
     class InferenceServerClient:
         def __init__(self, url: str = "") -> None:
             self.url = url
@@ -63,6 +82,9 @@ def _build_fake_grpc_module(*, fail_count: int = 0) -> types.ModuleType:
             output_names = tuple(o.name for o in kwargs["outputs"])
             return _FakeInferResult(output_names)
 
+        def get_model_metadata(self, model_name: str, model_version: str = "") -> _FakeModelMetadataResponse:
+            return _FakeModelMetadataResponse()
+
     module.InferInput = InferInput  # type: ignore[attr-defined]
     module.InferRequestedOutput = InferRequestedOutput  # type: ignore[attr-defined]
     module.InferenceServerClient = InferenceServerClient  # type: ignore[attr-defined]
@@ -75,8 +97,9 @@ _GRPC_PATCH_TARGET = "triton_redis_connector.inference.worker.grpcclient"
 class TestInferenceWorker:
     def test_successful_inference(self) -> None:
         fake_module = _build_fake_grpc_module()
+        cache = _make_metadata_cache()
         with patch(_GRPC_PATCH_TARGET, fake_module):
-            worker = InferenceWorker(grpc_url="localhost:8001")
+            worker = InferenceWorker(grpc_url="localhost:8001", metadata_cache=cache)
             result = worker(_make_input())
 
         assert isinstance(result, InferenceOutput)
@@ -86,8 +109,9 @@ class TestInferenceWorker:
 
     def test_image_bytes_inference(self) -> None:
         fake_module = _build_fake_grpc_module()
+        cache = _make_metadata_cache()
         with patch(_GRPC_PATCH_TARGET, fake_module):
-            worker = InferenceWorker(grpc_url="localhost:8001")
+            worker = InferenceWorker(grpc_url="localhost:8001", metadata_cache=cache)
             result = worker(_make_bytes_input())
 
         assert isinstance(result, InferenceOutput)
@@ -97,15 +121,17 @@ class TestInferenceWorker:
 
     def test_raises_on_inference_failure(self) -> None:
         fake_module = _build_fake_grpc_module(fail_count=100)
+        cache = _make_metadata_cache()
         with patch(_GRPC_PATCH_TARGET, fake_module):
-            worker = InferenceWorker(grpc_url="localhost:8001")
+            worker = InferenceWorker(grpc_url="localhost:8001", metadata_cache=cache)
             with pytest.raises(RuntimeError, match="failed"):
                 worker(_make_input())
 
     def test_sequential_inference(self) -> None:
         fake_module = _build_fake_grpc_module()
+        cache = _make_metadata_cache()
         with patch(_GRPC_PATCH_TARGET, fake_module):
-            worker = InferenceWorker(grpc_url="localhost:8001")
+            worker = InferenceWorker(grpc_url="localhost:8001", metadata_cache=cache)
             first = worker(_make_input())
             second = worker(_make_input())
 

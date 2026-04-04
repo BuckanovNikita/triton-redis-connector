@@ -4,8 +4,8 @@ from triton_redis_connector.config.schema import (
     DecoderPoolType,
     DecoderType,
     InferenceConfig,
-    PipelineConfig,
     PreprocessingConfig,
+    PreprocessStrategy,
     TritonAppConfig,
 )
 
@@ -13,7 +13,7 @@ __all__ = [
     "DecoderPoolType",
     "DecoderType",
     "InferenceConfig",
-    "PipelineConfig",
+    "PreprocessStrategy",
     "PreprocessingConfig",
     "TritonAppConfig",
 ]

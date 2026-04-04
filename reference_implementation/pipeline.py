@@ -5,6 +5,9 @@ Routes camera events by cam_id to model-specific processing branches:
   - Cams 3-4 → Model 2 (608x960 FP16 OpenCV detection)
   - Cams 5-6 → Model 4 (1024x1024 TurboJPEG detection with shared memory)
 
+All tensor names, target sizes, and dtypes are auto-detected from Triton
+model metadata at startup via ModelMetadataCache.
+
 Usage:
     PYTHONPATH=. uv run python reference_implementation/pipeline.py
     PYTHONPATH=. uv run python reference_implementation/pipeline.py --config reference_implementation/config.yaml
@@ -16,19 +19,17 @@ import sys
 import types
 from pathlib import Path
 
+import tritonclient.grpc as grpcclient
 import yaml
 from loguru import logger
-from triton_redis_connector.config.schema import DecoderType
-from triton_redis_connector.engine.events import ClassificationResult, DetectionResult
+from triton_redis_connector.config.schema import DecoderType, PreprocessStrategy
 from triton_redis_connector.engine.shipped_processors import (
-    ClassificationInferenceNode,
-    ClassificationPostProcessorNode,
-    ClassificationPreprocessorNode,
-    ClientPreprocessorNode,
-    DetectionInferenceNode,
-    DetectionPostProcessorNode,
+    InferenceNode,
     LogErrorSinkNode,
+    PostProcessorNode,
+    PreprocessorNode,
 )
+from triton_redis_connector.inference.model_metadata import ModelMetadataCache
 from typed_flow.config.schema import AppConfig
 from typed_flow.connectors import RedisThreadSink, RedisThreadSource
 from typed_flow.engine.app import Application
@@ -38,11 +39,23 @@ from typed_flow.protocols import BaseThreadSink
 from reference_implementation.models import (
     CameraEvent,
     ClassModel3Event,
+    ClassModel3Output,
+    ClassModel3Request,
+    ClassModel3Result,
     DetModel1Event,
+    DetModel1Output,
+    DetModel1Request,
+    DetModel1Result,
     DetModel2Event,
+    DetModel2Output,
+    DetModel2Request,
+    DetModel2Result,
     DetModel4Event,
+    DetModel4Output,
+    DetModel4Request,
+    DetModel4Result,
 )
-from reference_implementation.processors import CameraRouterProcessor, cls_postprocess, det_postprocess
+from reference_implementation.processors import CameraRouterProcessor, make_cls_postprocessor, make_det_postprocessor
 
 GRPC_URL = "localhost:8001"
 MODEL1_NAME = "yolo11s"
@@ -55,11 +68,19 @@ class CameraSource(RedisThreadSource[CameraEvent]):
     """Reads CameraEvent from Redis stream."""
 
 
-class DetectionSink(RedisThreadSink[DetectionResult]):
-    """Writes detection results to Redis stream."""
+class Model1Sink(RedisThreadSink[DetModel1Result]):
+    """Writes model 1 detection results to Redis stream."""
 
 
-class ClassificationSink(RedisThreadSink[ClassificationResult]):
+class Model2Sink(RedisThreadSink[DetModel2Result]):
+    """Writes model 2 detection results to Redis stream."""
+
+
+class Model4Sink(RedisThreadSink[DetModel4Result]):
+    """Writes model 4 detection results to Redis stream."""
+
+
+class ClassModel3Sink(RedisThreadSink[ClassModel3Result]):
     """Writes classification results to Redis stream."""
 
 
@@ -96,44 +117,65 @@ def main() -> None:
 
     det_sink_cfg = config.sinks[0]
     cls_sink_cfg = config.sinks[1]
-    det_sink = DetectionSink(redis=redis_cfg, sink=det_sink_cfg, name="detection_sink")
-    cls_sink = ClassificationSink(redis=redis_cfg, sink=cls_sink_cfg, name="classification_sink")
+
+    metadata_cache = ModelMetadataCache(grpcclient.InferenceServerClient(url=grpc_url))
+    metadata_cache.prefetch([MODEL1_NAME, MODEL2_NAME, MODEL3_NAME, MODEL4_NAME])
 
     processors: list[object] = [
         source,
         CameraRouterProcessor(),
-        ClientPreprocessorNode[DetModel1Event](
-            decoder_type=DecoderType.TURBOJPEG,
-            target_size=640,
-            model_name=MODEL1_NAME,
+        # Preprocessors — strategy + decoder, everything else from metadata
+        PreprocessorNode[DetModel1Event, DetModel1Request](
+            DecoderType.TURBOJPEG,
+            PreprocessStrategy.LETTERBOX,
+            grpc_url,
+            output_cls=DetModel1Request,
             use_shm=False,
         ),
-        ClientPreprocessorNode[DetModel2Event](
-            decoder_type=DecoderType.OPENCV,
-            target_size=(608, 960),
-            model_name=MODEL2_NAME,
+        PreprocessorNode[DetModel2Event, DetModel2Request](
+            DecoderType.OPENCV,
+            PreprocessStrategy.LETTERBOX,
+            grpc_url,
+            output_cls=DetModel2Request,
             use_shm=False,
         ),
-        ClientPreprocessorNode[DetModel4Event](
-            decoder_type=DecoderType.TURBOJPEG,
-            target_size=1024,
-            model_name=MODEL4_NAME,
+        PreprocessorNode[DetModel4Event, DetModel4Request](
+            DecoderType.TURBOJPEG,
+            PreprocessStrategy.LETTERBOX,
+            grpc_url,
+            output_cls=DetModel4Request,
             use_shm=True,
         ),
-        ClassificationPreprocessorNode[ClassModel3Event](
-            decoder_type=DecoderType.OPENCV,
-            crop_size=224,
-            model_name=MODEL3_NAME,
+        PreprocessorNode[ClassModel3Event, ClassModel3Request](
+            DecoderType.OPENCV,
+            PreprocessStrategy.CENTER_CROP,
+            grpc_url,
+            output_cls=ClassModel3Request,
             use_shm=False,
-            input_name="input",
-            output_names=("output",),
         ),
-        DetectionInferenceNode(grpc_url),
-        ClassificationInferenceNode(grpc_url),
-        DetectionPostProcessorNode[DetectionResult](det_postprocess),
-        ClassificationPostProcessorNode[ClassificationResult](cls_postprocess),
-        det_sink,
-        cls_sink,
+        # Inference — one node per model, auto-detects tensor names
+        InferenceNode[DetModel1Request, DetModel1Output](grpc_url, metadata_cache),
+        InferenceNode[DetModel2Request, DetModel2Output](grpc_url, metadata_cache),
+        InferenceNode[DetModel4Request, DetModel4Output](grpc_url, metadata_cache),
+        InferenceNode[ClassModel3Request, ClassModel3Output](grpc_url, metadata_cache),
+        # Postprocessors — factory creates typed callables
+        PostProcessorNode[DetModel1Output, DetModel1Result](
+            make_det_postprocessor(DetModel1Output, DetModel1Result),
+        ),
+        PostProcessorNode[DetModel2Output, DetModel2Result](
+            make_det_postprocessor(DetModel2Output, DetModel2Result),
+        ),
+        PostProcessorNode[DetModel4Output, DetModel4Result](
+            make_det_postprocessor(DetModel4Output, DetModel4Result),
+        ),
+        PostProcessorNode[ClassModel3Output, ClassModel3Result](
+            make_cls_postprocessor(ClassModel3Output, ClassModel3Result),
+        ),
+        # Per-model sinks
+        Model1Sink(redis=redis_cfg, sink=det_sink_cfg, name="model1_sink"),
+        Model2Sink(redis=redis_cfg, sink=det_sink_cfg, name="model2_sink"),
+        Model4Sink(redis=redis_cfg, sink=det_sink_cfg, name="model4_sink"),
+        ClassModel3Sink(redis=redis_cfg, sink=cls_sink_cfg, name="class_sink"),
         LogErrorSinkNode(),
         ErrorSink(),
     ]

@@ -20,9 +20,8 @@ class InferenceTarget(BaseModel):
     """Mixin for user events that carry per-event model routing info.
 
     When a user event inherits from ``InferenceTarget``,
-    the ``ClientPreprocessorNode`` will use ``target_model`` instead of the
-    pipeline-default model name (if non-empty). This enables dynamic model
-    routing on a per-event basis.
+    ``target_model`` can override ``ImagePayload.model_name`` for dynamic
+    model routing on a per-event basis.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -36,8 +35,8 @@ class ImagePayload(BaseModel):
     """Mixin carrying image data for preprocessing nodes.
 
     Either ``image_path`` (filesystem) or ``image_bytes`` (in-memory)
-    should be set for the preprocessor to consume. Carries flow_meta
-    for error reporting in the preprocessor.
+    should be set for the preprocessor to consume. ``model_name`` is
+    injected by the router to drive metadata lookup in the preprocessor.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -45,6 +44,7 @@ class ImagePayload(BaseModel):
     flow_meta: FrameworkMeta = FrameworkMeta()
     image_path: str = ""
     image_bytes: bytes | None = None
+    model_name: str = ""
 
 
 class DetectionResult(BaseEvent):
@@ -84,8 +84,6 @@ class TritonRequest(BaseEvent):
     model_version: str = ""
     raw_image: npt.NDArray[np.floating[Any]] | None = None
     image_bytes: bytes | None = None
-    input_name: str = "images"
-    output_names: tuple[str, ...] = ("output0",)
     preprocess_scale: float = 1.0
     preprocess_pad: tuple[int, int] = (0, 0)
 
@@ -99,14 +97,4 @@ class TritonRequest(BaseEvent):
         return self
 
 
-class DetectionTritonRequest(TritonRequest):
-    """Routing marker for detection model inference requests."""
-
-
-class ClassificationTritonRequest(TritonRequest):
-    """Routing marker for classification model inference requests."""
-
-
 TritonRequest.model_rebuild()
-DetectionTritonRequest.model_rebuild()
-ClassificationTritonRequest.model_rebuild()

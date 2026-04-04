@@ -34,14 +34,4 @@ class InferenceOutput(BaseEvent):
     preprocess_pad: tuple[int, int] = (0, 0)
 
 
-class DetectionInferenceOutput(InferenceOutput):
-    """Routing marker for detection model inference outputs."""
-
-
-class ClassificationInferenceOutput(InferenceOutput):
-    """Routing marker for classification model inference outputs."""
-
-
 InferenceOutput.model_rebuild()
-DetectionInferenceOutput.model_rebuild()
-ClassificationInferenceOutput.model_rebuild()
