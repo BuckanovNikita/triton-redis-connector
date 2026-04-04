@@ -8,6 +8,7 @@ integrity before the pipeline starts.
 
 from __future__ import annotations
 
+import pickle
 import types
 import typing
 from enum import StrEnum, auto
@@ -65,6 +66,11 @@ SINK_VARIANTS = {
     ExecutionVariant.PROCESS_SINK,
 }
 
+POOL_VARIANTS = {
+    ExecutionVariant.THREAD_POOL_PROCESSOR,
+    ExecutionVariant.PROCESS_POOL_PROCESSOR,
+}
+
 _BASE_CLASS_TO_VARIANT: dict[type, ExecutionVariant] = {
     BaseThreadSource: ExecutionVariant.THREAD_SOURCE,
     BaseProcessSource: ExecutionVariant.PROCESS_SOURCE,
@@ -83,11 +89,18 @@ _SINK_BASE_CLASSES = frozenset({BaseThreadSink, BaseProcessSink})
 class GraphNode:
     """A node in the processing graph with its execution variant and type info."""
 
-    def __init__(self, name: str, instance: Callable[..., Any], variant: ExecutionVariant) -> None:
+    def __init__(
+        self,
+        name: str,
+        instance: Callable[..., Any],
+        variant: ExecutionVariant,
+        num_workers: int = 1,
+    ) -> None:
         """Initialize graph node with name, callable instance, and execution variant."""
         self.name = name
         self.instance = instance
         self.variant = variant
+        self.num_workers = num_workers
         self.input_types: set[type] = set()
         self.output_types: set[type] = set()
 
@@ -298,7 +311,14 @@ class PipelineRegistry:
         if not callable(node):
             msg = f"Node {name!r} is not callable"
             raise TypeError(msg)
-        graph_node = GraphNode(name=name, instance=node, variant=variant)
+
+        num_workers = 1
+        if variant in POOL_VARIANTS:
+            num_workers = node.num_workers  # type: ignore[attr-defined]
+            if variant == ExecutionVariant.PROCESS_POOL_PROCESSOR:
+                _validate_picklable(name, node)
+
+        graph_node = GraphNode(name=name, instance=node, variant=variant, num_workers=num_workers)
 
         input_types, output_types = _extract_types_from_generics(node)
 
@@ -491,6 +511,23 @@ class PipelineRegistry:
             f"ProcessPoolProcessor, ThreadSink, ProcessSink)"
         )
         raise TypeError(msg)
+
+
+def _validate_picklable(name: str, node: object) -> None:
+    """Verify that a process-pool node can survive pickle round-trip.
+
+    Called at registration time so users get an immediate, clear error
+    instead of a cryptic PicklingError at runtime.
+    """
+    try:
+        pickle.loads(pickle.dumps(node))  # noqa: S301
+    except (pickle.PicklingError, TypeError, AttributeError) as exc:
+        msg = (
+            f"Process-pool node {name!r} ({type(node).__name__}) is not picklable. "
+            f"Store only picklable config values in __init__ and lazy-init "
+            f"heavy objects on first __call__: {exc}"
+        )
+        raise TypeError(msg) from exc
 
 
 def _type_display_name(t: type) -> str:

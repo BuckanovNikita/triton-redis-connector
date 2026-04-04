@@ -8,10 +8,13 @@ Resolved from the dishka container via EngineProvider, or via the
 
 from __future__ import annotations
 
+import concurrent.futures
+import multiprocessing
 import os
 import queue
 import threading
 import time
+from concurrent.futures import Future, ProcessPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
@@ -21,7 +24,13 @@ from loguru import logger
 from typed_flow.engine.diagram import generate_mermaid
 from typed_flow.engine.metric_aggregator import extract_and_record_metrics
 from typed_flow.engine.queue_bus import QueueBus
-from typed_flow.engine.registry import SINK_VARIANTS, SOURCE_VARIANTS, PipelineRegistry
+from typed_flow.engine.registry import (
+    POOL_VARIANTS,
+    SINK_VARIANTS,
+    SOURCE_VARIANTS,
+    ExecutionVariant,
+    PipelineRegistry,
+)
 from typed_flow.engine.validation import validate_graph
 from typed_flow.errors.models import make_processing_error
 from typed_flow.metrics.buffer import MetricBuffer
@@ -169,6 +178,8 @@ class Application:
         self._stats_timer: threading.Timer | None = None
         self._stats_interval: float = 0.0
         self._routing_table: dict[str, list[tuple[str, type]]] = {}
+        self._process_pool_executors: dict[str, ProcessPoolExecutor] = {}
+        self._pool_node_names: dict[str, str] = {}
 
     @classmethod
     def build(
@@ -367,17 +378,127 @@ class Application:
                 logger.debug("Wired input queue for node {}", name)
 
     def _start_parallel_variants(self) -> None:
-        """Start all nodes in dedicated threads."""
+        """Start all nodes in dedicated threads (or pools for pool variants)."""
         for name, node in self._registry.nodes.items():
+            if node.variant in POOL_VARIANTS and node.num_workers > 1:
+                if node.variant == ExecutionVariant.PROCESS_POOL_PROCESSOR:
+                    self._start_process_pool_node(name, node)
+                else:
+                    self._start_thread_pool_node(name, node)
+            else:
+                thread = threading.Thread(
+                    target=self._run_parallel_node,
+                    args=(node,),
+                    name=f"parallel-{name}",
+                    daemon=True,
+                )
+                self._parallel_threads[name] = thread
+                thread.start()
+                logger.info("Started parallel variant thread for {}", name)
+
+    def _start_thread_pool_node(self, name: str, node: GraphNode) -> None:
+        """Start N worker threads sharing the same input queue."""
+        for i in range(node.num_workers):
+            worker_name = f"{name}:worker-{i}"
+            self._pool_node_names[worker_name] = name
             thread = threading.Thread(
                 target=self._run_parallel_node,
                 args=(node,),
-                name=f"parallel-{name}",
+                name=f"parallel-{worker_name}",
                 daemon=True,
             )
-            self._parallel_threads[name] = thread
+            self._parallel_threads[worker_name] = thread
             thread.start()
-            logger.info("Started parallel variant thread for {}", name)
+        logger.info(
+            "Started thread-pool for {} ({} workers)",
+            name,
+            node.num_workers,
+        )
+
+    def _start_process_pool_node(self, name: str, node: GraphNode) -> None:
+        """Start a coordinator thread with a ProcessPoolExecutor."""
+        thread = threading.Thread(
+            target=self._run_process_pool_node,
+            args=(node,),
+            name=f"parallel-{name}",
+            daemon=True,
+        )
+        self._parallel_threads[name] = thread
+        thread.start()
+        logger.info(
+            "Started process-pool for {} ({} workers)",
+            name,
+            node.num_workers,
+        )
+
+    def _run_process_pool_node(self, node: GraphNode) -> None:
+        """Coordinator loop for process-pool nodes.
+
+        Reads events from the input queue, submits them to a
+        ProcessPoolExecutor, and routes results downstream.
+        Metrics and error routing happen in the coordinator (main process).
+        """
+        mp_context = multiprocessing.get_context("fork")
+        executor: ProcessPoolExecutor = ProcessPoolExecutor(
+            max_workers=node.num_workers,
+            mp_context=mp_context,
+        )
+        self._process_pool_executors[node.name] = executor
+        pending: dict[Future[object], tuple[object, float]] = {}
+        stats = self._node_stats.get(node.name)
+        recorder = self._metric_buffer
+
+        try:
+            while not self._shutdown.is_set():
+                while len(pending) < node.num_workers:
+                    event = self._read_from_input_queue(node, timeout=0.05)
+                    if event is None:
+                        break
+                    t0 = time.perf_counter()
+                    future = executor.submit(node.instance, event)
+                    pending[future] = (event, t0)
+
+                if not pending:
+                    continue
+
+                done, _ = concurrent.futures.wait(
+                    pending,
+                    timeout=0.05,
+                    return_when=concurrent.futures.FIRST_COMPLETED,
+                )
+                self._harvest_pool_futures(node, pending, done, stats, recorder)
+        finally:
+            for future in pending:
+                future.cancel()
+            executor.shutdown(wait=True, cancel_futures=True)
+
+    def _harvest_pool_futures(
+        self,
+        node: GraphNode,
+        pending: dict[Future[object], tuple[object, float]],
+        done: set[Future[object]],
+        stats: _NodeStats | None,
+        recorder: MetricRecorder | None,
+    ) -> None:
+        """Process completed futures from a process-pool executor."""
+        for future in done:
+            original_event, t0 = pending.pop(future)
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            try:
+                result = future.result()
+            except Exception as exc:  # noqa: BLE001
+                if stats is not None:
+                    stats.record_error()
+                self._emit_processing_error(node, exc, original_event)
+                continue
+            if result is not None:
+                if recorder is not None:
+                    extract_and_record_metrics(result, recorder, node.name, elapsed_ms)
+                if stats is not None:
+                    stats.record_call(elapsed_ms)
+                self._route_result(node, result)
+            elif stats is not None:
+                stats.record_call(elapsed_ms)
 
     def _run_parallel_node(self, node: GraphNode) -> None:
         """Run a parallel variant node in a loop until shutdown.
@@ -545,10 +666,16 @@ class Application:
             if stop_event is not None:
                 stop_event.set()
 
+        for executor in self._process_pool_executors.values():
+            executor.shutdown(wait=False, cancel_futures=True)
+
         for name, thread in self._parallel_threads.items():
             thread.join(timeout=5.0)
             if thread.is_alive():
                 logger.warning("Parallel variant thread {} did not stop within timeout", name)
+
+        for executor in self._process_pool_executors.values():
+            executor.shutdown(wait=True)
 
     def _check_parallel_health(self) -> None:
         """Check if parallel variant threads are still alive, restart if crashed.
@@ -559,7 +686,8 @@ class Application:
         now = time.monotonic()
         for name, thread in list(self._parallel_threads.items()):
             if not thread.is_alive() and not self._shutdown.is_set():
-                node = self._registry.get_node(name)
+                node_name = self._pool_node_names.get(name, name)
+                node = self._registry.get_node(node_name)
                 if node is None:
                     continue
                 last_restart = self._restart_times.get(name, 0.0)
@@ -571,8 +699,16 @@ class Application:
                 count = self._restart_counts[name]
                 logger.warning("Restarting parallel variant {} (restart #{})", name, count)
 
+                if node.variant == ExecutionVariant.PROCESS_POOL_PROCESSOR:
+                    old_executor = self._process_pool_executors.pop(node_name, None)
+                    if old_executor is not None:
+                        old_executor.shutdown(wait=False, cancel_futures=True)
+                    target = self._run_process_pool_node
+                else:
+                    target = self._run_parallel_node
+
                 new_thread = threading.Thread(
-                    target=self._run_parallel_node,
+                    target=target,
                     args=(node,),
                     name=f"parallel-{name}",
                     daemon=True,

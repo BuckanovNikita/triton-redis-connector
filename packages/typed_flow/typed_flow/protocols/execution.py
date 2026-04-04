@@ -167,11 +167,16 @@ class BaseThreadProcessor[TIn, TOut]:
 
 
 class BaseThreadPoolProcessor[TIn, TOut]:
-    """Thread-pool processor (N workers, shared queue). Subclass and override ``__call__``."""
+    """Thread-pool processor (N workers, shared queue).
 
-    def __init__(self) -> None:
-        """Initialize stop event for thread lifecycle management."""
+    N worker threads call the same instance concurrently —
+    ``__call__`` must be thread-safe.
+    """
+
+    def __init__(self, num_workers: int = 4) -> None:
+        """Initialize with worker count and stop event."""
         self.stop = threading.Event()
+        self.num_workers = num_workers
 
     @property
     def variant(self) -> str:
@@ -184,10 +189,28 @@ class BaseThreadPoolProcessor[TIn, TOut]:
 
 
 class BaseProcessPoolProcessor[TIn, TOut]:
-    """Process-pool processor (N workers, true OS parallelism). Subclass and override ``__call__``."""
+    """Process-pool processor (N child processes via ProcessPoolExecutor).
 
-    def __init__(self) -> None:
-        """Initialize stop event for thread lifecycle management."""
+    The node instance must be picklable — store config values in
+    ``__init__``, lazy-init heavy objects on first ``__call__`` in
+    each child process.  Events (arguments and return values) must
+    also be picklable.  Does NOT preserve event ordering.
+    """
+
+    def __init__(self, num_workers: int = 8) -> None:
+        """Initialize with worker count and stop event."""
+        self.stop = threading.Event()
+        self.num_workers = num_workers
+
+    def __getstate__(self) -> dict[str, object]:
+        """Exclude unpicklable stop event for process-pool serialization."""
+        state = self.__dict__.copy()
+        state.pop("stop", None)
+        return state
+
+    def __setstate__(self, state: dict[str, object]) -> None:
+        """Restore state and recreate stop event in child process."""
+        self.__dict__.update(state)
         self.stop = threading.Event()
 
     @property
