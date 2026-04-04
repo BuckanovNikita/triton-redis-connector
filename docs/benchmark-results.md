@@ -1,5 +1,57 @@
 # Benchmark Results
 
+## Round 3: Pool Variant Dispatch (2026-04-04)
+
+**Date**: 2026-04-04
+**GPU**: NVIDIA GeForce RTX 5090 (32GB VRAM, sm_120 Blackwell)
+**Triton**: 26.02 (ONNX Runtime backend, GPU mode)
+**Tool**: `scripts/bench_pool.py` — Application.build() pipeline with configurable pool workers
+**Method**: Source → Preprocessor → Inference → Sink, 200 images per config, yolo11s 640x640
+**Preprocessing**: OpenCV decode + LetterBox (BaseProcessPoolProcessor with fork context)
+**Inference**: Triton gRPC (BaseThreadPoolProcessor with thread-local clients)
+
+### Pool Worker Matrix (yolo11s, 640x640, ONNX FP32)
+
+| Preproc Workers | Inference Workers | Throughput (fps) | Avg Latency (ms) |
+|-----------------|-------------------|-----------------|------------------|
+| 1 (single-thread) | 1 (single-thread) | **76.9** | 13.0 |
+| 4 (process-pool) | 1 (single-thread) | **76.3** | 13.1 |
+| 8 (process-pool) | 1 (single-thread) | **73.3** | 13.6 |
+| 1 (single-thread) | 2 (thread-pool) | **117.0** | 8.5 |
+| 4 (process-pool) | 2 (thread-pool) | **91.9** | 10.9 |
+| 8 (process-pool) | 2 (thread-pool) | **94.5** | 10.6 |
+| 1 (single-thread) | 4 (thread-pool) | **117.0** | 8.6 |
+| 4 (process-pool) | 4 (thread-pool) | **84.6** | 11.8 |
+| 8 (process-pool) | 4 (thread-pool) | **91.8** | 10.9 |
+
+### Process-Pool Inference (both preproc and inference as BaseProcessPoolProcessor)
+
+| Preproc Workers | Inference Workers | Throughput (fps) | Avg Latency (ms) |
+|-----------------|-------------------|-----------------|------------------|
+| 1 | 1 | **74.9** | 13.4 |
+| 1 | 2 | **72.6** | 13.8 |
+| 1 | 4 | **97.1** | 10.3 |
+| 4 | 2 | **66.4** | 15.1 |
+| 8 | 4 | **84.2** | 11.9 |
+
+### Key Findings
+
+1. **Thread-pool inference is the clear winner**: 2 thread-pool workers give **+52%** throughput (77→117 fps) because gRPC releases the GIL during I/O wait and numpy arrays stay in shared memory.
+2. **Process-pool inference is slower**: Pickle serialization of numpy arrays across process boundaries costs more than the gRPC call itself. Best process-pool result (97 fps at inf=4) is still 17% slower than thread-pool (117 fps at inf=2).
+3. **Process-pool preprocessing adds overhead**: Single-threaded preprocessing outperforms process-pool at all configurations. OpenCV/numpy release the GIL, so thread-level parallelism is sufficient.
+4. **Thread-pool inference saturates at 2 workers**: No gain from 4 workers (117 fps at both), suggesting Triton GPU is the bottleneck.
+
+### Recommended Configuration
+
+| Node | Variant | Workers | Rationale |
+|------|---------|---------|-----------|
+| Preprocessor | single-thread | 1 | OpenCV/numpy release GIL; process-pool adds pickle overhead |
+| Inference | thread-pool | 2 | gRPC releases GIL; thread-local clients avoid serialization |
+
+Process-pool is best for CPU-bound work that does NOT release the GIL (pure Python computation). For C-extension-heavy pipelines (OpenCV, numpy, gRPC), thread-pool is more efficient.
+
+---
+
 ## Round 2: Dynamic Batching (2026-04-03)
 
 **Date**: 2026-04-03
