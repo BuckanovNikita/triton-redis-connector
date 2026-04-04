@@ -9,15 +9,14 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
-import numpy.typing as npt
 import tritonclient.grpc as grpcclient
 from loguru import logger
 from pydantic import BaseModel
 from typed_flow.errors.models import ConnectorError
-from typed_flow.protocols import BaseThreadProcessor, BaseThreadSink
+from typed_flow.protocols import BaseProcessPoolProcessor, BaseThreadProcessor, BaseThreadSink
 from typed_flow.protocols.metrics import TimeMetric
 
 from triton_redis_connector.engine.events import (
@@ -27,17 +26,11 @@ from triton_redis_connector.engine.events import (
 )
 from triton_redis_connector.errors.models import InferenceError, PreprocessingError
 from triton_redis_connector.inference.request import InferenceOutput
+from triton_redis_connector.preprocessing.decoder import create_decoder
 
-
-class _DecoderProtocol(Protocol):
-    def decode(self, raw: bytes) -> npt.NDArray[np.uint8]: ...
-
-
-class _PreprocessorProtocol(Protocol):
-    def preprocess(
-        self,
-        image: npt.NDArray[np.uint8],
-    ) -> tuple[npt.NDArray[np.float32], float, tuple[int, int]]: ...
+if TYPE_CHECKING:
+    from triton_redis_connector.config.schema import DecoderType
+    from triton_redis_connector.preprocessing.protocols import ImageDecoderProtocol, ImagePreprocessorProtocol
 
 
 class _PostprocessorCallable[TIn, TResult](Protocol):
@@ -45,33 +38,49 @@ class _PostprocessorCallable[TIn, TResult](Protocol):
 
 
 class ClientPreprocessorNode[TIn: ImagePayload](
-    BaseThreadProcessor[TIn, TritonRequest | PreprocessingError],
+    BaseProcessPoolProcessor[TIn, TritonRequest | PreprocessingError],
 ):
     """Client-side preprocessor that reads image, decodes, and produces TritonRequest.
 
     Input must satisfy HasFlowMeta (for error reporting) and ImagePayload
     (for image data). Returns PreprocessingError on failure.
+
+    Stores only picklable config — decoder and preprocessor are
+    lazy-initialized on first call in each child process.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
-        decoder: _DecoderProtocol,
-        preprocessor: _PreprocessorProtocol,
+        decoder_type: DecoderType,
+        target_size: int | tuple[int, int],
         model_name: str,
         *,
+        num_workers: int = 8,
         input_name: str = "images",
         output_names: tuple[str, ...] = ("output0",),
     ) -> None:
-        """Initialize preprocessor with decoder, letterbox, and model config."""
-        super().__init__()
-        self._decoder = decoder
-        self._preprocessor = preprocessor
+        """Initialize preprocessor with picklable config for process-pool."""
+        super().__init__(num_workers=num_workers)
+        self._decoder_type = decoder_type
+        self._target_size = target_size
         self._model_name = model_name
         self._input_name = input_name
         self._output_names = tuple(output_names)
+        self._decoder: ImageDecoderProtocol | None = None
+        self._preprocessor: ImagePreprocessorProtocol | None = None
+
+    def _ensure_initialized(self) -> tuple[ImageDecoderProtocol, ImagePreprocessorProtocol]:
+        if self._decoder is None or self._preprocessor is None:
+            from triton_shared_models.preprocessing import LetterBoxPreprocessor  # noqa: PLC0415
+
+            self._decoder = create_decoder(self._decoder_type)
+            self._preprocessor = LetterBoxPreprocessor(self._target_size)
+        return self._decoder, self._preprocessor
 
     def __call__(self, event: TIn) -> TritonRequest | PreprocessingError | None:
         """Read image, preprocess, and produce TritonRequest with flow_meta."""
+        decoder, preprocessor = self._ensure_initialized()
+
         raw_bytes: bytes
         if event.image_bytes is not None:
             raw_bytes = event.image_bytes
@@ -90,7 +99,7 @@ class ClientPreprocessorNode[TIn: ImagePayload](
             return None
 
         try:
-            decoded = self._decoder.decode(raw_bytes)
+            decoded = decoder.decode(raw_bytes)
         except ValueError as exc:
             return PreprocessingError(
                 message_id=event.flow_meta.message_id,
@@ -100,7 +109,7 @@ class ClientPreprocessorNode[TIn: ImagePayload](
                 timestamp_ms=TimeMetric.now(),
             )
 
-        tensor, _scale, _pad_offset = self._preprocessor.preprocess(decoded)
+        tensor, _scale, _pad_offset = preprocessor.preprocess(decoded)
 
         model = self._model_name
         version = ""

@@ -44,9 +44,16 @@ class PreprocessingConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     decoder: DecoderType = DecoderType.OPENCV
-    decoder_pool_type: DecoderPoolType = DecoderPoolType.THREAD
-    decoder_pool_workers: int = Field(default=4, ge=1)
+    decoder_pool_type: DecoderPoolType = DecoderPoolType.PROCESS
+    decoder_pool_workers: int = Field(default=8, ge=1)
     default_target_size: tuple[int, int] = (640, 640)
+
+    @property
+    def num_preprocess_workers(self) -> int:
+        """Resolve num_workers: THREAD=1 (no pool overhead), PROCESS=pool_workers."""
+        if self.decoder_pool_type == DecoderPoolType.THREAD:
+            return 1
+        return self.decoder_pool_workers
 
 
 class PipelineConfig(BaseModel):

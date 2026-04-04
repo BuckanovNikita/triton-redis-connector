@@ -249,6 +249,8 @@ layers = [
 ignore_imports = [
     "triton_redis_connector.engine.shipped_processors -> triton_redis_connector.inference.request",
     "triton_redis_connector.engine.shipped_processors -> triton_redis_connector.errors.models",
+    "triton_redis_connector.engine.shipped_processors -> triton_redis_connector.preprocessing.decoder",
+    "triton_redis_connector.engine.shipped_processors -> triton_redis_connector.preprocessing.protocols",
 ]
 
 # Contract 4: triton_redis_connector must not import model_tools

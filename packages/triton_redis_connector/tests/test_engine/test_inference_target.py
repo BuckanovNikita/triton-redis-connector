@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 from pydantic import ConfigDict
+from triton_redis_connector.config.schema import DecoderType
 from triton_redis_connector.engine.events import (
     ImagePayload,
     InferenceTarget,
@@ -25,23 +26,25 @@ class PlainImageEvent(ImagePayload):
 
 
 def _make_node(model_name: str = "yolo11s") -> ClientPreprocessorNode[RoutedImageEvent]:
-    decoder = MagicMock()
-    decoder.decode.return_value = np.zeros((640, 640, 3), dtype=np.uint8)
-
-    preprocessor = MagicMock()
-    preprocessor.preprocess.return_value = (
+    node: ClientPreprocessorNode[RoutedImageEvent] = ClientPreprocessorNode(
+        decoder_type=DecoderType.OPENCV,
+        target_size=640,
+        model_name=model_name,
+        num_workers=1,
+        input_name="images",
+        output_names=("output0",),
+    )
+    mock_decoder = MagicMock()
+    mock_decoder.decode.return_value = np.zeros((640, 640, 3), dtype=np.uint8)
+    mock_preprocessor = MagicMock()
+    mock_preprocessor.preprocess.return_value = (
         np.zeros((1, 3, 640, 640), dtype=np.float32),
         1.0,
         (0, 0),
     )
-
-    return ClientPreprocessorNode(
-        decoder=decoder,
-        preprocessor=preprocessor,
-        model_name=model_name,
-        input_name="images",
-        output_names=("output0",),
-    )
+    node._decoder = mock_decoder  # pyright: ignore[reportPrivateUsage]
+    node._preprocessor = mock_preprocessor  # pyright: ignore[reportPrivateUsage]
+    return node
 
 
 class TestInferenceTargetRouting:
@@ -70,18 +73,25 @@ class TestInferenceTargetRouting:
 
     def test_falls_back_to_default_model_without_inference_target(self) -> None:
         node: ClientPreprocessorNode[PlainImageEvent] = ClientPreprocessorNode(
-            decoder=MagicMock(decode=MagicMock(return_value=np.zeros((640, 640, 3), dtype=np.uint8))),
-            preprocessor=MagicMock(
-                preprocess=MagicMock(
-                    return_value=(np.zeros((1, 3, 640, 640), dtype=np.float32), 1.0, (0, 0)),
-                ),
-            ),
+            decoder_type=DecoderType.OPENCV,
+            target_size=640,
             model_name="yolo11s",
+            num_workers=1,
             input_name="images",
             output_names=("output0",),
         )
-        event = PlainImageEvent(image_bytes=b"fake-jpeg")
+        mock_decoder = MagicMock()
+        mock_decoder.decode.return_value = np.zeros((640, 640, 3), dtype=np.uint8)
+        mock_preprocessor = MagicMock()
+        mock_preprocessor.preprocess.return_value = (
+            np.zeros((1, 3, 640, 640), dtype=np.float32),
+            1.0,
+            (0, 0),
+        )
+        node._decoder = mock_decoder  # pyright: ignore[reportPrivateUsage]
+        node._preprocessor = mock_preprocessor  # pyright: ignore[reportPrivateUsage]
 
+        event = PlainImageEvent(image_bytes=b"fake-jpeg")
         result = node(event)
 
         assert isinstance(result, TritonRequest)
