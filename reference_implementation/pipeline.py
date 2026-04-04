@@ -47,7 +47,7 @@ from reference_implementation.processors import CameraRouterProcessor, cls_postp
 GRPC_URL = "localhost:8001"
 MODEL1_NAME = "yolo11s"
 MODEL2_NAME = "yolo11s_608x960"
-MODEL3_NAME = "yolo12s"
+MODEL3_NAME = "cls_resnet18"
 MODEL4_NAME = "yolo11s"
 
 
@@ -122,9 +122,11 @@ def main() -> None:
         ),
         ClassificationPreprocessorNode[ClassModel3Event](
             decoder_type=DecoderType.OPENCV,
-            crop_size=640,
+            crop_size=224,
             model_name=MODEL3_NAME,
             use_shm=False,
+            input_name="input",
+            output_names=("output",),
         ),
         DetectionInferenceNode(grpc_url),
         ClassificationInferenceNode(grpc_url),
