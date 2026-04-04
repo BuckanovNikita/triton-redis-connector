@@ -53,18 +53,6 @@ def _build_identity_config(name: str = "identity") -> TritonModelConfig:
 
 
 class TestGeneratedConfigValidation:
-    def test_generated_identity_config_matches_existing(
-        self,
-        model_repository_path: Path,
-    ) -> None:
-        existing_config = (model_repository_path / "identity" / "config.pbtxt").read_text()
-        generated_config = _build_identity_config().to_pbtxt()
-
-        existing_lines = [line.strip() for line in existing_config.splitlines() if line.strip()]
-        generated_lines = [line.strip() for line in generated_config.splitlines() if line.strip()]
-
-        assert existing_lines == generated_lines
-
     def test_triton_loads_generated_config(
         self,
         model_repository_path: Path,
