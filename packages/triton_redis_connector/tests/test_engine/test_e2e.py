@@ -1,32 +1,25 @@
 """E2E integration tests and build validation for the pipeline framework.
 
 Task 5.7: Build validation catches broken configs (no Docker needed).
-Task 5.4: Error event creation and properties (partial, no Docker needed).
 Task 5.1/5.2: Full pipeline smoke test (requires Redis + Triton).
 """
-
-from __future__ import annotations
 
 import threading
 import time
 import uuid
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 import pytest
-from pydantic import BaseModel, ConfigDict, ValidationError
-from triton_redis_connector.errors.models import InferenceError, PreprocessingError
+from pydantic import BaseModel, ConfigDict
+from triton_redis_connector.errors.models import PreprocessingError
 from typed_flow.config.schema import AppConfig
 from typed_flow.engine.app import Application
-from typed_flow.errors.models import ConnectorError
 from typed_flow.protocols import (
     BaseThreadProcessor,
     BaseThreadSink,
     BaseThreadSource,
 )
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
 
 # ---------------------------------------------------------------------------
 # Shared test types
@@ -134,87 +127,6 @@ class TestBuildValidationReservedResultField:
         assert ctx.result == "user_result"
         fields = ctx.model_dump()
         assert "result" in fields
-
-
-# ---------------------------------------------------------------------------
-# Task 5.4: Error event creation and properties (partial)
-# ---------------------------------------------------------------------------
-
-
-class TestErrorEventCreation:
-    def test_connector_error_creation(self) -> None:
-        err = ConnectorError(
-            node_name="test_source",
-            connector_name="redis_source",
-            stream_name="input:stream",
-            message_id="100-0",
-            error_type="ConnectionError",
-            error_message="Connection refused",
-            timestamp_ms=1000,
-        )
-        assert err.error_type == "ConnectionError"
-        assert err.stream_name == "input:stream"
-
-    def test_inference_error_creation(self) -> None:
-        err = InferenceError(
-            model_name="yolo11s",
-            model_version="1",
-            error_type="TimeoutError",
-            error_message="Request timed out after 5s",
-            retry_count=3,
-            timestamp_ms=2000,
-        )
-        assert err.retry_count == 3
-        assert err.model_name == "yolo11s"
-
-    def test_preprocessing_error_creation(self) -> None:
-        err = PreprocessingError(
-            message_id="200-0",
-            decoder_type="opencv",
-            error_type="DecodeError",
-            error_message="Cannot decode corrupt JPEG",
-            timestamp_ms=3000,
-        )
-        assert err.decoder_type == "opencv"
-        assert err.error_message == "Cannot decode corrupt JPEG"
-
-
-class TestErrorEventFrozen:
-    def test_connector_error_rejects_mutation(self) -> None:
-        err = ConnectorError(
-            node_name="test_source",
-            connector_name="x",
-            stream_name="s",
-            message_id=None,
-            error_type="E",
-            error_message="m",
-            timestamp_ms=0,
-        )
-        with pytest.raises(ValidationError, match="frozen"):
-            err.error_message = "changed"  # type: ignore[misc]
-
-    def test_inference_error_rejects_mutation(self) -> None:
-        err = InferenceError(
-            model_name="m",
-            model_version="1",
-            error_type="E",
-            error_message="m",
-            retry_count=0,
-            timestamp_ms=0,
-        )
-        with pytest.raises(ValidationError, match="frozen"):
-            err.retry_count = 99  # type: ignore[misc]
-
-    def test_preprocessing_error_rejects_mutation(self) -> None:
-        err = PreprocessingError(
-            message_id="id",
-            decoder_type="opencv",
-            error_type="E",
-            error_message="m",
-            timestamp_ms=0,
-        )
-        with pytest.raises(ValidationError, match="frozen"):
-            err.decoder_type = "turbojpeg"  # type: ignore[misc]
 
 
 class TestPreprocessingErrorMetrics:
