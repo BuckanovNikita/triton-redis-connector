@@ -25,6 +25,7 @@ def _connector_error(error_type: str = "ConnectionError") -> ConnectorError:
 
 def _inference_error(error_type: str = "InferenceServerException") -> InferenceError:
     return InferenceError(
+        node_name="inference:yolo11s",
         model_name="yolo11s",
         model_version="1",
         error_type=error_type,
@@ -36,6 +37,7 @@ def _inference_error(error_type: str = "InferenceServerException") -> InferenceE
 
 def _preprocessing_error(error_type: str = "DecodeError") -> PreprocessingError:
     return PreprocessingError(
+        node_name="preprocess:test",
         message_id="123-0",
         decoder_type="opencv",
         error_type=error_type,

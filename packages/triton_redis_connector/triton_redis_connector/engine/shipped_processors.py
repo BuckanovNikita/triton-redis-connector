@@ -18,12 +18,16 @@ import numpy.typing as npt
 import tritonclient.grpc as grpcclient
 from loguru import logger
 from pydantic import BaseModel
-from typed_flow.errors.models import ConnectorError
+from triton_shared_models.classification.postprocessing import ClassificationPostprocessor
+from triton_shared_models.detection.postprocessing import YoloPostprocessor
+from typed_flow.errors.models import PipelineError
 from typed_flow.protocols import BaseProcessPoolProcessor, BaseThreadProcessor, BaseThreadSink
 from typed_flow.protocols.metrics import TimeMetric
 
 from triton_redis_connector.config.schema import DecoderType, PreprocessStrategy
 from triton_redis_connector.engine.events import (
+    ClassificationResult,
+    DetectionResult,
     ImagePayload,
     TritonRequest,
 )
@@ -41,6 +45,7 @@ type _PostprocessorCallable[TIn, TResult] = Callable[[TIn], TResult | None] | Ca
 def _read_and_decode(
     event: ImagePayload,
     decoder: ImageDecoderProtocol,
+    node_name: str,
 ) -> npt.NDArray[np.uint8] | PreprocessingError | None:
     """Read image bytes from event and decode to BGR HWC uint8 array."""
     raw_bytes: bytes
@@ -51,6 +56,7 @@ def _read_and_decode(
             raw_bytes = Path(event.image_path).read_bytes()
         except (FileNotFoundError, PermissionError, OSError) as exc:
             return PreprocessingError(
+                node_name=node_name,
                 message_id=event.flow_meta.message_id,
                 decoder_type="filesystem",
                 error_type=type(exc).__name__,
@@ -64,6 +70,7 @@ def _read_and_decode(
         return decoder.decode(raw_bytes)
     except ValueError as exc:
         return PreprocessingError(
+            node_name=node_name,
             message_id=event.flow_meta.message_id,
             decoder_type="decode",
             error_type="DecodeError",
@@ -136,7 +143,7 @@ class PreprocessorNode[TIn: ImagePayload, TOut: TritonRequest](
         """Read image, preprocess, and produce typed TritonRequest with flow_meta."""
         decoder, preprocessor, _meta = self._ensure_initialized(event.model_name)
 
-        decoded = _read_and_decode(event, decoder)
+        decoded = _read_and_decode(event, decoder, f"preprocess:{event.model_name}")
         if not isinstance(decoded, np.ndarray):
             return decoded
 
@@ -158,12 +165,13 @@ class PreprocessorNode[TIn: ImagePayload, TOut: TritonRequest](
         )
 
 
-def _run_inference(
+def _run_inference(  # noqa: PLR0913
     client: grpcclient.InferenceServerClient,
     grpcclient_module: stdtypes.ModuleType,
     event: TritonRequest,
     output_cls: type[InferenceOutput],
     metadata: ModelMetadata,
+    node_name: str,
 ) -> InferenceOutput | InferenceError | None:
     """Shared inference logic: build gRPC request, call Triton, wrap result."""
     start = time.monotonic()
@@ -190,6 +198,7 @@ def _run_inference(
         )
     except Exception as exc:  # noqa: BLE001
         return InferenceError(
+            node_name=node_name,
             model_name=event.model_name,
             model_version=event.model_version,
             error_type=type(exc).__name__,
@@ -200,6 +209,7 @@ def _run_inference(
 
     if result is None:
         return InferenceError(
+            node_name=node_name,
             model_name=event.model_name,
             model_version=event.model_version,
             error_type="NullResult",
@@ -253,7 +263,8 @@ class InferenceNode[TIn: TritonRequest, TOut: InferenceOutput](
         """Run inference and return typed output."""
         output_cls = self._resolve_output_cls()
         meta = self._metadata_cache.get(event.model_name, event.model_version)
-        return _run_inference(self._client, self._grpcclient, event, output_cls, meta)  # type: ignore[return-value]
+        node_name = f"inference:{event.model_name}"
+        return _run_inference(self._client, self._grpcclient, event, output_cls, meta, node_name)  # type: ignore[return-value]
 
 
 class PostProcessorNode[TIn: InferenceOutput, TResult: BaseModel](
@@ -271,19 +282,73 @@ class PostProcessorNode[TIn: InferenceOutput, TResult: BaseModel](
         return self._postprocessor(event)
 
 
+class DetectionPostprocessorCallable[TResult: DetectionResult]:
+    """Composable detection postprocessor callable for PostProcessorNode.
+
+    Wraps a YoloPostprocessor and a result class to produce typed
+    DetectionResult events from raw inference outputs.
+    """
+
+    def __init__(self, result_cls: type[TResult], postprocessor: YoloPostprocessor | None = None) -> None:
+        """Initialize with result class and optional custom postprocessor."""
+        self._result_cls = result_cls
+        self._postprocessor = postprocessor or YoloPostprocessor()
+
+    def __call__(self, event: InferenceOutput) -> TResult:
+        """Run YOLO postprocessing and wrap into typed result."""
+        detections = self._postprocessor.postprocess(
+            event.outputs,
+            event.preprocess_scale,
+            event.preprocess_pad,
+        )
+        return self._result_cls(
+            flow_meta=event.flow_meta,
+            detections=tuple(detections),
+            model_name=event.model_name,
+            inference_time_ms=event.inference_time_ms,
+        )
+
+
+class ClassificationPostprocessorCallable[TResult: ClassificationResult]:
+    """Composable classification postprocessor callable for PostProcessorNode.
+
+    Wraps a ClassificationPostprocessor and a result class to produce typed
+    ClassificationResult events from raw inference outputs.
+    """
+
+    def __init__(self, result_cls: type[TResult], postprocessor: ClassificationPostprocessor | None = None) -> None:
+        """Initialize with result class and optional custom postprocessor."""
+        self._result_cls = result_cls
+        self._postprocessor = postprocessor or ClassificationPostprocessor(top_k=5)
+
+    def __call__(self, event: InferenceOutput) -> TResult:
+        """Run classification postprocessing and wrap into typed result."""
+        predictions = self._postprocessor.postprocess(event.outputs)
+        return self._result_cls(
+            flow_meta=event.flow_meta,
+            predictions=tuple(predictions),
+            model_name=event.model_name,
+            inference_time_ms=event.inference_time_ms,
+        )
+
+
 class LogErrorSinkNode(
-    BaseThreadSink[InferenceError | ConnectorError | PreprocessingError],
+    BaseThreadSink[PipelineError],
 ):
-    """Logs all error event types at error level on a dedicated thread."""
+    """Logs all pipeline error types via inheritance routing.
+
+    Accepts PipelineError base class — catches all error subtypes
+    (InferenceError, PreprocessingError, ConnectorError, ProcessingError)
+    automatically through the framework's subclass routing.
+    """
 
     def __init__(self) -> None:
         """Initialize the error logging sink."""
         super().__init__()
 
-    def __call__(self, event: InferenceError | ConnectorError | PreprocessingError) -> None:
+    def __call__(self, event: PipelineError) -> None:
         """Log the error event fields at error level."""
-        logger.error(
-            "Pipeline error: {}: {}",
-            type(event).__name__,
-            event.error_message,
-        )
+        if event.node_name:
+            logger.error("[{}] {}: {}", event.node_name, event.error_type, event.error_message)
+        else:
+            logger.error("{}: {}", event.error_type, event.error_message)

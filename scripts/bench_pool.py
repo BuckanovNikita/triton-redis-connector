@@ -70,6 +70,7 @@ class BenchPreprocessor(BaseProcessPoolProcessor[BenchImageEvent, TritonRequest 
             decoded = decoder.decode(event.image_bytes)  # type: ignore[attr-defined]
         except ValueError as exc:
             return PreprocessingError(
+                node_name="bench_preprocess",
                 message_id=event.flow_meta.message_id,
                 decoder_type="decode",
                 error_type="DecodeError",
@@ -130,6 +131,7 @@ class BenchInference(BaseProcessPoolProcessor[TritonRequest, InferenceOutput | I
             )
         except Exception as exc:  # noqa: BLE001
             return InferenceError(
+                node_name=f"bench_inference:{event.model_name}",
                 model_name=event.model_name,
                 model_version=event.model_version,
                 error_type=type(exc).__name__,
@@ -184,12 +186,12 @@ class CountingSink(BaseThreadSink[InferenceOutput]):
             self.count += 1
 
 
-class ErrorSink(BaseThreadSink[PipelineError | InferenceError | PreprocessingError]):
+class ErrorSink(BaseThreadSink[PipelineError]):
     def __init__(self) -> None:
         super().__init__()
         self.count = 0
 
-    def __call__(self, event: PipelineError | InferenceError | PreprocessingError) -> None:
+    def __call__(self, event: PipelineError) -> None:
         self.count += 1
         logger.warning("Error: {}", type(event).__name__)
 

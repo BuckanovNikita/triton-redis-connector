@@ -152,6 +152,7 @@ class TestErrorEventCreation:
 
     def test_inference_error_creation(self) -> None:
         err = InferenceError(
+            node_name="inference:yolo11s",
             model_name="yolo11s",
             model_version="1",
             error_type="TimeoutError",
@@ -164,6 +165,7 @@ class TestErrorEventCreation:
 
     def test_preprocessing_error_creation(self) -> None:
         err = PreprocessingError(
+            node_name="preprocess:yolo11s",
             message_id="200-0",
             decoder_type="opencv",
             error_type="DecodeError",
@@ -190,6 +192,7 @@ class TestErrorEventFrozen:
 
     def test_inference_error_rejects_mutation(self) -> None:
         err = InferenceError(
+            node_name="inference:m",
             model_name="m",
             model_version="1",
             error_type="E",
@@ -202,6 +205,7 @@ class TestErrorEventFrozen:
 
     def test_preprocessing_error_rejects_mutation(self) -> None:
         err = PreprocessingError(
+            node_name="preprocess:test",
             message_id="id",
             decoder_type="opencv",
             error_type="E",
