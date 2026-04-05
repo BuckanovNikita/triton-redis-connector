@@ -52,7 +52,7 @@ class BenchPreprocessor(BaseProcessPoolProcessor[BenchImageEvent, TritonRequest 
 
     def _ensure_initialized(self) -> tuple[object, object]:
         if self._decoder is None:
-            from triton_shared_models.preprocessing import LetterBoxPreprocessor  # noqa: PLC0415
+            from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor  # noqa: PLC0415
 
             self._decoder = create_decoder(self._decoder_type)
             self._preprocessor = LetterBoxPreprocessor(self._target_size)

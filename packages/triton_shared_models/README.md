@@ -15,8 +15,7 @@
 ```
 triton_shared_models/
   triton_types.py      -- TritonDataType, TritonTensorSpec, ExportFormat
-  preprocessing.py     -- LetterBoxPreprocessor
-  detection.py         -- Detection
+  detection/           -- Detection, LetterBoxPreprocessor, YoloPostprocessor
   classification/      -- ClassificationPrediction, CenterCropPreprocessor
   nms.py               -- NMS
 ```

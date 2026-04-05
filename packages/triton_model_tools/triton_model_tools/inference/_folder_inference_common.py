@@ -9,7 +9,7 @@ from loguru import logger
 from numpy.typing import NDArray
 from tqdm import tqdm
 from triton_shared_models.detection.postprocessing import YoloPostprocessor
-from triton_shared_models.preprocessing import LetterBoxPreprocessor as YoloPreprocessor
+from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor
 from typed_flow.protocols.metrics import TimeMetric
 
 from triton_model_tools.inference.detection_io import load_image
@@ -21,7 +21,7 @@ def run_image_loop(  # noqa: PLR0913
     *,
     image_paths: list[Path],
     model_name: str,
-    preprocessor: YoloPreprocessor,
+    preprocessor: LetterBoxPreprocessor,
     postprocessor: YoloPostprocessor,
     infer_fn: Callable[[NDArray[Any]], dict[str, NDArray[Any]]],
     conf_threshold: float,

@@ -129,7 +129,7 @@ class PreprocessorNode[TIn: ImagePayload, TOut: TritonRequest](
             target_size = meta.target_size
             dtype: type[np.floating[Any]] = np.float16 if meta.input_dtype_str == "FP16" else np.float32
             if self._strategy == PreprocessStrategy.LETTERBOX:
-                from triton_shared_models.preprocessing import LetterBoxPreprocessor  # noqa: PLC0415
+                from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor  # noqa: PLC0415
 
                 self._preprocessor = LetterBoxPreprocessor(target_size, dtype=dtype)
             else:

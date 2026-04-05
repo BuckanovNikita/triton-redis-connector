@@ -1,6 +1,6 @@
 """Image decoding and preprocessing implementations."""
 
-from triton_shared_models.preprocessing import LetterBoxPreprocessor
+from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor
 
 from triton_redis_connector.preprocessing.decoder import OpenCVDecoder, TurboJPEGDecoder
 

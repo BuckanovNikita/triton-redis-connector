@@ -8,7 +8,7 @@ from triton_shared_models.detection.postprocessing import (
     DEFAULT_IOU_THRESHOLD,
     YoloPostprocessor,
 )
-from triton_shared_models.preprocessing import LetterBoxPreprocessor as YoloPreprocessor
+from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor
 
 from triton_model_tools.inference._folder_inference_common import run_image_loop
 from triton_model_tools.inference.detection_io import collect_image_paths
@@ -50,7 +50,7 @@ def run_local_folder_inference(  # noqa: PLR0913
     else:
         logger.info("Model output format: standard (NMS applied in postprocessing)")
 
-    preprocessor = YoloPreprocessor(target_size=target_size)
+    preprocessor = LetterBoxPreprocessor(target_size=target_size)
     postprocessor = YoloPostprocessor(end2end=is_end2end)
     image_paths = collect_image_paths(image_dir)
 
