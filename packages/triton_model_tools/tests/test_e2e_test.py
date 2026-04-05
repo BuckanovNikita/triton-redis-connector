@@ -121,10 +121,15 @@ class TestConnectorE2ETestHarness:
         mock_client = MagicMock()
         mock_from_url.return_value = mock_client
 
-        detections_json = json.dumps(
-            [
-                {"x1": 10.0, "y1": 20.0, "x2": 100.0, "y2": 200.0, "confidence": 0.9, "class_id": 0},
-            ]
+        data_payload = json.dumps(
+            {
+                "message_id": "test1.jpg",
+                "model_name": "yolo11s",
+                "inference_time_ms": 15,
+                "detections": [
+                    {"x1": 10.0, "y1": 20.0, "x2": 100.0, "y2": 200.0, "confidence": 0.9, "class_id": 0},
+                ],
+            }
         ).encode()
 
         mock_client.xreadgroup.return_value = [
@@ -133,12 +138,7 @@ class TestConnectorE2ETestHarness:
                 [
                     (
                         b"msg-1",
-                        {
-                            b"image_name": b"test1.jpg",
-                            b"model_name": b"yolo11s",
-                            b"inference_time_ms": b"15",
-                            b"detections": detections_json,
-                        },
+                        {b"data": data_payload},
                     ),
                 ],
             ),
@@ -188,10 +188,14 @@ class TestConnectorE2ETestHarness:
                     (
                         b"msg-1",
                         {
-                            b"image_name": b"img1.jpg",
-                            b"model_name": b"yolo11s",
-                            b"inference_time_ms": b"10.0",
-                            b"detections": b"[]",
+                            b"data": json.dumps(
+                                {
+                                    "message_id": "img1.jpg",
+                                    "model_name": "yolo11s",
+                                    "inference_time_ms": 10.0,
+                                    "detections": [],
+                                }
+                            ).encode(),
                         },
                     ),
                 ],
@@ -204,10 +208,14 @@ class TestConnectorE2ETestHarness:
                     (
                         b"msg-2",
                         {
-                            b"image_name": b"img2.jpg",
-                            b"model_name": b"yolo11s",
-                            b"inference_time_ms": b"12.0",
-                            b"detections": b"[]",
+                            b"data": json.dumps(
+                                {
+                                    "message_id": "img2.jpg",
+                                    "model_name": "yolo11s",
+                                    "inference_time_ms": 12.0,
+                                    "detections": [],
+                                }
+                            ).encode(),
                         },
                     ),
                 ],
@@ -231,10 +239,15 @@ class TestConnectorE2ETestHarness:
         mock_from_url.return_value = mock_client
         mock_client.xadd.return_value = b"1-0"
 
-        detections_json = json.dumps(
-            [
-                {"x1": 0.0, "y1": 0.0, "x2": 50.0, "y2": 50.0, "confidence": 0.95, "class_id": 2},
-            ]
+        data_payload = json.dumps(
+            {
+                "message_id": "photo.jpg",
+                "model_name": "yolo11s",
+                "inference_time_ms": 20.0,
+                "detections": [
+                    {"x1": 0.0, "y1": 0.0, "x2": 50.0, "y2": 50.0, "confidence": 0.95, "class_id": 2},
+                ],
+            }
         ).encode()
 
         mock_client.xreadgroup.return_value = [
@@ -243,12 +256,7 @@ class TestConnectorE2ETestHarness:
                 [
                     (
                         b"msg-1",
-                        {
-                            b"image_name": b"photo.jpg",
-                            b"model_name": b"yolo11s",
-                            b"inference_time_ms": b"20.0",
-                            b"detections": detections_json,
-                        },
+                        {b"data": data_payload},
                     ),
                 ],
             ),
@@ -286,11 +294,11 @@ class TestConnectorE2ETestHarness:
         harness = ConnectorE2ETestHarness(config)
 
         result = harness._parse_result_message(
-            fields={},
+            fields={b"data": b"{}"},
             msg_id=b"test-msg-id",
         )
 
-        assert result.image_path == "unknown"
+        assert result.image_path == "test-msg-id"
         assert result.model_name == "yolo11s"
         assert result.inference_time_ms == pytest.approx(0.0)
         assert result.detections == []

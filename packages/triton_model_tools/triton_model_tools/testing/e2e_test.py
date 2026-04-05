@@ -172,18 +172,7 @@ class ConnectorE2ETestHarness:
         fields: dict[bytes, bytes],
         msg_id: bytes,
     ) -> ImageDetectionResult:
-        data_field = fields.get(b"data")
-        if data_field is not None:
-            return self._parse_pipeline_format(data_field, fields, msg_id)
-        return self._parse_legacy_format(fields, msg_id)
-
-    def _parse_pipeline_format(
-        self,
-        data_field: bytes,
-        fields: dict[bytes, bytes],
-        msg_id: bytes,
-    ) -> ImageDetectionResult:
-        """Parse pipeline output where DetectionResult JSON is in the 'data' field."""
+        data_field = fields[b"data"]
         parsed: dict[str, Any] = json.loads(data_field)
         detections_raw: str | list[dict[str, object]] = parsed.get("detections", parsed.get("detections_json", "[]"))
         detections = _deserialize_detections(detections_raw)
@@ -196,34 +185,6 @@ class ConnectorE2ETestHarness:
             "Parsed pipeline result {}: {} detections",
             msg_id.decode(),
             len(detections),
-        )
-
-        return ImageDetectionResult(
-            image_path=image_name,
-            model_name=model_name,
-            detections=detections,
-            inference_time_ms=TimeMetric(inference_time_ms),
-        )
-
-    def _parse_legacy_format(
-        self,
-        fields: dict[bytes, bytes],
-        msg_id: bytes,
-    ) -> ImageDetectionResult:
-        """Parse legacy format with individual fields (image_name, detections, etc.)."""
-        image_name = fields.get(b"image_name", b"unknown").decode()
-        model_name = fields.get(b"model_name", self._config.model_name.encode()).decode()
-        inference_time_str = fields.get(b"inference_time_ms", b"0.0").decode()
-        detections_raw = fields.get(b"detections", b"[]").decode()
-
-        detections = _deserialize_detections(detections_raw)
-        inference_time_ms = float(inference_time_str)
-
-        logger.debug(
-            "Parsed result {}: {} detections for {}",
-            msg_id.decode(),
-            len(detections),
-            image_name,
         )
 
         return ImageDetectionResult(

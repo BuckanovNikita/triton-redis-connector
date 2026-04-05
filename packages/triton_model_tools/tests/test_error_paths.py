@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -88,10 +89,14 @@ class TestE2ETimeoutHandling:
                     (
                         b"msg-1",
                         {
-                            b"image_name": b"img.jpg",
-                            b"model_name": b"yolo11s",
-                            b"inference_time_ms": b"10.0",
-                            b"detections": b"[]",
+                            b"data": json.dumps(
+                                {
+                                    "message_id": "img.jpg",
+                                    "model_name": "yolo11s",
+                                    "inference_time_ms": 10.0,
+                                    "detections": [],
+                                }
+                            ).encode(),
                         },
                     ),
                 ],
