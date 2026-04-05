@@ -184,7 +184,7 @@ markers = [
 
 [tool.vulture]
 min_confidence = 80
-ignore_names = ["event", "shared", "envelope", "count", "new_payload", "block_ms", "data", "image", "raw", "message_id", "target_size", "timeout_s", "consumer_group", "input_stream", "output_stream", "end2end", "kwargs", "enable_dynamic_batching", "max_batch_size", "redis_connection_config", "redis_client", "consumer_group_manager", "config", "source_type", "handler"]
+ignore_names = ["event", "shared", "envelope", "count", "new_payload", "block_ms", "data", "image", "raw", "message_id", "target_size", "timeout_s", "consumer_group", "input_stream", "output_stream", "end2end", "kwargs", "enable_dynamic_batching", "max_batch_size", "redis_connection_config", "redis_client", "consumer_group_manager", "config", "source_type", "handler", "stream_name", "event_type"]
 paths = [
     "packages/typed_flow/typed_flow",
     "packages/triton_redis_connector/triton_redis_connector",
@@ -211,7 +211,7 @@ id = "typed-flow-layers"
 name = "typed_flow layer architecture"
 type = "layers"
 layers = [
-    "(typed_flow.connectors) | (typed_flow.metrics) | (typed_flow.di)",
+    "(typed_flow.testing) | (typed_flow.connectors) | (typed_flow.metrics) | (typed_flow.di)",
     "(typed_flow.engine)",
     "(typed_flow.config) | (typed_flow.errors)",
     "(typed_flow.protocols)",
@@ -221,6 +221,7 @@ ignore_imports = [
     "typed_flow.engine.app -> typed_flow.metrics.buffer",
     "typed_flow.engine.app -> typed_flow.metrics.emitter",
     "typed_flow.engine.diagram -> typed_flow.metrics.collector",
+    "typed_flow.testing.app -> typed_flow.connectors.stream_writer",
 ]
 
 # Contract 2: typed_flow must not import triton_redis_connector or triton_model_tools

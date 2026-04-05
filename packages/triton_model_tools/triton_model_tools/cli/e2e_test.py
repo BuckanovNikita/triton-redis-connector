@@ -1,21 +1,17 @@
 """Run E2E test: push images to Redis, connector processes via Triton, collect results."""
 
 import argparse
-import time
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import redis
 import redis as redis_lib
 from loguru import logger
+from typed_flow.connectors.stream_writer import populate_stream
 
 from triton_model_tools.cli._types import SubParsers, parse_image_size
-from triton_model_tools.testing.stream_populator import InspectionStreamEntry, populate_stream
+from triton_model_tools.testing.generators import InspectionStreamConfig, InspectionStreamGenerator
 
-_IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"})
-
-_DEFAULT_METAL_TYPES = ("steel", "copper", "aluminum")
 _DEFAULT_CAMERA_COUNT = 3
 _XADD_MAXLEN = 50_000
 
@@ -134,45 +130,6 @@ def build_parser(subparsers: SubParsers) -> None:
     e2e_parser.set_defaults(func=run)
 
 
-def _collect_images(image_dir: Path, max_count: int | None) -> list[Path]:
-    paths = sorted(p for p in image_dir.iterdir() if p.is_file() and p.suffix.lower() in _IMAGE_EXTENSIONS)
-    if not paths:
-        msg = f"No image files found in {image_dir}"
-        raise ValueError(msg)
-    if max_count is not None:
-        paths = paths[:max_count]
-    return paths
-
-
-def _push_images(
-    redis_client: "redis.Redis[bytes]",
-    stream: str,
-    image_paths: list[Path],
-    event_type: str,
-    camera_count: int,
-) -> list[str]:
-    metal_types = _DEFAULT_METAL_TYPES
-
-    def _entries() -> Iterator[InspectionStreamEntry]:
-        for idx, image_path in enumerate(image_paths):
-            yield InspectionStreamEntry(
-                camera_no=(idx % camera_count) + 1,
-                image_path=str(image_path.resolve()),
-                frame_counter=idx + 1,
-                receipt_ts=time.time(),
-                metal_type=metal_types[idx % len(metal_types)],
-                event_type=event_type,
-            )
-
-    result = populate_stream(
-        redis_client,
-        stream,
-        _entries(),
-        maxlen=_XADD_MAXLEN,
-    )
-    return result.message_ids
-
-
 def _verify_messages(
     redis_client: "redis.Redis[bytes]",
     stream: str,
@@ -224,15 +181,20 @@ def _run_populate_only(args: argparse.Namespace) -> None:
     logger.info("Image dir: {}", image_dir)
     logger.info("Redis: {}", redis_url)
 
-    image_paths = _collect_images(image_dir, max_count)
-    logger.info("Found {} images to push", len(image_paths))
-
     redis_client: redis.Redis[bytes] = redis_lib.Redis.from_url(
         redis_url,
         decode_responses=False,
     )
 
-    message_ids = _push_images(redis_client, stream, image_paths, event_type, camera_count)
+    cfg = InspectionStreamConfig(
+        camera_count=camera_count,
+        event_type_label=event_type,
+        stream_name=stream,
+        max_count=max_count,
+    )
+    generator = InspectionStreamGenerator(images_dir=image_dir, config=cfg)
+    result = populate_stream(redis_client, stream, generator(), maxlen=_XADD_MAXLEN)
+    message_ids = result.message_ids
     logger.info("Pushed {} events to stream {}", len(message_ids), stream)
 
     if verify:

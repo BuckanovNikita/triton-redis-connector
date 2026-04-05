@@ -1,6 +1,13 @@
 """E2E test harness for Redis pipeline integration."""
 
 from triton_model_tools.testing.e2e_test import ConnectorE2ETestHarness, E2ETestConfig
+from triton_model_tools.testing.generators import (
+    CameraEventEntry,
+    CameraEventGenerator,
+    ImageStreamGenerator,
+    InspectionStreamConfig,
+    InspectionStreamGenerator,
+)
 from triton_model_tools.testing.preprocessing_verify import (
     PreprocessingResult,
     verify_classification_preprocessing,
@@ -15,10 +22,15 @@ from triton_model_tools.testing.stream_populator import (
 )
 
 __all__ = [
+    "CameraEventEntry",
+    "CameraEventGenerator",
     "ConnectorE2ETestHarness",
     "E2ETestConfig",
     "ImageStreamEntry",
+    "ImageStreamGenerator",
+    "InspectionStreamConfig",
     "InspectionStreamEntry",
+    "InspectionStreamGenerator",
     "PopulateResult",
     "PreprocessingResult",
     "StreamFields",

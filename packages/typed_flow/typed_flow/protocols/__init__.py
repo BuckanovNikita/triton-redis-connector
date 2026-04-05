@@ -30,6 +30,7 @@ from typed_flow.protocols.framework import (
     BucketStats,
     WrappedNode,
 )
+from typed_flow.protocols.generators import StreamGenerator
 from typed_flow.protocols.lifecycle import (
     LifecycleService,
     ObserverProtocol,
@@ -71,6 +72,7 @@ __all__ = [
     "ProcessorFactory",
     "Startable",
     "Stoppable",
+    "StreamGenerator",
     "ThreadPoolProcessor",
     "ThreadProcessor",
     "ThreadSink",

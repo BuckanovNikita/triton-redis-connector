@@ -1,8 +1,6 @@
 """End-to-end performance measurement of the Redis detection pipeline."""
 
 import time
-import uuid
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -11,12 +9,13 @@ import redis as redis_lib
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 from tqdm import tqdm
+from typed_flow.connectors.stream_writer import populate_stream
 
 from triton_model_tools.benchmarks.stats import compute_statistics
 from triton_model_tools.inference.detection_io import collect_image_paths
 from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
 from triton_model_tools.testing.e2e_test import CONSUMER_NAME, POLL_INTERVAL_S, ensure_consumer_group
-from triton_model_tools.testing.stream_populator import ImageStreamEntry, populate_stream
+from triton_model_tools.testing.generators import ImageStreamGenerator
 
 BACKENDS: list[str] = ["onnx", "tensorrt"]
 PREPROCESS_MODES: list[str] = ["dali", "cv2"]
@@ -60,20 +59,17 @@ def _push_images(
     model_name: str,
 ) -> None:
     """Push images to Redis input stream."""
-
-    def _entries() -> Iterator[ImageStreamEntry]:
-        for image_path in image_paths:
-            yield ImageStreamEntry(
-                data=image_path.read_bytes(),
-                request_id=uuid.uuid4().hex,
-                model_name=model_name,
-                image_name=image_path.name,
-            )
-
+    generator = ImageStreamGenerator(
+        images_dir=image_paths[0].parent,
+        model_name=model_name,
+        stream_name=input_stream,
+    )
+    entries = generator()
+    bounded = (next(entries) for _ in range(len(image_paths)))
     populate_stream(
         redis_client,
         input_stream,
-        tqdm(_entries(), total=len(image_paths), desc="Pushing images", unit="img"),
+        tqdm(bounded, total=len(image_paths), desc="Pushing images", unit="img"),
     )
 
 

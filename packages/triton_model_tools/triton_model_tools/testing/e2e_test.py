@@ -2,8 +2,6 @@
 
 import json
 import time
-import uuid
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +10,7 @@ import redis as redis_lib
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from tqdm import tqdm
+from typed_flow.connectors.stream_writer import populate_stream
 from typed_flow.protocols.metrics import TimeMetric
 
 from triton_model_tools.inference.detection_io import collect_image_paths
@@ -21,7 +20,7 @@ from triton_model_tools.models.detection import (
     FolderInferenceResult,
     ImageDetectionResult,
 )
-from triton_model_tools.testing.stream_populator import ImageStreamEntry, populate_stream
+from triton_model_tools.testing.generators import ImageStreamGenerator
 
 POLL_INTERVAL_S = 0.5
 CONSUMER_NAME = "e2e-harness"
@@ -99,21 +98,17 @@ class ConnectorE2ETestHarness:
 
     def push_test_images(self, image_paths: list[Path]) -> list[str]:
         """Push images to Redis input stream via XADD. Returns list of message IDs."""
-        model_name = self._config.model_name
-
-        def _entries() -> Iterator[ImageStreamEntry]:
-            for image_path in image_paths:
-                yield ImageStreamEntry(
-                    data=image_path.read_bytes(),
-                    request_id=uuid.uuid4().hex,
-                    model_name=model_name,
-                    image_name=image_path.name,
-                )
-
+        generator = ImageStreamGenerator(
+            images_dir=image_paths[0].parent,
+            model_name=self._config.model_name,
+            stream_name=self._config.input_stream,
+        )
+        entries = generator()
+        bounded = (next(entries) for _ in range(len(image_paths)))
         result = populate_stream(
             self._redis,
             self._config.input_stream,
-            tqdm(_entries(), total=len(image_paths), desc="Pushing images", unit="img"),
+            tqdm(bounded, total=len(image_paths), desc="Pushing images", unit="img"),
         )
         return result.message_ids
 

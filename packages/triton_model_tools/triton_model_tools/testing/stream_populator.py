@@ -1,24 +1,21 @@
-"""Populate a Redis stream from an iterable of pydantic models or field dicts."""
+"""Domain-specific stream entry models and re-exports from typed_flow."""
 
-import time
-from collections.abc import Iterable
-from typing import Any
+from pydantic import BaseModel, ConfigDict
+from typed_flow.connectors.stream_writer import (
+    PopulateResult,
+    StreamFields,
+    populate_stream,
+    serialize_model,
+)
 
-import redis  # noqa: TC002 — used in function signatures (no future annotations)
-from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field
-
-StreamFields = dict[str | bytes, str | bytes]
-
-
-class PopulateResult(BaseModel):
-    """Result of populating a Redis stream."""
-
-    model_config = ConfigDict(frozen=True)
-
-    message_ids: list[str] = Field(default_factory=list)
-    push_times: dict[str, float] = Field(default_factory=dict)
-    count: int = Field(default=0, ge=0)
+__all__ = [
+    "ImageStreamEntry",
+    "InspectionStreamEntry",
+    "PopulateResult",
+    "StreamFields",
+    "populate_stream",
+    "serialize_model",
+]
 
 
 class ImageStreamEntry(BaseModel):
@@ -44,61 +41,3 @@ class InspectionStreamEntry(BaseModel):
     metal_type: str
     event_type: str = "image"
     model_name: str = ""
-
-
-def _serialize_model(model: BaseModel) -> StreamFields:
-    """Serialize a pydantic model to Redis stream fields.
-
-    Preserves ``bytes`` values as-is, stringifies everything else.
-    User models are pure BaseModel (no framework metadata to exclude).
-    """
-    fields: StreamFields = {}
-    for key, value in model.model_dump().items():
-        if isinstance(value, bytes):
-            fields[key] = value
-        else:
-            fields[key] = str(value).encode()
-    return fields
-
-
-def populate_stream(
-    redis_client: "redis.Redis[bytes]",
-    stream: str,
-    items: Iterable[BaseModel | StreamFields],
-    *,
-    maxlen: int | None = None,
-    approximate: bool = True,
-) -> PopulateResult:
-    """Push items to *stream* via XADD.
-
-    Each item is either a pydantic ``BaseModel`` (serialized automatically)
-    or a raw ``StreamFields`` dict passed through as-is.
-
-    Progress bars are the caller's responsibility — wrap *items*
-    in ``tqdm(gen, ...)`` before passing.
-
-    """
-    message_ids: list[str] = []
-    push_times: dict[str, float] = {}
-
-    for item in items:
-        fields = _serialize_model(item) if isinstance(item, BaseModel) else item
-        push_time = time.monotonic()
-        raw_id: Any = redis_client.xadd(
-            name=stream,
-            fields=fields,
-            maxlen=maxlen,
-            approximate=approximate,
-        )
-        decoded_id: str = raw_id.decode() if isinstance(raw_id, bytes) else str(raw_id)
-        message_ids.append(decoded_id)
-        push_times[decoded_id] = push_time
-
-    count = len(message_ids)
-    logger.info("Pushed {} messages to stream {}", count, stream)
-
-    return PopulateResult(
-        message_ids=message_ids,
-        push_times=push_times,
-        count=count,
-    )
