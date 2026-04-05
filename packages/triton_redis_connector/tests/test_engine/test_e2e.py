@@ -450,7 +450,7 @@ class TestTritonInferenceSmoke:
     ) -> None:
         import cv2
         import tritonclient.grpc as grpcclient
-        from triton_shared_models.preprocessing import LetterBoxPreprocessor
+        from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor
 
         client = grpcclient.InferenceServerClient(url="localhost:8001")
         assert client.is_server_live()
@@ -544,7 +544,7 @@ class TestFullInferencePipeline:
                 super().__init__()
                 import cv2
                 import tritonclient.grpc as grpcclient
-                from triton_shared_models.preprocessing import LetterBoxPreprocessor
+                from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor
 
                 self._preprocessor = LetterBoxPreprocessor((640, 640))
                 self._triton = grpcclient.InferenceServerClient(url="localhost:8001")

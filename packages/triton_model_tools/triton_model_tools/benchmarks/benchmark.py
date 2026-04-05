@@ -12,7 +12,7 @@ import numpy as np
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 from tqdm import tqdm
-from triton_shared_models.preprocessing import LetterBoxPreprocessor as YoloPreprocessor
+from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor
 
 from triton_model_tools.benchmarks.stats import compute_statistics
 from triton_model_tools.export.exporter import TENSORRT_NAME_SUFFIX
@@ -160,7 +160,7 @@ def run_benchmark(config: BenchmarkConfig, image_dir: Path) -> BenchmarkResult:
     )
 
     client = TritonInferenceClient(url=config.triton_url)
-    preprocessor = YoloPreprocessor(target_size=config.target_size, dtype=preprocess_dtype)
+    preprocessor = LetterBoxPreprocessor(target_size=config.target_size, dtype=preprocess_dtype)
     postprocessor = YoloPostprocessor(end2end=config.end2end)
 
     output_names = ["output0"]

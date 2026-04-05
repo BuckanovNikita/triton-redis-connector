@@ -71,7 +71,7 @@ class ClientPreprocessorNode[TIn: ImagePayload](
 
     def _ensure_initialized(self) -> tuple[ImageDecoderProtocol, ImagePreprocessorProtocol]:
         if self._decoder is None or self._preprocessor is None:
-            from triton_shared_models.preprocessing import LetterBoxPreprocessor  # noqa: PLC0415
+            from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor  # noqa: PLC0415
 
             self._decoder = create_decoder(self._decoder_type)
             self._preprocessor = LetterBoxPreprocessor(self._target_size)

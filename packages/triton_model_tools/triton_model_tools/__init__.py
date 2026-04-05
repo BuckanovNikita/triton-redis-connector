@@ -12,9 +12,9 @@ from triton_model_tools.api import (
     run_local_detection,
 )
 from triton_model_tools.inference import (
+    LetterBoxPreprocessor,
     TritonInferenceClient,
     YoloPostprocessor,
-    YoloPreprocessor,
 )
 from triton_model_tools.inference.yolo_bridge import YoloPostProcessorBridge
 from triton_model_tools.models import (
@@ -28,11 +28,11 @@ __all__ = [
     "Detection",
     "FolderInferenceResult",
     "ImageDetectionResult",
+    "LetterBoxPreprocessor",
     "TritonInferenceClient",
     "YoloModelVariant",
     "YoloPostProcessorBridge",
     "YoloPostprocessor",
-    "YoloPreprocessor",
     "compare_classification_results",
     "compare_detection_results",
     "run_detection",

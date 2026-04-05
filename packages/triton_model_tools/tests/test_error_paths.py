@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 from triton_model_tools.testing.e2e_test import ConnectorE2ETestHarness, E2ETestConfig
-from triton_shared_models.preprocessing import LetterBoxPreprocessor as YoloPreprocessor
+from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor
 
 
 class TestRedisConnectionFailure:
@@ -31,13 +31,13 @@ class TestRedisConnectionFailure:
 
 class TestInvalidImagePreprocessing:
     def test_zero_dimension_image(self) -> None:
-        preprocessor = YoloPreprocessor(target_size=640)
+        preprocessor = LetterBoxPreprocessor(target_size=640)
         zero_image = np.zeros((0, 0, 3), dtype=np.uint8)
         with pytest.raises(Exception):  # noqa: B017, PT011
             preprocessor.preprocess(zero_image)
 
     def test_single_channel_image(self) -> None:
-        preprocessor = YoloPreprocessor(target_size=640)
+        preprocessor = LetterBoxPreprocessor(target_size=640)
         mono_image = np.zeros((100, 100, 1), dtype=np.uint8)
         with pytest.raises(Exception):  # noqa: B017, PT011
             preprocessor.preprocess(mono_image)

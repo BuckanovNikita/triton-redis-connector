@@ -16,7 +16,7 @@ import pytest
 from triton_model_tools.benchmarks.comparison import compare_inference
 from triton_model_tools.inference.postprocessing import YoloPostprocessor
 from triton_model_tools.models.detection import Detection, ImageDetectionResult
-from triton_shared_models.preprocessing import LetterBoxPreprocessor as YoloPreprocessor
+from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent.parent.parent / "test_fixtures"
 IMAGES_DIR = FIXTURES_DIR / "images"
@@ -134,7 +134,7 @@ def _run_our_pipeline(
     from triton_model_tools.inference.onnx_inference import OnnxInferenceClient
 
     client = OnnxInferenceClient(onnx_path)
-    preprocessor = YoloPreprocessor(target_size=TARGET_SIZE)
+    preprocessor = LetterBoxPreprocessor(target_size=TARGET_SIZE)
     end2end = client.detect_end2end()
     postprocessor = YoloPostprocessor(end2end=end2end)
 

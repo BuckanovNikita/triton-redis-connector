@@ -1,11 +1,9 @@
 """Triton client, ONNX client, YOLO pre/postprocessing, classification, and batch inference."""
 
-from triton_shared_models.preprocessing import (
+from triton_shared_models.detection.preprocessing import (
     LETTERBOX_PAD_VALUE,
     YOLO_NORMALIZE_DIVISOR,
-)
-from triton_shared_models.preprocessing import (
-    LetterBoxPreprocessor as YoloPreprocessor,
+    LetterBoxPreprocessor,
 )
 
 from triton_model_tools.inference.classification_bridge import (
@@ -38,11 +36,11 @@ __all__ = [
     "ClassificationPostprocessor",
     "DetailedClassificationPostProcessorBridge",
     "DetailedClassificationPostprocessor",
+    "LetterBoxPreprocessor",
     "OnnxInferenceClient",
     "TritonInferenceClient",
     "YoloDetailedPostProcessorBridge",
     "YoloDetailedPostprocessor",
     "YoloPostProcessorBridge",
     "YoloPostprocessor",
-    "YoloPreprocessor",
 ]

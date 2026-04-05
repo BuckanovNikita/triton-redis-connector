@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from loguru import logger
-from triton_shared_models.preprocessing import LetterBoxPreprocessor as YoloPreprocessor
+from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor
 
 from triton_model_tools.inference._folder_inference_common import run_image_loop
 from triton_model_tools.inference.detection_io import collect_image_paths
@@ -33,7 +33,7 @@ def run_local_folder_inference(  # noqa: PLR0913
 ) -> FolderInferenceResult:
     """Run ONNX inference on all images in a directory.
 
-    Uses the same YoloPreprocessor and YoloPostprocessor as the Triton pipeline,
+    Uses the same LetterBoxPreprocessor and YoloPostprocessor as the Triton pipeline,
     but replaces the Triton gRPC client with a local OnnxInferenceClient.
 
     Args:
@@ -56,7 +56,7 @@ def run_local_folder_inference(  # noqa: PLR0913
     else:
         logger.info("Model output format: standard (NMS applied in postprocessing)")
 
-    preprocessor = YoloPreprocessor(target_size=target_size)
+    preprocessor = LetterBoxPreprocessor(target_size=target_size)
     postprocessor = YoloPostprocessor(end2end=is_end2end)
     image_paths = collect_image_paths(image_dir)
 

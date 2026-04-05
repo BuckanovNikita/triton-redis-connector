@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from triton_shared_models.preprocessing import (
+from triton_shared_models.detection.preprocessing import (
     LETTERBOX_PAD_VALUE,
     YOLO_NORMALIZE_DIVISOR,
     LetterBoxPreprocessor,

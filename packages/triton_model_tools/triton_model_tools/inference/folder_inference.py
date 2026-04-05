@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from triton_shared_models.preprocessing import LetterBoxPreprocessor as YoloPreprocessor
+from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor
 
 from triton_model_tools.inference._folder_inference_common import run_image_loop
 from triton_model_tools.inference.client import TritonInferenceClient
@@ -52,7 +52,7 @@ def run_folder_inference(  # noqa: PLR0913
 
     image_paths = collect_image_paths(image_dir)
     client = TritonInferenceClient(url=triton_url)
-    preprocessor = YoloPreprocessor(target_size=target_size)
+    preprocessor = LetterBoxPreprocessor(target_size=target_size)
     postprocessor = YoloPostprocessor(end2end=end2end)
 
     return run_image_loop(

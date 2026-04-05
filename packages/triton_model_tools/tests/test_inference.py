@@ -9,16 +9,16 @@ import pytest
 from triton_model_tools.inference import (
     LETTERBOX_PAD_VALUE,
     YOLO_NORMALIZE_DIVISOR,
+    LetterBoxPreprocessor,
     TritonInferenceClient,
     YoloPostprocessor,
-    YoloPreprocessor,
 )
 from triton_shared_models.nms import nms
 
 
-class TestYoloPreprocessor:
+class TestLetterBoxPreprocessor:
     def test_output_shape_and_dtype(self) -> None:
-        preprocessor = YoloPreprocessor(target_size=640)
+        preprocessor = LetterBoxPreprocessor(target_size=640)
         image = np.random.default_rng(42).integers(0, 255, (480, 640, 3), dtype=np.uint8)
 
         tensor, _scale, _pad_offset = preprocessor.preprocess(image)
@@ -27,7 +27,7 @@ class TestYoloPreprocessor:
         assert tensor.dtype == np.float32
 
     def test_scale_factor_for_landscape_image(self) -> None:
-        preprocessor = YoloPreprocessor(target_size=640)
+        preprocessor = LetterBoxPreprocessor(target_size=640)
         image = np.zeros((480, 640, 3), dtype=np.uint8)
 
         _, scale, _ = preprocessor.preprocess(image)
@@ -36,7 +36,7 @@ class TestYoloPreprocessor:
         assert scale == pytest.approx(expected_scale)
 
     def test_scale_factor_for_portrait_image(self) -> None:
-        preprocessor = YoloPreprocessor(target_size=640)
+        preprocessor = LetterBoxPreprocessor(target_size=640)
         image = np.zeros((800, 400, 3), dtype=np.uint8)
 
         _, scale, _ = preprocessor.preprocess(image)
@@ -45,7 +45,7 @@ class TestYoloPreprocessor:
         assert scale == pytest.approx(expected_scale)
 
     def test_padding_is_centered(self) -> None:
-        preprocessor = YoloPreprocessor(target_size=640)
+        preprocessor = LetterBoxPreprocessor(target_size=640)
         image = np.zeros((480, 640, 3), dtype=np.uint8)
 
         _, _, pad_offset = preprocessor.preprocess(image)
@@ -57,7 +57,7 @@ class TestYoloPreprocessor:
         assert pad_top == expected_pad_top
 
     def test_padding_values_are_114_normalized(self) -> None:
-        preprocessor = YoloPreprocessor(target_size=640)
+        preprocessor = LetterBoxPreprocessor(target_size=640)
         image = np.zeros((480, 640, 3), dtype=np.uint8)
 
         tensor, _, pad_offset = preprocessor.preprocess(image)
@@ -70,7 +70,7 @@ class TestYoloPreprocessor:
 
     def test_letterbox_cross_validation(self) -> None:
         """Cross-validate preprocessor against manual letterbox computation."""
-        preprocessor = YoloPreprocessor(target_size=640)
+        preprocessor = LetterBoxPreprocessor(target_size=640)
         rng = np.random.default_rng(123)
         image = rng.integers(0, 255, (480, 640, 3), dtype=np.uint8)
 
@@ -99,7 +99,7 @@ class TestYoloPreprocessor:
         assert image_region.max() > 0.0
 
     def test_square_image_no_padding(self) -> None:
-        preprocessor = YoloPreprocessor(target_size=640)
+        preprocessor = LetterBoxPreprocessor(target_size=640)
         image = np.ones((640, 640, 3), dtype=np.uint8) * 128
 
         tensor, scale, pad_offset = preprocessor.preprocess(image)
@@ -109,7 +109,7 @@ class TestYoloPreprocessor:
         assert tensor.shape == (1, 3, 640, 640)
 
     def test_bgr_to_rgb_conversion(self) -> None:
-        preprocessor = YoloPreprocessor(target_size=4)
+        preprocessor = LetterBoxPreprocessor(target_size=4)
         image = np.zeros((4, 4, 3), dtype=np.uint8)
         image[:, :, 0] = 255
         image[:, :, 1] = 0
@@ -122,7 +122,7 @@ class TestYoloPreprocessor:
         np.testing.assert_allclose(tensor[0, 2, :, :], 1.0, atol=1e-5)
 
     def test_custom_target_size(self) -> None:
-        preprocessor = YoloPreprocessor(target_size=320)
+        preprocessor = LetterBoxPreprocessor(target_size=320)
         image = np.zeros((240, 320, 3), dtype=np.uint8)
 
         tensor, _, _ = preprocessor.preprocess(image)
@@ -130,7 +130,7 @@ class TestYoloPreprocessor:
         assert tensor.shape == (1, 3, 320, 320)
 
     def test_nonsquare_target_size_tuple(self) -> None:
-        preprocessor = YoloPreprocessor(target_size=(960, 640))
+        preprocessor = LetterBoxPreprocessor(target_size=(960, 640))
         image = np.zeros((480, 640, 3), dtype=np.uint8)
 
         tensor, scale, _pad_offset = preprocessor.preprocess(image)
@@ -141,7 +141,7 @@ class TestYoloPreprocessor:
         assert scale == pytest.approx(expected_scale)
 
     def test_nonsquare_target_size_padding(self) -> None:
-        preprocessor = YoloPreprocessor(target_size=(384, 640))
+        preprocessor = LetterBoxPreprocessor(target_size=(384, 640))
         image = np.zeros((300, 400, 3), dtype=np.uint8)
 
         tensor, scale, (pad_left, pad_top) = preprocessor.preprocess(image)
@@ -168,7 +168,7 @@ class TestYoloPreprocessor:
         target_size: int | tuple[int, int],
         expected_shape: tuple[int, ...],
     ) -> None:
-        preprocessor = YoloPreprocessor(target_size=target_size)
+        preprocessor = LetterBoxPreprocessor(target_size=target_size)
         image = np.zeros((480, 640, 3), dtype=np.uint8)
         tensor, _, _ = preprocessor.preprocess(image)
         assert tensor.shape == expected_shape
