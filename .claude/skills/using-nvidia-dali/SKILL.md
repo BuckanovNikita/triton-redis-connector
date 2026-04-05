@@ -378,3 +378,5 @@ preprocessed = result.as_numpy("OUTPUT_0")  # (1, 3, H, W) float32
 - For Triton backend, the file MUST define a function named `pipe` (not `pipeline` or `main`)
 - `@autoserialize` is required for Triton DALI backend — serializes pipeline to protobuf
 - DALI expressions (data nodes) cannot be used in Python control flow (`if`, `for`) — they are graph nodes, not values
+- **WSL2**: DALI crashes in Triton on WSL2 — do NOT use DALI models in Triton when running under WSL. On host, use `device='cpu'` for DALI operators
+- **Blackwell GPUs (RTX 5090)**: DALI fails with nvml error in Triton 26.02 — needs 26.04+ with DALI 1.55+

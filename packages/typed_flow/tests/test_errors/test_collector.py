@@ -3,12 +3,8 @@
 import threading
 import time
 
-from triton_redis_connector.errors.models import (
-    InferenceError,
-    PreprocessingError,
-)
 from typed_flow.errors.collector import ErrorCollector
-from typed_flow.errors.models import ConnectorError
+from typed_flow.errors.models import ConnectorError, ProcessingError
 
 
 def _connector_error(error_type: str = "ConnectionError") -> ConnectorError:
@@ -23,26 +19,13 @@ def _connector_error(error_type: str = "ConnectionError") -> ConnectorError:
     )
 
 
-def _inference_error(error_type: str = "InferenceServerException") -> InferenceError:
-    return InferenceError(
-        node_name="inference:yolo11s",
-        model_name="yolo11s",
-        model_version="1",
-        error_type=error_type,
-        error_message="test error",
-        retry_count=3,
-        timestamp_ms=int(time.time() * 1000),
-    )
-
-
-def _preprocessing_error(error_type: str = "DecodeError") -> PreprocessingError:
-    return PreprocessingError(
-        node_name="preprocess:test",
-        message_id="123-0",
-        decoder_type="opencv",
+def _processing_error(error_type: str = "ProcessingFailed") -> ProcessingError:
+    return ProcessingError(
+        node_name="processor:test",
         error_type=error_type,
         error_message="test error",
         timestamp_ms=int(time.time() * 1000),
+        event_type="TestEvent",
     )
 
 
@@ -51,9 +34,9 @@ class TestErrorCollector:
         collector = ErrorCollector()
         collector.record(_connector_error())
         collector.record(_connector_error())
-        collector.record(_inference_error())
+        collector.record(_processing_error())
         summary = collector.get_summary()
-        assert summary == {"ConnectionError": 2, "InferenceServerException": 1}
+        assert summary == {"ConnectionError": 2, "ProcessingFailed": 1}
 
     def test_empty_summary(self) -> None:
         collector = ErrorCollector()
@@ -62,8 +45,8 @@ class TestErrorCollector:
     def test_flush_returns_all_errors(self) -> None:
         collector = ErrorCollector()
         collector.record(_connector_error())
-        collector.record(_inference_error())
-        collector.record(_preprocessing_error())
+        collector.record(_processing_error())
+        collector.record(_processing_error("DecodeError"))
         flushed = collector.flush()
         assert len(flushed) == 3
 
@@ -86,12 +69,12 @@ class TestErrorCollector:
     def test_mixed_error_types(self) -> None:
         collector = ErrorCollector()
         collector.record(_connector_error("ConnectionError"))
-        collector.record(_inference_error("InferenceServerException"))
-        collector.record(_preprocessing_error("DecodeError"))
+        collector.record(_processing_error("ProcessingFailed"))
+        collector.record(_processing_error("DecodeError"))
         summary = collector.get_summary()
         assert len(summary) == 3
         assert summary["ConnectionError"] == 1
-        assert summary["InferenceServerException"] == 1
+        assert summary["ProcessingFailed"] == 1
         assert summary["DecodeError"] == 1
 
     def test_concurrent_record(self) -> None:
@@ -115,9 +98,8 @@ class TestErrorCollector:
     def test_flush_preserves_insertion_order(self) -> None:
         collector = ErrorCollector()
         collector.record(_connector_error("First"))
-        collector.record(_inference_error("Second"))
-        collector.record(_preprocessing_error("Third"))
+        collector.record(_processing_error("Second"))
+        collector.record(_connector_error("Third"))
         flushed = collector.flush()
-        assert flushed[0].error_type == "First"
-        assert flushed[1].error_type == "Second"
-        assert flushed[2].error_type == "Third"
+        types = [getattr(e, "error_type", None) for e in flushed]
+        assert types == ["First", "Second", "Third"]

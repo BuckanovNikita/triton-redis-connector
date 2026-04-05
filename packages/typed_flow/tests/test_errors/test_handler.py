@@ -2,13 +2,9 @@
 
 import time
 
-from triton_redis_connector.errors.models import (
-    InferenceError,
-    PreprocessingError,
-)
 from typed_flow.errors.collector import ErrorCollector
 from typed_flow.errors.handler import ErrorHandler
-from typed_flow.errors.models import ConnectorError
+from typed_flow.errors.models import ConnectorError, ProcessingError
 
 
 def _connector_error() -> ConnectorError:
@@ -23,26 +19,13 @@ def _connector_error() -> ConnectorError:
     )
 
 
-def _inference_error() -> InferenceError:
-    return InferenceError(
-        node_name="inference:yolo11s",
-        model_name="yolo11s",
-        model_version="1",
-        error_type="InferenceServerException",
-        error_message="Model not found",
-        retry_count=3,
+def _processing_error() -> ProcessingError:
+    return ProcessingError(
+        node_name="processor:test",
+        error_type="ProcessingFailed",
+        error_message="Unexpected failure",
         timestamp_ms=int(time.time() * 1000),
-    )
-
-
-def _preprocessing_error() -> PreprocessingError:
-    return PreprocessingError(
-        node_name="preprocess:test",
-        message_id="123-0",
-        decoder_type="opencv",
-        error_type="DecodeError",
-        error_message="Invalid JPEG header",
-        timestamp_ms=int(time.time() * 1000),
+        event_type="TestEvent",
     )
 
 
@@ -54,26 +37,19 @@ class TestErrorHandler:
         summary = collector.get_summary()
         assert summary["ConnectionError"] == 1
 
-    def test_handle_inference_error_records(self) -> None:
+    def test_handle_processing_error_records(self) -> None:
         collector = ErrorCollector()
         handler = ErrorHandler(collector=collector)
-        handler.handle(_inference_error())
+        handler.handle(_processing_error())
         summary = collector.get_summary()
-        assert summary["InferenceServerException"] == 1
-
-    def test_handle_preprocessing_error_records(self) -> None:
-        collector = ErrorCollector()
-        handler = ErrorHandler(collector=collector)
-        handler.handle(_preprocessing_error())
-        summary = collector.get_summary()
-        assert summary["DecodeError"] == 1
+        assert summary["ProcessingFailed"] == 1
 
     def test_handle_multiple_errors(self) -> None:
         collector = ErrorCollector()
         handler = ErrorHandler(collector=collector)
         handler.handle(_connector_error())
-        handler.handle(_inference_error())
-        handler.handle(_preprocessing_error())
+        handler.handle(_processing_error())
+        handler.handle(_connector_error())
         flushed = collector.flush()
         assert len(flushed) == 3
 

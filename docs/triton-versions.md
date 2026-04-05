@@ -45,3 +45,6 @@ docker compose -f .devcontainer/docker-compose.debug.yml up -d
 - Extras pin exact version ranges per Triton release
 - RTX 5090 (sm_120) requires torch 2.7+ — only works with triton-26-02 extra
 - tritonclient gRPC API is stable across all supported versions (v2 protocol)
+- **DALI on WSL2**: DALI crashes Triton on WSL2 — do not use DALI models in Triton under WSL. On host, use `device='cpu'` for DALI operators
+- **DALI on Blackwell (RTX 5090)**: fails with nvml error in Triton 26.02 — needs 26.04+ with DALI 1.55+
+- E2E tests using DALI should be skipped in WSL environments
