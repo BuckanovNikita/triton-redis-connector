@@ -1,16 +1,9 @@
 """Pipeline processors for the CV inference pipeline.
 
 Router dispatches camera events to model-specific branches.
-Postprocessor factories create typed callables for per-model results.
 """
 
-from collections.abc import Callable
-
 from loguru import logger
-from triton_model_tools.inference.classification_postprocessing import ClassificationPostprocessor
-from triton_model_tools.inference.postprocessing import YoloPostprocessor
-from triton_redis_connector.engine.events import ClassificationResult, DetectionResult
-from triton_redis_connector.inference.request import InferenceOutput
 from typed_flow.protocols import BaseThreadProcessor
 
 from reference_implementation.models import (
@@ -83,47 +76,3 @@ class CameraRouterProcessor(
             )
         logger.warning("Unknown cam_id={}, dropping event", event.cam_id)
         return None
-
-
-_yolo_postprocessor = YoloPostprocessor()
-_classification_postprocessor = ClassificationPostprocessor(top_k=5)
-
-
-def make_det_postprocessor[TIn: InferenceOutput, TResult: DetectionResult](
-    _input_cls: type[TIn],
-    result_cls: type[TResult],
-) -> Callable[[TIn], TResult]:
-    """Create a typed detection postprocessor callable for a specific result type."""
-
-    def postprocess(event: TIn) -> TResult:
-        detections = _yolo_postprocessor.postprocess(
-            event.outputs,
-            event.preprocess_scale,
-            event.preprocess_pad,
-        )
-        return result_cls(
-            flow_meta=event.flow_meta,
-            detections=tuple(detections),
-            model_name=event.model_name,
-            inference_time_ms=event.inference_time_ms,
-        )
-
-    return postprocess
-
-
-def make_cls_postprocessor[TIn: InferenceOutput, TResult: ClassificationResult](
-    _input_cls: type[TIn],
-    result_cls: type[TResult],
-) -> Callable[[TIn], TResult]:
-    """Create a typed classification postprocessor callable for a specific result type."""
-
-    def postprocess(event: TIn) -> TResult:
-        predictions = _classification_postprocessor.postprocess(event.outputs)
-        return result_cls(
-            flow_meta=event.flow_meta,
-            predictions=tuple(predictions),
-            model_name=event.model_name,
-            inference_time_ms=event.inference_time_ms,
-        )
-
-    return postprocess

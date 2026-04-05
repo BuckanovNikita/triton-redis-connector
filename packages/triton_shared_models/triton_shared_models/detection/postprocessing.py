@@ -5,9 +5,9 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 from loguru import logger
-from triton_shared_models.nms import nms
 
-from triton_model_tools.models.detection import Detection
+from triton_shared_models.detection.models import Detection
+from triton_shared_models.nms import nms
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.25
 DEFAULT_IOU_THRESHOLD = 0.45

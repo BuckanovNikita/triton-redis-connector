@@ -49,6 +49,8 @@ from triton_redis_connector.engine.events import (
     TritonRequest,
 )
 from triton_redis_connector.engine.shipped_processors import (
+    ClassificationPostprocessorCallable,
+    DetectionPostprocessorCallable,
     InferenceNode,
     LogErrorSinkNode,
     PostProcessorNode,
@@ -84,9 +86,11 @@ __all__ = [
     "BaseThreadProcessor",
     "BaseThreadSink",
     "BaseThreadSource",
+    "ClassificationPostprocessorCallable",
     "ClassificationResult",
     "ConnectorError",
     "Counter",
+    "DetectionPostprocessorCallable",
     "DetectionResult",
     "ExecutionVariant",
     "FrameworkMeta",

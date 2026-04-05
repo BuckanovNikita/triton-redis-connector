@@ -10,8 +10,11 @@ import concurrent.futures
 import multiprocessing
 import os
 import queue
+import signal
+import sys
 import threading
 import time
+import types
 from concurrent.futures import Future, ProcessPoolExecutor
 from pathlib import Path
 from typing import Protocol, Self, cast, runtime_checkable
@@ -297,6 +300,38 @@ class Application:
             self._metric_emitter.stop()
 
         self._stop_parallel_variants()
+
+    def run_with_graceful_shutdown(self) -> None:
+        """Run the pipeline with SIGINT/SIGTERM handling and crash recovery.
+
+        Installs signal handlers for graceful shutdown on first signal
+        and forced exit on second signal. Must be called from the main thread.
+        """
+        shutting_down = False
+
+        def handle_shutdown(signum: int, _frame: types.FrameType | None) -> None:
+            nonlocal shutting_down
+            if shutting_down:
+                logger.warning("Forced exit (second {})", signal.Signals(signum).name)
+                sys.exit(1)
+            shutting_down = True
+            logger.info("Received {}, shutting down...", signal.Signals(signum).name)
+            self.shutdown()
+
+        signal.signal(signal.SIGINT, handle_shutdown)
+        signal.signal(signal.SIGTERM, handle_shutdown)
+
+        try:
+            self.run()
+        except KeyboardInterrupt:
+            logger.info("KeyboardInterrupt, shutting down...")
+            self.shutdown()
+        except (RuntimeError, ValueError, OSError):
+            logger.exception("Pipeline crashed")
+            self.shutdown()
+            sys.exit(1)
+
+        logger.info("Pipeline stopped gracefully")
 
     def _start_stats_timer(self) -> None:
         """Start a repeating timer that logs stats periodically."""

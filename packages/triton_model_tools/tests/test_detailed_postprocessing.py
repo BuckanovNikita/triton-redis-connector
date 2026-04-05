@@ -2,13 +2,13 @@
 
 import numpy as np
 import pytest
-from triton_model_tools.inference.classification_postprocessing import (
+from triton_shared_models.classification import DetailedClassificationPrediction
+from triton_shared_models.classification.postprocessing import (
     DetailedClassificationPostprocessor,
 )
-from triton_model_tools.inference.postprocessing import (
+from triton_shared_models.detection.postprocessing import (
     YoloDetailedPostprocessor,
 )
-from triton_shared_models.classification import DetailedClassificationPrediction
 
 
 class TestYoloDetailedPostprocessor:

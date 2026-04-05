@@ -11,17 +11,17 @@ import numpy as np
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 from tqdm import tqdm
+from triton_shared_models.detection.postprocessing import (
+    DEFAULT_CONFIDENCE_THRESHOLD,
+    DEFAULT_IOU_THRESHOLD,
+    YoloPostprocessor,
+)
 from triton_shared_models.preprocessing import LetterBoxPreprocessor as YoloPreprocessor
 
 from triton_model_tools.benchmarks.stats import compute_statistics
 from triton_model_tools.export.exporter import TENSORRT_NAME_SUFFIX
 from triton_model_tools.inference.client import TritonInferenceClient
 from triton_model_tools.inference.detection_io import collect_image_paths, load_image
-from triton_model_tools.inference.postprocessing import (
-    DEFAULT_CONFIDENCE_THRESHOLD,
-    DEFAULT_IOU_THRESHOLD,
-    YoloPostprocessor,
-)
 from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
 
 

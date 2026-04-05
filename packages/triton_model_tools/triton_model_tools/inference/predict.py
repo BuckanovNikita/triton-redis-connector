@@ -6,11 +6,11 @@ from typing import Any
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from triton_shared_models.detection.postprocessing import DEFAULT_CONFIDENCE_THRESHOLD, DEFAULT_IOU_THRESHOLD
 from typed_flow.protocols.metrics import TimeMetric
 from ultralytics import YOLO  # type: ignore[attr-defined]
 
 from triton_model_tools.inference.detection_io import collect_image_paths, save_detections_to_txt
-from triton_model_tools.inference.postprocessing import DEFAULT_CONFIDENCE_THRESHOLD, DEFAULT_IOU_THRESHOLD
 from triton_model_tools.models.constants import MILLISECONDS_PER_SECOND
 from triton_model_tools.models.detection import Detection, FolderInferenceResult, ImageDetectionResult
 

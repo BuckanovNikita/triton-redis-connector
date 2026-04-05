@@ -14,9 +14,6 @@ Usage:
 """
 
 import argparse
-import signal
-import sys
-import types
 from pathlib import Path
 
 import tritonclient.grpc as grpcclient
@@ -24,6 +21,8 @@ import yaml
 from loguru import logger
 from triton_redis_connector.config.schema import DecoderType, PreprocessStrategy
 from triton_redis_connector.engine.shipped_processors import (
+    ClassificationPostprocessorCallable,
+    DetectionPostprocessorCallable,
     InferenceNode,
     LogErrorSinkNode,
     PostProcessorNode,
@@ -33,8 +32,6 @@ from triton_redis_connector.inference.model_metadata import ModelMetadataCache
 from typed_flow.config.schema import AppConfig
 from typed_flow.connectors import RedisThreadSink, RedisThreadSource
 from typed_flow.engine.app import Application
-from typed_flow.errors.models import PipelineError
-from typed_flow.protocols import BaseThreadSink
 
 from reference_implementation.models import (
     CameraEvent,
@@ -55,7 +52,7 @@ from reference_implementation.models import (
     DetModel4Request,
     DetModel4Result,
 )
-from reference_implementation.processors import CameraRouterProcessor, make_cls_postprocessor, make_det_postprocessor
+from reference_implementation.processors import CameraRouterProcessor
 
 GRPC_URL = "localhost:8001"
 MODEL1_NAME = "yolo11s"
@@ -82,13 +79,6 @@ class Model4Sink(RedisThreadSink[DetModel4Result]):
 
 class ClassModel3Sink(RedisThreadSink[ClassModel3Result]):
     """Writes classification results to Redis stream."""
-
-
-class ErrorSink(BaseThreadSink[PipelineError]):
-    """Logs pipeline errors."""
-
-    def __call__(self, event: PipelineError) -> None:  # noqa: D102
-        logger.error("[{}] {}: {}", event.node_name, event.error_type, event.error_message)
 
 
 def load_config(path: str) -> AppConfig:
@@ -158,18 +148,18 @@ def main() -> None:
         InferenceNode[DetModel2Request, DetModel2Output](grpc_url, metadata_cache),
         InferenceNode[DetModel4Request, DetModel4Output](grpc_url, metadata_cache),
         InferenceNode[ClassModel3Request, ClassModel3Output](grpc_url, metadata_cache),
-        # Postprocessors — factory creates typed callables
+        # Postprocessors — composition-based typed callables
         PostProcessorNode[DetModel1Output, DetModel1Result](
-            make_det_postprocessor(DetModel1Output, DetModel1Result),
+            DetectionPostprocessorCallable(DetModel1Result),
         ),
         PostProcessorNode[DetModel2Output, DetModel2Result](
-            make_det_postprocessor(DetModel2Output, DetModel2Result),
+            DetectionPostprocessorCallable(DetModel2Result),
         ),
         PostProcessorNode[DetModel4Output, DetModel4Result](
-            make_det_postprocessor(DetModel4Output, DetModel4Result),
+            DetectionPostprocessorCallable(DetModel4Result),
         ),
         PostProcessorNode[ClassModel3Output, ClassModel3Result](
-            make_cls_postprocessor(ClassModel3Output, ClassModel3Result),
+            ClassificationPostprocessorCallable(ClassModel3Result),
         ),
         # Per-model sinks
         Model1Sink(redis=redis_cfg, sink=det_sink_cfg, name="model1_sink"),
@@ -177,24 +167,9 @@ def main() -> None:
         Model4Sink(redis=redis_cfg, sink=det_sink_cfg, name="model4_sink"),
         ClassModel3Sink(redis=redis_cfg, sink=cls_sink_cfg, name="class_sink"),
         LogErrorSinkNode(),
-        ErrorSink(),
     ]
 
     app = Application.build(config, processors=processors)
-
-    shutting_down = False
-
-    def handle_shutdown(signum: int, _frame: types.FrameType | None) -> None:
-        nonlocal shutting_down
-        if shutting_down:
-            logger.warning("Forced exit (second {})", signal.Signals(signum).name)
-            sys.exit(1)
-        shutting_down = True
-        logger.info("Received {}, shutting down...", signal.Signals(signum).name)
-        app.shutdown()
-
-    signal.signal(signal.SIGINT, handle_shutdown)
-    signal.signal(signal.SIGTERM, handle_shutdown)
 
     logger.info(
         "CV pipeline: {} → [{}, {}, {}, {}] → [{}, {}]",
@@ -207,17 +182,7 @@ def main() -> None:
         cls_sink_cfg.stream_name,
     )
 
-    try:
-        app.run()
-    except KeyboardInterrupt:
-        logger.info("KeyboardInterrupt, shutting down...")
-        app.shutdown()
-    except (RuntimeError, ValueError, OSError):
-        logger.exception("Pipeline crashed")
-        app.shutdown()
-        sys.exit(1)
-
-    logger.info("Pipeline stopped gracefully")
+    app.run_with_graceful_shutdown()
 
 
 if __name__ == "__main__":

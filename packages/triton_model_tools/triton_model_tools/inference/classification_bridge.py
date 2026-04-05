@@ -4,8 +4,7 @@ from triton_redis_connector.engine.events import ClassificationResult
 from triton_redis_connector.inference.request import (
     InferenceOutput,
 )
-
-from triton_model_tools.inference.classification_postprocessing import (
+from triton_shared_models.classification.postprocessing import (
     ClassificationPostprocessor,
     DetailedClassificationPostprocessor,
 )

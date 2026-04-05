@@ -2,6 +2,7 @@
 
 import numpy as np
 import numpy.typing as npt
+
 from triton_shared_models.classification import (
     ClassificationPrediction,
     DetailedClassificationPrediction,

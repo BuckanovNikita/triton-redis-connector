@@ -12,8 +12,8 @@ import cv2
 import numpy as np
 import pytest
 from triton_model_tools.benchmarks.comparison import compare_inference
-from triton_model_tools.inference.postprocessing import YoloPostprocessor
 from triton_model_tools.models.detection import Detection, ImageDetectionResult
+from triton_shared_models.detection.postprocessing import YoloPostprocessor
 from triton_shared_models.preprocessing import LetterBoxPreprocessor as YoloPreprocessor
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent.parent.parent / "test_fixtures"
