@@ -61,32 +61,7 @@ requires parallelism or work is CPU-bound.
 | DetachedThreadSink | `DetachedThreadSink[TIn]` / `BaseThreadSink[TIn]` | Blocking writes (Redis XADD, file I/O, network calls). |
 
 
-## Writing Pure Business Logic (legacy approach)
-
-Write processors as plain classes with `__call__`. No threading primitives, no
-queues, no `stop` events. The framework wraps them at assembly time using wrappers from `engine/wrappers.py`.
-
-```python
-import numpy as np
-import numpy.typing as npt
-
-
-class ImagePreprocessor:
-    def __init__(self, target_size: tuple[int, int]) -> None:
-        self.target_size = target_size
-
-    def __call__(self, event: RawImageEvent) -> TensorEvent | None:
-        if event.image_data is None:
-            return None
-        tensor = self._resize(event.image_data)
-        return TensorEvent(request_id=event.request_id, tensor=tensor)
-
-    def _resize(self, image: npt.NDArray[np.uint8]) -> npt.NDArray[np.float32]:
-        ...
-```
-
-
-## Subclass-Based Variant Declaration (preferred)
+## Subclass-Based Variant Declaration
 
 User processors inherit from a base class that declares the variant. Six base classes are available in `protocols.py`:
 
@@ -104,8 +79,6 @@ class ImagePreprocessor(BaseThreadProcessor[RawImageEvent, TensorEvent]):
 # No wrapping needed -- variant is declared by the base class
 registry.register("preprocessor", ImagePreprocessor(target_size=(640, 640)))
 ```
-
-Both approaches (wrapper-based and subclass-based) work and are fully compatible. Use subclasses for user processors (explicit variant, type-safe). Use wrappers for framework building blocks that should remain variant-agnostic.
 
 
 ## Pipeline Construction

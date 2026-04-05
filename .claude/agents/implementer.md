@@ -192,45 +192,6 @@ registry.register("proc", MyProcessor("value"))
 `Application.build()` registers shipped processors from the provided processor list.
 Event model and postprocessor come from code. Use `ModelBundle` + `expand_bundle()`.
 
-### Approach C: Manual Wrapping (legacy/advanced)
-
-Write pure processors with NO threading primitives. Framework wraps them at assembly time.
-This approach is retained for backward compatibility and advanced scenarios where fine-grained
-control over wrapping is needed.
-
-```python
-
-class ImagePreprocessor:
-    def __init__(self, target_size: tuple[int, int]) -> None:
-        self.target_size = target_size
-
-    def __call__(self, event: ImageEvent) -> TensorEvent | None:
-        if event.image_data is None:
-            return None
-        tensor = self._resize_and_normalize(event.image_data)
-        return TensorEvent(request_id=event.request_id, tensor=tensor)
-```
-
-Framework wraps at assembly time:
-
-```python
-from triton_redis_connector.engine.wrappers import DetachedThreadProcessor, MultiProcessProcessor
-from triton_redis_connector.engine.metric_aggregator import MetricAggregator
-
-wrapped = DetachedThreadProcessor(ImagePreprocessor(target_size=(640, 640)), aggregator=MetricAggregator())
-```
-
-Wrappers in `engine/wrappers.py`:
-- `DetachedThreadSource[TOut]` → `THREAD_SOURCE`
-- `DetachedProcessSource[TOut]` → `PROCESS_SOURCE`
-- `DetachedThreadProcessor[TIn, TOut]` → `THREAD_PROCESSOR`
-- `ThreadedProcessor[TIn, TOut]` → `THREAD_POOL_PROCESSOR`
-- `MultiProcessProcessor[TIn, TOut]` → `PROCESS_POOL_PROCESSOR`
-- `DetachedThreadSink[TIn]` → `THREAD_SINK`
-
-Each wrapper adds `stop: threading.Event`, `variant` property (satisfies `WrappedNode` protocol),
-and optional `MetricAggregator` for per-call timing/error/empty tracking.
-
 ### Composable Middleware
 
 Cross-cutting concerns compose via nesting in `engine/middleware.py`:
@@ -556,7 +517,7 @@ Leaf package shared by both `triton_redis_connector` and `triton_model_tools`.
 Import directly — it must NOT import from either consumer package.
 
 ```python
-from triton_shared_models.preprocessing import LetterBoxPreprocessor, LETTERBOX_PAD_VALUE
+from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor, LETTERBOX_PAD_VALUE
 from triton_shared_models.triton_types import TritonDataType, ExportFormat, TritonTensorSpec
 from triton_model_tools.triton_config import TritonModelConfig, DynamicBatchingConfig
 ```

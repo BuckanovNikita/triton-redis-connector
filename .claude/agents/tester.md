@@ -981,15 +981,14 @@ All other ruff rules still apply in tests. Tests must still have:
 
 ## Testing LetterBoxPreprocessor (from triton_shared_models)
 
-`LetterBoxPreprocessor` lives in `triton_shared_models.preprocessing` and is re-exported
-by `triton_redis_connector.preprocessing.letterbox`. Constructor-only API.
+`LetterBoxPreprocessor` lives in `triton_shared_models.detection.preprocessing`. Constructor-only API.
 
 ### Real Comparison Test (integration, requires ultralytics installed)
 
 ```python
 import numpy as np
 import pytest
-from triton_shared_models.preprocessing import LetterBoxPreprocessor
+from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor
 
 @pytest.mark.integration
 def test_letterbox_matches_ultralytics() -> None:
@@ -1011,7 +1010,7 @@ def test_letterbox_matches_ultralytics() -> None:
 ### Unit Test (no ultralytics dependency)
 
 ```python
-from triton_shared_models.preprocessing import LetterBoxPreprocessor
+from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor
 
 def test_letterbox_properties() -> None:
     image = np.zeros((1080, 1920, 3), dtype=np.uint8)
