@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "task": "typed-flow-runtime-acceptance-20261104",
+  "scope": [
+    "packages/typed_flow/tests/test_engine/test_app.py",
+    "packages/typed_flow/tests/test_metrics/test_emitter.py",
+    "docs/plans/typed-flow-runtime-acceptance-20261104/check_test_boundaries.py",
+    "docs/plans/typed-flow-runtime-acceptance-20261104/review-1.md"
+  ],
+  "impact": "modules",
+  "rules": "CLAUDE.md requires typed-flow independence, meaningful behavioral tests and no claimed real infrastructure acceptance from mocks. pyproject.toml preserves six production import contracts. Test isolation forbids importing concrete inference packages.",
+  "modules": [
+    {
+      "id": "lifecycle",
+      "path": "packages/typed_flow/tests/test_engine/test_app.py",
+      "change": "modify",
+      "responsibility": "Verify actual application startup, event delivery and shutdown using a valid graph and owned threads.",
+      "interface": "Tests and checker fail explicitly on invalid behavior/imports and do not change production public APIs.",
+      "layer": "Test and acceptance tooling",
+      "allowed_dependencies": [
+        "Python standard library",
+        "pytest",
+        "typed_flow",
+        "redis exception types and mocked Redis client"
+      ],
+      "forbidden_dependencies": [
+        "triton_redis_connector",
+        "triton_model_tools",
+        "triton_shared_models",
+        "GPU/model SDKs or live services"
+      ],
+      "effects": "Tests own threads and timers. After joining Application.run, repeat shutdown to cancel any timer started during the first shutdown; checker only reads source files.",
+      "contracts": [
+        "test-isolation"
+      ]
+    },
+    {
+      "id": "emitter",
+      "path": "packages/typed_flow/tests/test_metrics/test_emitter.py",
+      "change": "modify",
+      "responsibility": "Verify Redis connection failure recovery through a real local emitter thread and mocked Redis client.",
+      "interface": "Tests and checker fail explicitly on invalid behavior/imports and do not change production public APIs.",
+      "layer": "Test and acceptance tooling",
+      "allowed_dependencies": [
+        "Python standard library",
+        "pytest",
+        "typed_flow",
+        "redis exception types and mocked Redis client"
+      ],
+      "forbidden_dependencies": [
+        "triton_redis_connector",
+        "triton_model_tools",
+        "triton_shared_models",
+        "GPU/model SDKs or live services"
+      ],
+      "effects": "Tests own in-process threads and mocks and always stop them; checker only reads source files.",
+      "contracts": [
+        "test-isolation"
+      ]
+    },
+    {
+      "id": "boundary-check",
+      "path": "docs/plans/typed-flow-runtime-acceptance-20261104/check_test_boundaries.py",
+      "change": "add",
+      "responsibility": "Enforce infrastructure-independent imports in the two scoped test modules with a prohibited-edge negative case.",
+      "interface": "Tests and checker fail explicitly on invalid behavior/imports and do not change production public APIs.",
+      "layer": "Test and acceptance tooling",
+      "allowed_dependencies": [
+        "Python standard library",
+        "pytest",
+        "typed_flow",
+        "redis exception types and mocked Redis client"
+      ],
+      "forbidden_dependencies": [
+        "triton_redis_connector",
+        "triton_model_tools",
+        "triton_shared_models",
+        "GPU/model SDKs or live services"
+      ],
+      "effects": "Tests own in-process threads and mocks and always stop them; checker only reads source files.",
+      "contracts": [
+        "test-isolation"
+      ]
+    }
+  ],
+  "contracts": [
+    {
+      "id": "test-isolation",
+      "path": "docs/plans/typed-flow-runtime-acceptance-20261104/check_test_boundaries.py",
+      "status": "planned",
+      "rules": "Scoped test modules and checker must not import concrete inference/GPU infrastructure; injected forbidden import must be rejected. Production six contracts also remain passing.",
+      "check": "imports"
+    }
+  ],
+  "checks": [
+    {
+      "id": "imports",
+      "kind": "imports",
+      "command": "uv run --no-sync python docs/plans/typed-flow-runtime-acceptance-20261104/check_test_boundaries.py && uv run --no-sync lint-imports --no-cache",
+      "expectation": "Both test modules avoid concrete inference infrastructure, injected forbidden import is rejected, six production contracts remain kept.",
+      "result": {
+        "status": "passed",
+        "exit_code": 0,
+        "evidence": "docs/plans/typed-flow-runtime-acceptance-20261104/verification.md"
+      }
+    },
+    {
+      "id": "behavior",
+      "kind": "behavior",
+      "command": "uv run --no-sync pytest packages/typed_flow/tests -n 2 -W error::pytest.PytestUnhandledThreadExceptionWarning",
+      "expectation": "All safe typed-flow tests pass without unhandled thread exceptions; lifecycle events are delivered and Redis error recovery reaches subsequent flush.",
+      "result": {
+        "status": "passed",
+        "exit_code": 0,
+        "evidence": "docs/plans/typed-flow-runtime-acceptance-20261104/verification.md"
+      }
+    },
+    {
+      "id": "quality",
+      "kind": "behavior",
+      "command": "uv run --no-sync ruff check .; uv run --no-sync ruff format --check .; uv run --no-sync mypy packages/typed_flow/typed_flow; uv run --no-sync vulture",
+      "expectation": "Lint, formatting, typed-flow strict typing and dead-code checks return zero.",
+      "result": {
+        "status": "passed",
+        "exit_code": 0,
+        "evidence": "docs/plans/typed-flow-runtime-acceptance-20261104/verification.md"
+      }
+    },
+    {
+      "id": "native-gates",
+      "kind": "behavior",
+      "command": "uv run --frozen pytest -W error::pytest.PytestUnhandledThreadExceptionWarning; uv run --frozen pre-commit run --all-files",
+      "expectation": "The configured workspace suite and every native pre-commit hook pass without production/dependency modifications; integration/DALI exclusions remain explicit.",
+      "result": {
+        "status": "passed",
+        "exit_code": 0,
+        "evidence": "docs/plans/typed-flow-runtime-acceptance-20261104/verification.md"
+      }
+    },
+    {
+      "id": "timer-cleanup",
+      "kind": "behavior",
+      "command": "uv run --no-sync python \"$TIMER_RACE_REPRODUCTION\"",
+      "expectation": "Timer start delayed until run-thread join must leave zero uncancelled timers after each test cleanup.",
+      "result": {
+        "status": "passed",
+        "exit_code": 0,
+        "evidence": "docs/plans/typed-flow-runtime-acceptance-20261104/verification.md"
+      }
+    }
+  ],
+  "documentation": "Task plan and dated verification evidence only; public runtime interfaces and README usage are unchanged by test-only repair.",
+  "review": {
+    "status": "accepted",
+    "reviewer": "Fresh independent native agent /root/triton_review_round2",
+    "evidence": "docs/plans/typed-flow-runtime-acceptance-20261104/review-2.md",
+    "reconciliation": "Parent inspected both changed test modules, added scoped checker, plan/architecture/verification and both review artifacts. Round1 timer finding corrected and original forced interleaving independently verified. No runtime/dependency/lock/remote branch changes; no unrelated source changes present. Final record/ledger changes only record actual acceptance and local commit."
+  }
+}

@@ -1,8 +1,10 @@
 """Tests for MetricEmitter periodic flush to Redis."""
 
+import threading
 import time
 from unittest.mock import MagicMock
 
+from redis.exceptions import ConnectionError as RedisConnectionError
 from typed_flow.metrics.buffer import MetricBuffer
 from typed_flow.metrics.collector import MetricEvent
 from typed_flow.metrics.emitter import MetricEmitter
@@ -70,16 +72,25 @@ class TestMetricEmitter:
     def test_handles_redis_connection_error(self) -> None:
         buffer = MetricBuffer()
         client = MagicMock()
-        client.xadd.side_effect = ConnectionError("Connection lost")
-        emitter = MetricEmitter(buffer=buffer, client=client, stream="metrics", interval_s=0.05)
+        delivered = threading.Event()
+
+        def write_metric(**_kwargs: object) -> bytes:
+            if client.xadd.call_count == 1:
+                raise RedisConnectionError("Connection lost")
+            delivered.set()
+            return b"1-0"
+
+        client.xadd.side_effect = write_metric
+        emitter = MetricEmitter(buffer=buffer, client=client, stream="metrics", interval_s=0.05, known_metrics={"test"})
 
         buffer.record(_make_event())
 
         emitter.start()
-        time.sleep(0.15)
-        emitter.stop()
-
-        assert client.xadd.called
+        try:
+            assert delivered.wait(timeout=2.0)
+            assert client.xadd.call_count >= 2
+        finally:
+            emitter.stop()
 
     def test_start_is_idempotent(self) -> None:
         buffer = MetricBuffer()

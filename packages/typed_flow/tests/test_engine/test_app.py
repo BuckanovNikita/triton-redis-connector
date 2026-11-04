@@ -1,13 +1,13 @@
 """Tests for Application lifecycle — startup, shutdown, parallel dispatch."""
 
 import threading
-import time
 
 import pytest
 from typed_flow.config.schema import AppConfig, QueueConfig
 from typed_flow.engine.app import Application
 from typed_flow.engine.queue_bus import QueueBus
 from typed_flow.engine.registry import PipelineRegistry
+from typed_flow.errors.models import PipelineError
 from typed_flow.metrics.buffer import MetricBuffer
 from typed_flow.protocols import (
     BaseThreadProcessor,
@@ -52,9 +52,16 @@ class SimpleSink(BaseThreadSink[EventB]):
     def __init__(self) -> None:
         super().__init__()
         self.received: list[EventB] = []
+        self.delivered = threading.Event()
 
     def __call__(self, event: EventB) -> None:
         self.received.append(event)
+        self.delivered.set()
+
+
+class ErrorSink(BaseThreadSink[PipelineError]):
+    def __call__(self, event: PipelineError) -> None:
+        pytest.fail(f"Unexpected pipeline error: {event}")
 
 
 @pytest.fixture
@@ -69,7 +76,9 @@ def queue_bus() -> QueueBus:
 
 @pytest.fixture
 def registry() -> PipelineRegistry:
-    return PipelineRegistry()
+    registry = PipelineRegistry()
+    registry.register("errors", ErrorSink())
+    return registry
 
 
 class TestApplicationStartup:
@@ -91,11 +100,16 @@ class TestApplicationStartup:
 
         app = Application(config=config, registry=registry, queue_bus=queue_bus)
 
+        source.add_event(EventA())
         run_thread = threading.Thread(target=app.run, daemon=True)
         run_thread.start()
-        time.sleep(0.05)
-        app.shutdown()
-        run_thread.join(timeout=2.0)
+        try:
+            assert sink.delivered.wait(timeout=2.0)
+            assert run_thread.is_alive()
+        finally:
+            app.shutdown()
+            run_thread.join(timeout=2.0)
+            app.shutdown()  # Cancel a stats timer started during the first shutdown.
         assert not run_thread.is_alive()
 
 
@@ -110,11 +124,16 @@ class TestShutdown:
 
         app = Application(config=config, registry=registry, queue_bus=queue_bus)
 
+        source.add_event(EventA())
         run_thread = threading.Thread(target=app.run, daemon=True)
         run_thread.start()
-        time.sleep(0.05)
-        app.shutdown()
-        run_thread.join(timeout=2.0)
+        try:
+            assert sink.delivered.wait(timeout=2.0)
+            assert run_thread.is_alive()
+        finally:
+            app.shutdown()
+            run_thread.join(timeout=2.0)
+            app.shutdown()  # Cancel a stats timer started during the first shutdown.
         assert not run_thread.is_alive()
 
     def test_multiple_shutdown_calls_safe(
@@ -129,12 +148,17 @@ class TestShutdown:
 
         app = Application(config=config, registry=registry, queue_bus=queue_bus)
 
+        source.add_event(EventA())
         run_thread = threading.Thread(target=app.run, daemon=True)
         run_thread.start()
-        time.sleep(0.05)
-        app.shutdown()
-        app.shutdown()
-        run_thread.join(timeout=2.0)
+        try:
+            assert sink.delivered.wait(timeout=2.0)
+            assert run_thread.is_alive()
+        finally:
+            app.shutdown()
+            app.shutdown()
+            run_thread.join(timeout=2.0)
+            app.shutdown()  # Cancel a stats timer started during the first shutdown.
         assert not run_thread.is_alive()
 
 
