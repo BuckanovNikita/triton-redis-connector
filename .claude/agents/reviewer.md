@@ -203,7 +203,7 @@ Verify each component:
   Flag GroupBy on non-string fields.
 - **Tracked**: Declared via `Annotated[ProcessorType, Tracked("name")]` on node types
   for automatic per-call metrics via `MetricAggregator`.
-- **Counter/Gauge/GroupBy** must live in `protocols.py` (leaf layer). **Tracked** lives
+- **Counter/Gauge/GroupBy** must live in `protocols/metrics.py` (leaf layer). **Tracked** lives
   in `engine/metric_aggregator.py`.
 - **MetricEvent** has only 3 fields: `component_name`, `measure`, `value`. Flag any
   MetricEvent with timestamp, tags, or extra fields.

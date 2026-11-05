@@ -53,13 +53,14 @@ uv run pre-commit run --all-files           # full gate
 - **Configs/models**: always `pydantic` — never raw dicts for serialization.
 - **Error handling**: never bare `except Exception` — catch specific types. Never silently swallow exceptions.
 - **No dynamic access**: avoid `getattr`/`hasattr`/`__dict__` unless wrapping opaque third-party SDKs (with a comment explaining why).
-- **Comments**: prefer clearer names and extracted functions over comments; comment only non-obvious constraints or decisions.
+- **Comments**: avoid comments; use them only as a last resort for truly hard code. Improve names and extract functions instead. (The explanatory comment required for dynamic access is the exception.)
 - **Avoid too short functions**: inline functions under 4 lines if used fewer than 4 times and deduplication would not make code fragile.
 - **Imports**: top-level, never lazy — unless the dependency is truly optional (not in pyproject.toml) or it is a CLI subcommand handler in `__main__.py`.
 - **Config file sync**: when moving/renaming files, update ALL config paths: mypy `exclude`, pyright `exclude`, vulture `paths`/`ignore_names`, import-linter contracts.
 - **No custom IoU/NMS**: use `torchvision.ops.box_iou` / `torchvision.ops.nms`.
 - **No re-export modules**: import from the source package directly, never create proxy modules.
 - **Explicit protocol inheritance**: processors/decoders must explicitly inherit protocol classes, not rely on structural typing.
+- **Devcontainer**: if `whoami` prints `vscode`, you are inside the devcontainer and `docker`/`docker compose` do not work. STOP, give the user the host commands to run, and wait for the output (see `.claude/skills/check-infra/SKILL.md`).
 - **Skill/config placement**: keep project skills, agents, hooks and settings in this repository (`.claude/` today), never in `~/.claude/`.
 
 ## Metrics policy

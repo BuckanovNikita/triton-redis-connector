@@ -78,11 +78,11 @@ Rules:
    field value per-event.
 3. **GroupBy**: `Annotated[str, GroupBy("name", window_s=60)]` on an event field — counts
    events grouped by this field value over a time window.
-4. **Counter/Gauge/GroupBy** live in `protocols.py` (leaf layer) — importable everywhere.
+4. **Counter/Gauge/GroupBy** live in `protocols/metrics.py` (leaf layer) — importable everywhere.
 5. **MetricEvent**: Only 3 fields — `component_name`, `measure`, `value`.
 6. **Tracked on wrappers**: `Annotated[ProcessorType, Tracked("name")]` for per-call
    throughput/latency/error metrics on parallel nodes.
-7. **Zero-value rule**: `_log_stats` emits ALL registered counter names even when idle.
+7. **Zero-value rule**: `MetricEmitter` (`metrics/emitter.py`) emits zero-value events for ALL registered counter names even when idle.
 8. **README sync**: Update metrics table in `README.md` (section "Метрики") when adding metrics.
 
 ---
