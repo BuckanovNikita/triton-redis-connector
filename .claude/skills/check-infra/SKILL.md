@@ -1,10 +1,7 @@
 ---
 name: check-infra
 description: >
-  Infrastructure health checker for Docker services. Use when checking if
-  Redis, Triton, or RedisInsight are running, diagnosing test hangs,
-  debugging Docker service failures, or "/check-infra". Reports service
-  status, loaded Triton models, and common failure diagnostics.
+  Checks health of the triton-redis-connector Docker stack (Redis, Triton, RedisInsight, Triton SDK) from the host or from inside the devcontainer, lists loaded Triton models and diagnoses common failures. Use when tests hang, Redis or Triton is unreachable, Triton models are UNAVAILABLE, or the user runs /check-infra.
 ---
 
 # Infrastructure Health Check
@@ -27,9 +24,11 @@ triton-sdk and other dependent services to start.
 | Service | Image | Internal Ports | Debug Host Ports | Health Check |
 |---------|-------|----------------|------------------|--------------|
 | Redis | redis:7-alpine | 6379 | 0.0.0.0:6379 | `redis-cli ping` → PONG |
-| Triton | nvcr.io/nvidia/tritonserver:26.02-py3 | 8000 (HTTP), 8001 (gRPC), 8002 (metrics) | 0.0.0.0:8000-8002 | `curl http://localhost:8000/v2/health/live` → 200 |
+| Triton | nvcr.io/nvidia/tritonserver:${TRITON_VERSION:-25.03}-py3 | 8000 (HTTP), 8001 (gRPC), 8002 (metrics) | 0.0.0.0:8000-8002 | `curl http://localhost:8000/v2/health/live` → 200 |
 | RedisInsight | redis/redisinsight:latest | 5540 | 0.0.0.0:5540 | Container running |
-| Triton SDK | nvcr.io/nvidia/tritonserver:26.02-py3-sdk | — | 0.0.0.0:8010 | Container running |
+| Triton SDK | nvcr.io/nvidia/tritonserver:${TRITON_VERSION:-25.03}-py3-sdk | — | 0.0.0.0:8010 | Container running |
+
+`TRITON_VERSION` comes from the shell environment or `.devcontainer/.env` (the Compose project directory is `.devcontainer/`); the repo-root `.env` is not read by these commands, so export the variable or pass `--env-file .env` to switch versions.
 
 ## Step 0: Detect Environment
 
@@ -171,14 +170,14 @@ docker compose -f .devcontainer/docker-compose.debug.yml logs triton --tail=50
 | `Internal: unable to load` | config.pbtxt parse error | Check syntax, field names, data types |
 | `GPU not available` / `KIND_GPU but no GPUs` | No GPU or nvidia-docker issue | Expected in CPU-only environments. Models stay UNAVAILABLE but Triton is live. |
 | `model version X not found` | Missing version directory | Create `1/` directory with model file |
-| `--exit-on-error=false` but no models | Empty model_repository | Export models first with `triton-model-export` |
+| `--exit-on-error=false` but no models | Empty model_repository | Export models first with `uv run triton-model-tools convert` |
 | triton-sdk didn't start | Triton unhealthy | Use debug compose (live health check) or start triton-sdk manually |
 
 ### Common Redis Failures
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Connection refused | Container not running | `docker compose up -d redis` |
+| Connection refused | Container not running | `docker compose -f .devcontainer/docker-compose.debug.yml up -d redis` |
 | `LOADING Redis is loading` | AOF replay in progress | Wait for loading to complete |
 
 ## Step 4: Check Model Repository
@@ -190,6 +189,8 @@ ls -la model_repository/
 Compare local models vs what Triton reports as loaded. Each model needs:
 - `config.pbtxt` (required with `--strict-model-config=true`)
 - At least one version directory (`1/`) containing the model file
+
+Both compose files run Triton with `--model-control-mode=explicit`; a model present in `model_repository/` stays unloaded until loaded via the Model Control API (see the `using-triton-inference-server` skill).
 
 ## Step 5: Summary
 

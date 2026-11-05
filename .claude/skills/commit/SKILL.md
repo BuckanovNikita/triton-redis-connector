@@ -1,10 +1,7 @@
 ---
 name: commit
 description: >
-  Use when the user wants to commit and push code changes. Handles the full
-  commit workflow: running quality checks (ruff, mypy, pyright, vulture,
-  pytest via pre-commit), staging files, creating a conventional commit, and
-  pushing via SSH. Trigger on: "commit", "push", "/commit".
+  Runs the triton-redis-connector commit-and-push workflow: reviews the diff, runs the pre-commit pipeline (ruff, mypy, pyright, import-linter, vulture, pytest, uv lock), updates affected docs, stages explicit task-owned paths, writes a Conventional Commit and pushes over SSH. Use when the user asks to commit, push or run /commit in this repository.
 ---
 
 # Commit Workflow
@@ -15,10 +12,7 @@ Run `git diff --stat` and `git status` to understand what changed.
 
 ## 2. Fix any failures
 
-Ruff format/fix runs automatically on every file save (hook).
-Pre-commit runs automatically before every commit (hook).
-
-If you want to check early, run manually:
+In Claude Code, `auto-ruff-format.sh` formats edited `.py` files. A PreToolUse hook also runs pre-commit on `git commit`, but it does not reliably block on failure, so pre-commit must pass before you commit:
 
 ```bash
 uv run pre-commit run --all-files
@@ -37,9 +31,11 @@ Review changes and update all project documentation (README.md and all .md at ro
 ## 4. Stage and commit
 
 ```bash
-git add -A
+git add <paths>
 git commit -m "<type>: <description>"
 ```
+
+Stage explicit task-owned paths; stage everything only when every change is task-owned. For a multi-line message, write a unique temp file `/tmp/COMMIT_MSG_<short_hash>`, run `git commit -F <path>`, then delete it.
 
 Use [Conventional Commits](https://www.conventionalcommits.org/):
 - `feat:` — new feature
@@ -49,9 +45,11 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 - `docs:` — documentation only
 - `chore:` — maintenance (deps, config, CI)
 
+The commit-message hook also accepts perf, ci, build, style and revert; see AGENTS.md.
+
 Keep subject line concise. Use body for details when needed.
 
-Hooks auto-validate commit message format and run pre-commit before the commit executes.
+In Claude Code, hooks validate the commit message format and run pre-commit before the commit executes (pre-commit failures are not reliably blocked; check the output).
 
 ## 5. Push via SSH
 

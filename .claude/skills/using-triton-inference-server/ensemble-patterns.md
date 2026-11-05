@@ -1,5 +1,14 @@
 # Triton Ensemble Patterns
 
+## Contents
+
+- [How Ensembles Work](#how-ensembles-work)
+- [2-Step: DALI Preprocess -> Inference](#2-step-dali-preprocess---inference)
+- [3-Step: DALI -> Inference -> NMS](#3-step-dali---inference---nms)
+- [3-Step: DALI -> Inference -> Rescale](#3-step-dali---inference---rescale)
+- [4-Step: DALI -> Inference -> NMS -> Rescale](#4-step-dali---inference---nms---rescale)
+- [Key Rules](#key-rules)
+
 ## How Ensembles Work
 
 Ensemble models chain multiple Triton models in a single request. Data flows between

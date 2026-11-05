@@ -53,7 +53,7 @@ results = model.predict(
 
 ### Predict Parameters
 
-See `./predict-parameters.md` for the full parameter table.
+Read [predict-parameters.md](predict-parameters.md) when you need a predict parameter not in the table below.
 
 Key parameters:
 
@@ -156,7 +156,7 @@ exported_path = model.export(format="onnx")  # returns path to exported file
 
 ### Export Parameters
 
-See `./export-parameters.md` for the full parameter table.
+Read [export-parameters.md](export-parameters.md) when you need an export parameter not in the table below (ONNX/TensorRT-specific, end-to-end NMS, output control).
 
 Key parameters:
 

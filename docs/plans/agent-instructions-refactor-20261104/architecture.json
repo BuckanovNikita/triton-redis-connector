@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "task": "Refactor triton-redis-connector agent instructions and skills",
+  "scope": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".claude/skills/commit/SKILL.md",
+    ".claude/skills/check-infra/SKILL.md",
+    ".claude/skills/scaffold-module/SKILL.md",
+    ".claude/skills/verify-plan/SKILL.md",
+    ".claude/skills/uv-package-manager/SKILL.md",
+    ".claude/skills/using-triton-inference-server/SKILL.md",
+    ".claude/skills/using-triton-inference-server/ensemble-patterns.md",
+    ".claude/skills/using-triton-inference-server/server-operations.md",
+    ".claude/skills/using-nvidia-dali/SKILL.md",
+    ".claude/skills/using-ultralytics/SKILL.md"
+  ],
+  "impact": "none",
+  "rationale": "Inspected the task diff: only agent instruction and skill text changes (new AGENTS.md, CLAUDE.md adapter, skill descriptions and prose, one verbatim section move into a reference file). No runtime packages, interfaces, import-linter contracts, dependency configuration, hooks, settings or composition targets change."
+}

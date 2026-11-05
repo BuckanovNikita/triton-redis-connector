@@ -1,11 +1,7 @@
 ---
 name: scaffold-module
 description: >
-  Scaffold new workspace packages or submodules within existing packages.
-  Use when creating a new package (e.g., triton_shared_models), adding a
-  submodule to an existing package, or "/scaffold-module". Handles all
-  config file updates (pyproject.toml, pyrightconfig.json, import-linter
-  contracts) to prevent silent tooling gaps.
+  Scaffolds a new uv workspace package under packages/ or a new submodule inside an existing package, and updates every tooling config that must list it (root pyproject.toml mypy, pytest, vulture, coverage and import-linter sections, pyrightconfig.json, uv.lock). Use when adding a package such as triton_shared_models, adding a submodule such as connectors, or running /scaffold-module.
 ---
 
 # Scaffold Module
@@ -61,7 +57,7 @@ def test_<package>_import() -> None:
 
 Update these sections (read the file first to find current values):
 
-1. **mypy_path** in `[tool.mypy]` — add `packages/<name>` to the comma-separated list
+1. **mypy_path** in `[tool.mypy]` — add `packages/<name>` to the `mypy_path` array
 2. **testpaths** in `[tool.pytest.ini_options]` — add `packages/<name>/tests`
 3. **paths** in `[tool.vulture]` — add `packages/<name>/<name>`
 4. **source** in `[tool.coverage.run]` — add `<name>` to the list

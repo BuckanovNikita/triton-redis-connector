@@ -1,10 +1,7 @@
 ---
 name: using-triton-inference-server
 description: >
-  NVIDIA Triton Inference Server reference. Use when writing config.pbtxt files,
-  using tritonclient gRPC/HTTP API, building model repository structure, creating
-  ensemble models, configuring instance groups, dynamic batching, health checks,
-  model management, Python backend models, or querying Triton metrics/statistics.
+  NVIDIA Triton Inference Server reference: tritonclient gRPC/HTTP API, config.pbtxt for ONNX, TensorRT, DALI, Python and ensemble models, model repository layout, dynamic batching, instance groups, health and metrics endpoints, inference statistics, explicit model control and perf_analyzer. Use when writing or debugging config.pbtxt files, model repositories, tritonclient calls or Triton server options, or querying Triton metrics/statistics.
 ---
 
 # NVIDIA Triton Inference Server
@@ -262,7 +259,7 @@ instance_group [
 
 ### Ensemble Model
 
-See `./ensemble-patterns.md` for multi-step ensemble configurations.
+Read [ensemble-patterns.md](ensemble-patterns.md) when wiring a 2-, 3- or 4-step ensemble (DALI → inference → NMS/rescale) or debugging ensemble load failures.
 
 ```protobuf
 name: "dali_ensemble"
@@ -449,60 +446,4 @@ class TritonPythonModel:
 
 ---
 
-## Server Launch Options
-
-```bash
-tritonserver \
-  --model-repository=/models \
-  --model-control-mode=poll \          # none | poll | explicit
-  --repository-poll-secs=10 \          # poll interval
-  --exit-on-error=false \              # keep running if models fail to load
-  --strict-model-config=true \         # require complete config.pbtxt
-  --log-verbose=1                      # verbose logging
-```
-
-| Mode | Description |
-|------|-------------|
-| `none` | All models loaded at startup, no changes |
-| `poll` | Periodically check for new/changed models |
-| `explicit` | Models loaded/unloaded via API only |
-
----
-
-## Model Control API (explicit mode)
-
-When Triton runs with `--model-control-mode=explicit`, models are loaded/unloaded via API:
-
-```bash
-# Load a model
-curl -X POST http://localhost:8000/v2/repository/models/my_model/load
-
-# Unload a model
-curl -X POST http://localhost:8000/v2/repository/models/my_model/unload
-
-# Check if model is ready after loading
-curl http://localhost:8000/v2/models/my_model/ready
-```
-
-Via gRPC client:
-```python
-client.load_model("my_model")
-client.unload_model("my_model")
-```
-
----
-
-## perf_analyzer
-
-```bash
-perf_analyzer \
-  -m yolo11s \
-  -i grpc \
-  -u localhost:8001 \
-  --concurrency-range 1 \
-  --measurement-interval 5000 \
-  --measurement-count 10 \
-  --csv
-```
-
-Output columns: Concurrency, Inferences/Second, p50/p95/p99 latency (microseconds).
+Read [server-operations.md](server-operations.md) when choosing tritonserver launch flags or model-control mode, loading/unloading models in explicit mode (this repo's compose files use explicit mode), or running perf_analyzer.

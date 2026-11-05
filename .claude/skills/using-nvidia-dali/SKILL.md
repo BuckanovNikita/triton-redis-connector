@@ -1,17 +1,26 @@
 ---
 name: using-nvidia-dali
 description: >
-  NVIDIA DALI (Data Loading Library) reference for GPU-accelerated image
-  preprocessing pipelines. Use when writing DALI pipelines, using fn operators
-  (decoders.image, resize, paste, crop, crop_mirror_normalize, color_space_conversion,
-  external_source, expand_dims, cast, pad), integrating DALI with Triton backend,
-  or implementing letterbox/resize/normalize preprocessing on GPU.
+  NVIDIA DALI reference for GPU image preprocessing pipelines: fn operators (decoders.image, resize, paste, crop, crop_mirror_normalize, color_space_conversion, external_source, expand_dims, cast, pad), letterbox/resize/normalize recipes and Triton DALI backend integration, including known WSL2 and Blackwell limitations. Use when writing or debugging DALI pipelines or DALI models served by Triton.
 ---
 
 # NVIDIA DALI — Pipeline & Operator Reference
 
 DALI runs image preprocessing on GPU inside the data pipeline, replacing CPU-bound
 OpenCV/PIL operations.
+
+## Gotchas
+
+- `fn.paste` positions are normalized `[0, 1]` relative to canvas size, not pixel coordinates
+- `fn.paste` with `min_canvas_size` may create a canvas larger than target — always `fn.crop` after
+- `fn.pad` pads at end (bottom-right), not centered — use `fn.paste` for centered letterbox
+- `fn.crop_mirror_normalize` with `std=[255, 255, 255]` divides by 255 (it's `(x - mean) / std`)
+- DALI pipeline is a lazy graph — operators define the graph, `pipe.run()` executes it
+- For Triton backend, the file MUST define a function named `pipe` (not `pipeline` or `main`)
+- `@autoserialize` is required for Triton DALI backend — serializes pipeline to protobuf
+- DALI expressions (data nodes) cannot be used in Python control flow (`if`, `for`) — they are graph nodes, not values
+- **WSL2**: DALI crashes in Triton on WSL2 — do NOT use DALI models in Triton when running under WSL. On host, use `device='cpu'` for DALI operators
+- **Blackwell GPUs (RTX 5090)**: DALI fails with nvml error in Triton 26.02 — needs 26.04+ with DALI 1.55+
 
 ## Imports
 
@@ -367,16 +376,3 @@ preprocessed = result.as_numpy("OUTPUT_0")  # (1, 3, H, W) float32
 - `device="mixed"` — CPU input, GPU output (used by `decoders.image`)
 - Once data is on GPU, all subsequent operators should run on GPU
 - `fn.external_source` is always CPU; use `device="mixed"` decoder to move to GPU
-
-## Gotchas
-
-- `fn.paste` positions are normalized `[0, 1]` relative to canvas size, not pixel coordinates
-- `fn.paste` with `min_canvas_size` may create a canvas larger than target — always `fn.crop` after
-- `fn.pad` pads at end (bottom-right), not centered — use `fn.paste` for centered letterbox
-- `fn.crop_mirror_normalize` with `std=[255, 255, 255]` divides by 255 (it's `(x - mean) / std`)
-- DALI pipeline is a lazy graph — operators define the graph, `pipe.run()` executes it
-- For Triton backend, the file MUST define a function named `pipe` (not `pipeline` or `main`)
-- `@autoserialize` is required for Triton DALI backend — serializes pipeline to protobuf
-- DALI expressions (data nodes) cannot be used in Python control flow (`if`, `for`) — they are graph nodes, not values
-- **WSL2**: DALI crashes in Triton on WSL2 — do NOT use DALI models in Triton when running under WSL. On host, use `device='cpu'` for DALI operators
-- **Blackwell GPUs (RTX 5090)**: DALI fails with nvml error in Triton 26.02 — needs 26.04+ with DALI 1.55+
