@@ -14,17 +14,18 @@
 ## Commands
 
 Run every Python tool through `uv run`. Never call bare `python`, `python3`, `pip`, `pip3`,
-`pytest`, `ruff`, `mypy`, `pyright`, `vulture`, `lint-imports` or `pre-commit`, and never use
+`pytest`, `ruff`, `mypy`, `pyright`, `vulture`, `lint-imports` or `prek`, and never use
 `.venv/bin/` paths or activate the venv.
 
 ```bash
 uv sync --all-groups --extra triton-25-03   # setup; pick the extra matching TRITON_VERSION, see docs/triton-versions.md
 uv run pytest                               # unit tests, parallel (-n auto); deselects `integration`
-uv run pre-commit run --all-files           # full gate
+uv run prek run --all-files           # full gate
 ```
 
 - Pre-commit pipeline: ruff format -> ruff check -> mypy -> pyright -> import-linter -> vulture -> pytest -> uv lock.
-- Before considering work complete, run `uv run pytest` and `uv run pre-commit run --all-files`.
+- For code changes, run `uv run prek run --all-files`; its pytest step satisfies
+  the unit-test gate.
 - Default pytest options deselect `integration` tests (they need Redis and Triton); select them with `uv run pytest -m integration` after checking the stack.
 - Triton version switching: follow `docs/triton-versions.md`.
 
@@ -42,7 +43,7 @@ uv run pre-commit run --all-files           # full gate
 
 - [Conventional Commits](https://www.conventionalcommits.org/). Accepted types: feat, fix, refactor, test, docs, chore, perf, ci, build, style, revert; optional `(scope)` and `!`.
 - Never skip checks with `--no-verify`; fix the failures.
-- Do not rely on a Git hook; run `uv run pre-commit run --all-files` yourself before every commit. In Claude Code a PreToolUse hook also runs it on `git commit`.
+- Do not rely on a Git hook; run `uv run prek run --all-files` yourself before every commit. In Claude Code a PreToolUse hook also runs it on `git commit`.
 - Push over SSH: `git@github.com:<org>/<repo>.git`.
 - Multi-line messages: write a unique temp file `/tmp/COMMIT_MSG_<short_hash>`, run `git commit -F <path>`, then delete it.
 - Parallel agents or worktrees: never commit from agents on the main branch; never use shared temp files such as `/tmp/COMMIT_MSG`; verify git state after each agent finishes.

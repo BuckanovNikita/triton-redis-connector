@@ -23,7 +23,7 @@ identify issues and provide specific, actionable feedback with file:line referen
 Ruff format/fix runs automatically on every file save (hook). Pre-commit runs automatically before every commit (hook). For a full review, run manually:
 
 ```bash
-uv run pre-commit run --all-files
+uv run prek run --all-files
 uv run pytest --cov --cov-report=term-missing
 ```
 

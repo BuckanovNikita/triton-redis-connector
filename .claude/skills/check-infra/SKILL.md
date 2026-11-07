@@ -21,12 +21,15 @@ triton-sdk and other dependent services to start.
 
 ## Services Expected
 
-| Service | Image | Internal Ports | Debug Host Ports | Health Check |
-|---------|-------|----------------|------------------|--------------|
-| Redis | redis:7-alpine | 6379 | 0.0.0.0:6379 | `redis-cli ping` → PONG |
-| Triton | nvcr.io/nvidia/tritonserver:${TRITON_VERSION:-25.03}-py3 | 8000 (HTTP), 8001 (gRPC), 8002 (metrics) | 0.0.0.0:8000-8002 | `curl http://localhost:8000/v2/health/live` → 200 |
-| RedisInsight | redis/redisinsight:latest | 5540 | 0.0.0.0:5540 | Container running |
-| Triton SDK | nvcr.io/nvidia/tritonserver:${TRITON_VERSION:-25.03}-py3-sdk | — | 0.0.0.0:8010 | Container running |
+| Service | Internal Ports | Debug Host Ports | Health Check |
+|---------|----------------|------------------|--------------|
+| Redis | 6379 | 0.0.0.0:6379 | `redis-cli ping` → PONG |
+| Triton | 8000 (HTTP), 8001 (gRPC), 8002 (metrics) | 0.0.0.0:8000-8002 | `curl http://localhost:8000/v2/health/live` → 200 |
+| RedisInsight | 5540 | 0.0.0.0:5540 | Container running |
+| Triton SDK | — | 0.0.0.0:8010 | Container running |
+
+Read service images and version defaults from the selected Compose file and its
+resolved configuration; keep version constraints there rather than in this skill.
 
 `TRITON_VERSION` comes from the shell environment or `.devcontainer/.env` (the Compose project directory is `.devcontainer/`); the repo-root `.env` is not read by these commands, so export the variable or pass `--env-file .env` to switch versions.
 

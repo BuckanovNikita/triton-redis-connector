@@ -8,14 +8,13 @@
 
 | Skill | Trigger |
 |---|---|
-| `/commit` | Commit and push workflow with pre-commit |
 | `/check-infra` | Check Docker services health (Redis, Triton) |
 | `/scaffold-module` | Create new packages or submodules |
 | `/verify-plan` | Verify implementation plan before execution |
 | `/using-triton-inference-server` | Triton config.pbtxt, tritonclient API, model repository |
 | `/using-nvidia-dali` | DALI GPU preprocessing pipelines |
 | `/using-ultralytics` | YOLO predict/export reference |
-| `/uv-package-manager` | uv commands, workspace, deps, lockfile management |
+| `/triton-workspace-dependencies` | Triton workspace and version-extra constraints |
 
 ### Agent team (`.claude/agents/`)
 
@@ -31,7 +30,7 @@
 - `block-bare-tools.sh` (PreToolUse Bash) — blocks bare Python tools and `.venv/bin/`; use `uv run`.
 - `block-no-verify.sh` (PreToolUse, `git commit*--no-verify*`) — blocks `--no-verify`.
 - `validate-commit-msg.sh` (PreToolUse, `git commit*`) — checks the Conventional Commit subject (`-m` or `-F`).
-- `pre-commit-guard.sh` (PreToolUse, `git commit*`, 300 s) — runs `uv run pre-commit run --all-files`; it does not reliably block on failure, so check its output.
+- `pre-commit-guard.sh` (PreToolUse, `git commit*`, 300 s) — runs `uv run prek run --all-files`; it does not reliably block on failure, so check its output.
 - `auto-ruff-format.sh` (PostToolUse Write|Edit) — runs `ruff format` and `ruff check` on edited `.py` files.
 - `inject-session-context.sh` (UserPromptSubmit, once) — injects branch, dirty-file count and `TRITON_VERSION` from `.env`.
 - `setup-worktree.sh` — intended as a WorktreeCreate hook (copies `.env`, runs `uv sync --all-groups`); not registered in `settings.json`, so it never runs.
