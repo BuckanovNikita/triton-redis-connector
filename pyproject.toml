@@ -69,7 +69,7 @@ dev = [
     "triton-redis-connector",
     "triton-model-tools",
     "triton-shared-models",
-    "pre-commit>=4.5.1,<5.0.0",
+    "prek==0.5.10",
     "nvitop>=1.6.2",
     { include-group = "lint" },
     { include-group = "test" },
@@ -113,9 +113,6 @@ fixable = ["ALL"]
 "packages/triton_model_tools/triton_model_tools/export/classification_exporter.py" = ["PLC0415"]
 "packages/triton_model_tools/triton_model_tools/export/dali.py" = ["PLC0415"]
 "examples/**" = ["ALL"]
-
-[tool.ruff.format]
-docstring-code-format = true
 
 [tool.mypy]
 python_version = "3.12"

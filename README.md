@@ -61,7 +61,7 @@ docker compose up -d redis              # только Redis
 docker compose up -d                    # Redis + Triton (требует GPU)
 
 # Проверка
-uv run pre-commit run --all-files
+uv run prek run --all-files
 uv run pytest
 ```
 
@@ -79,7 +79,7 @@ uv run pytest
 | `uv run pytest` | Запуск тестов (параллельно) |
 | `uv run pytest -x` | Остановка на первом падении |
 | `uv run pytest -k test_name` | Запуск конкретного теста |
-| `uv run pre-commit run --all-files` | Все проверки по порядку |
+| `uv run prek run --all-files` | Все проверки по порядку |
 
 ## CLI-команды (triton-model-tools)
 

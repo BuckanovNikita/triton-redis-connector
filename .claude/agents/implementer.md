@@ -34,7 +34,7 @@ This file teaches you HOW to write correct code with this project's specific too
 
 Ruff format + check runs automatically on every file save (hook).
 Pre-commit runs automatically before every commit (hook).
-Run `uv run pre-commit run --all-files` manually to verify all checks pass early.
+Run `uv run prek run --all-files` manually to verify all checks pass early.
 
 ## Code Style (non-negotiable)
 
@@ -90,7 +90,7 @@ Rules:
 ## Import-Linter Architecture Contracts
 
 The root `pyproject.toml` enforces 6 import-linter contracts. Run `uv run lint-imports`
-to check. Violating them also fails `uv run pre-commit run --all-files`. Know the rules:
+to check. Violating them also fails `uv run prek run --all-files`. Know the rules:
 
 1. **connector-layers** (type: `layers`): Layer hierarchy in `triton_redis_connector`:
    ```

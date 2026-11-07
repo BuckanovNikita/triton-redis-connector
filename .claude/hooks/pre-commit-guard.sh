@@ -21,7 +21,7 @@ esac
 cd "${CLAUDE_PROJECT_DIR:-.}"
 
 # Run pre-commit and check exit code directly
-uv run pre-commit run --all-files
+uv run prek run --all-files
 RC=$?
 
 if [ "$RC" -ne 0 ]; then

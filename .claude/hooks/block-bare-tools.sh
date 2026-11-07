@@ -37,6 +37,7 @@ BLOCKED = {
     "vulture",
     "lint-imports",
     "pre-commit",
+    "prek",
 }
 
 if first_word not in BLOCKED:
