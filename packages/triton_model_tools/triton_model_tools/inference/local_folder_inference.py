@@ -27,7 +27,7 @@ def run_local_folder_inference(  # noqa: PLR0913
 ) -> FolderInferenceResult:
     """Run ONNX inference on all images in a directory.
 
-    Uses the same YoloPreprocessor and YoloPostprocessor as the Triton pipeline,
+    Uses the same LetterBoxPreprocessor and YoloPostprocessor as the Triton pipeline,
     but replaces the Triton gRPC client with a local OnnxInferenceClient.
 
     Args:
