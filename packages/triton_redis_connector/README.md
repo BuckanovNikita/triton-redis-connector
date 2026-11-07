@@ -48,6 +48,7 @@
 ```python
 from triton_redis_connector import BaseThreadProcessor
 
+
 class MyProcessor(BaseThreadProcessor[InputEvent, OutputEvent]):
     def __init__(self, param: str) -> None:
         super().__init__()
@@ -55,6 +56,7 @@ class MyProcessor(BaseThreadProcessor[InputEvent, OutputEvent]):
 
     def __call__(self, event: InputEvent) -> OutputEvent | None:
         return process(event)
+
 
 registry.register("proc", MyProcessor("value"))
 ```
@@ -99,9 +101,9 @@ Shipped-процессоры (ClientPreprocessorNode, DetectionInferenceNode, Cl
 from triton_redis_connector.engine.registry import PipelineRegistry
 
 registry = PipelineRegistry()
-registry.register("source", MySource())         # __call__() -> EventA
-registry.register("processor", MyProcessor())   # __call__(EventA) -> EventB
-registry.register("sink", MySink())             # __call__(EventB) -> None
+registry.register("source", MySource())  # __call__() -> EventA
+registry.register("processor", MyProcessor())  # __call__(EventA) -> EventB
+registry.register("sink", MySink())  # __call__(EventB) -> None
 ```
 
 Union-типы в возвращаемом значении (`EventA | EventB | None`) создают ребра ко всем потребителям обоих типов.

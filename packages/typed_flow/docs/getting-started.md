@@ -41,10 +41,12 @@ from typed_flow.engine.events import PipelineEvent, Unprocessed
 Фреймворк извлекает типы из аннотаций `__call__` каждого узла и строит DAG:
 
 ```python
-class MyProcessor(BaseThreadProcessor[
-    PipelineEvent[MyEvent, Unprocessed],      # вход
-    PipelineEvent[MyEvent, DetectionResult],   # выход
-]):
+class MyProcessor(
+    BaseThreadProcessor[
+        PipelineEvent[MyEvent, Unprocessed],  # вход
+        PipelineEvent[MyEvent, DetectionResult],  # выход
+    ]
+):
     def __call__(self, event):
         # event имеет тип PipelineEvent[MyEvent, Unprocessed]
         result = DetectionResult(...)
@@ -64,7 +66,10 @@ class MyProcessor(BaseThreadProcessor[
 ```python
 from pydantic import BaseModel
 from typed_flow.config.schema import (
-    AppConfig, RedisConnectionConfig, SourceConfig, SinkConfig,
+    AppConfig,
+    RedisConnectionConfig,
+    SourceConfig,
+    SinkConfig,
 )
 from typed_flow.connectors import RedisThreadSource, RedisThreadSink
 from typed_flow.engine.app import Application
@@ -76,6 +81,7 @@ from typed_flow.protocols import BaseThreadProcessor
 class InputEvent(BaseModel):
     camera_id: str
     frame_id: int
+
 
 class OutputResult(BaseModel):
     camera_id: str
@@ -89,10 +95,12 @@ class MySource(RedisThreadSource[InputEvent]):
 
 
 # 3. Процессор
-class MyProcessor(BaseThreadProcessor[
-    PipelineEvent[InputEvent, Unprocessed],
-    PipelineEvent[InputEvent, OutputResult],
-]):
+class MyProcessor(
+    BaseThreadProcessor[
+        PipelineEvent[InputEvent, Unprocessed],
+        PipelineEvent[InputEvent, OutputResult],
+    ]
+):
     def __call__(self, event):
         result = OutputResult(
             camera_id=event.context.camera_id,

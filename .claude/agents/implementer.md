@@ -58,13 +58,16 @@ Declare metrics on EVENT CLASSES, not on processor return types:
 from typing import Annotated, ClassVar
 from triton_redis_connector.protocols import Counter, Gauge, GroupBy
 
+
 class DecodedImage(Event):
     _metrics_: ClassVar[list[Counter]] = [Counter("decode_success")]
     image: NDArray[np.uint8]
 
+
 class DetectionResult(Event):
     _metrics_: ClassVar[list[Counter]] = [Counter("detection_done")]
     inference_time_ms: Annotated[float, Gauge("inference_time_ms")]
+
 
 class ImageEvent(Event):
     camera_no: Annotated[str, GroupBy("camera_events", window_s=60)]
@@ -176,6 +179,7 @@ Base classes provide `__call__` with built-in metrics/error handling. Users over
 ```python
 from triton_redis_connector.protocols import BaseThreadProcessor
 
+
 class MyProcessor(BaseThreadProcessor[InputEvent, OutputEvent]):
     def __init__(self, param: str) -> None:
         super().__init__()
@@ -183,6 +187,7 @@ class MyProcessor(BaseThreadProcessor[InputEvent, OutputEvent]):
 
     def __call__(self, event: InputEvent) -> OutputEvent | None:
         return process(event)
+
 
 registry.register("proc", MyProcessor("value"))
 ```
@@ -218,6 +223,7 @@ User code accesses per-event metadata via `current_context()`:
 ```python
 from triton_redis_connector.engine.context import current_context
 
+
 def __call__(self, event: MyEvent) -> ResultEvent | None:
     ctx = current_context()  # EventContext(message_id, source_stream, created_at)
     ...
@@ -230,15 +236,14 @@ Framework sets/resets context before/after dispatch. Envelope is framework-inter
 `InferenceWorker` is pure `__call__` — no retry, no semaphore, no threading:
 
 ```python
-
 class InferenceWorker:
     def __init__(self, model_name: str, triton_url: str) -> None:
         self.model_name = model_name
         import tritonclient.grpc as grpcclient  # noqa: PLC0415
+
         self.client = grpcclient.InferenceServerClient(url=triton_url)
 
-    def __call__(self, event: InferenceInput) -> InferenceOutput | InferenceError | None:
-        ...
+    def __call__(self, event: InferenceInput) -> InferenceOutput | InferenceError | None: ...
 ```
 
 `InferenceWorkerFactory` creates workers: `create_shared()` returns picklable
@@ -257,11 +262,13 @@ from dataclasses import dataclass
 import numpy.typing as npt
 import numpy as np
 
+
 @dataclass(frozen=True)
 class PreprocessSharedContext:
     class_names: tuple[str, ...]
     mean: npt.NDArray[np.float32]
     std: npt.NDArray[np.float32]
+
 
 def create_shared() -> PreprocessSharedContext:
     return PreprocessSharedContext(
@@ -269,6 +276,7 @@ def create_shared() -> PreprocessSharedContext:
         mean=np.array([0.485, 0.456, 0.406], dtype=np.float32),
         std=np.array([0.229, 0.224, 0.225], dtype=np.float32),
     )
+
 
 def create_processor(shared: PreprocessSharedContext) -> ImagePreprocessor:
     return ImagePreprocessor(mean=shared.mean, std=shared.std)
@@ -313,7 +321,6 @@ The main loop has three responsibilities:
    are alive. On crash: logs error, restarts the variant, re-wires queues.
 
 ```python
-
 class MainLoop:
     def run(self) -> None:
         while not self.shutdown_requested:
@@ -348,10 +355,12 @@ No primitive raises exceptions during normal operation. Errors become typed even
 ```python
 from pydantic import BaseModel
 
+
 class DecodeError(BaseModel):
     request_id: str
     error_message: str
     source_event_type: str
+
 
 class InferenceError(BaseModel):
     request_id: str
@@ -554,6 +563,7 @@ pure business logic — no `stop` event, no threading. Framework wraps it.
 ```python
 from pydantic import BaseModel, Field, ConfigDict
 
+
 class InferenceRequest(BaseModel):
     model_config = ConfigDict(frozen=True, strict=True)
 
@@ -568,6 +578,7 @@ class InferenceRequest(BaseModel):
 ```python
 from pydantic import field_validator, model_validator
 from typing import Self
+
 
 class StreamConfig(BaseModel):
     stream_name: str
@@ -612,6 +623,7 @@ request = InferenceRequest.model_validate(message_fields)
 ```python
 import numpy as np
 import numpy.typing as npt
+
 
 def preprocess(image: npt.NDArray[np.uint8]) -> npt.NDArray[np.float32]:
     return (image / 255.0).astype(np.float32)
@@ -662,6 +674,7 @@ if TYPE_CHECKING:
     import numpy.typing as npt
     from triton_model_tools.models import TritonModelConfig
 
+
 def process(config: TritonModelConfig, path: Path) -> None: ...
 ```
 
@@ -711,11 +724,13 @@ This applies to every queue in the system — preprocessing, inference, results.
 ```python
 import multiprocessing
 
+
 def inference_worker(
     request_queue: multiprocessing.Queue,
     result_queue: multiprocessing.Queue,
 ) -> None:
     import tritonclient.grpc as grpcclient  # noqa: PLC0415
+
     client = grpcclient.InferenceServerClient(url="triton:8001")
 
     while True:
@@ -753,7 +768,6 @@ with ProcessPoolExecutor(max_workers=4) as pool:
 ### Provider Definition
 
 ```python
-
 from dishka import Provider, Scope, provide
 
 from triton_redis_connector.config.schema import AppConfig, RedisConnectionConfig
@@ -808,7 +822,6 @@ Each `ProcessPoolProcessor` worker creates a fresh container. The factory captur
 only picklable config (pydantic models):
 
 ```python
-
 from dishka import Provider, make_container, provide
 
 from triton_redis_connector.providers.scopes import WORKER
@@ -824,11 +837,13 @@ class WorkerProvider(Provider):
     @provide
     def triton_client(self) -> tritonclient.grpc.InferenceServerClient:
         import tritonclient.grpc as grpcclient  # noqa: PLC0415
+
         return grpcclient.InferenceServerClient(url=self._config.grpc_url)
 
     @provide
     def version_tracker(
-        self, client: tritonclient.grpc.InferenceServerClient,
+        self,
+        client: tritonclient.grpc.InferenceServerClient,
     ) -> ModelVersionTracker:
         return ModelVersionTracker(
             client=client,

@@ -28,11 +28,14 @@ typed-flow поддерживает несколько вариантов пар
 ```python
 from typed_flow.protocols import BaseThreadSource, BaseThreadProcessor, BaseThreadSink
 
+
 class MySource(BaseThreadSource[MyEvent]):
     def __call__(self) -> MyEvent | None: ...
 
+
 class MyProcessor(BaseThreadProcessor[MyEvent, MyResult]):
     def __call__(self, event: MyEvent) -> MyResult | None: ...
+
 
 class MySink(BaseThreadSink[MyResult]):
     def __call__(self, event: MyResult) -> None: ...
@@ -66,6 +69,7 @@ N потоков обрабатывают общую входную очеред
 ```python
 from typed_flow.protocols import BaseThreadPoolProcessor
 
+
 class ParallelProcessor(BaseThreadPoolProcessor[InputEvent, OutputEvent]):
     def __call__(self, event: InputEvent) -> OutputEvent | None:
         # Вызывается из любого потока пула
@@ -78,6 +82,7 @@ N процессов обрабатывают общую очередь. Нас�
 
 ```python
 from typed_flow.protocols import BaseProcessPoolProcessor
+
 
 class HeavyProcessor(BaseProcessPoolProcessor[InputEvent, OutputEvent]):
     def __call__(self, event: InputEvent) -> OutputEvent | None:

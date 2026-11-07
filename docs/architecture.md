@@ -97,6 +97,7 @@ Base classes satisfy the `WrappedNode` protocol (fast-path variant detection in 
 ```python
 from triton_redis_connector import BaseThreadProcessor
 
+
 class MyProcessor(BaseThreadProcessor[ImageEvent, Result]):
     def __init__(self, url: str) -> None:
         super().__init__()
@@ -104,6 +105,7 @@ class MyProcessor(BaseThreadProcessor[ImageEvent, Result]):
 
     def __call__(self, event: ImageEvent) -> Result | None:
         return process(self._url, event)
+
 
 registry.register("proc", MyProcessor("triton:8001"))
 ```
@@ -118,7 +120,9 @@ from triton_redis_connector import Application, ModelBundle, expand_bundle
 bundle = ModelBundle(
     name="yolo",
     preprocessor=PreprocessorNode[MyImageEvent, MyTritonRequest](
-        DecoderType.OPENCV, PreprocessStrategy.LETTERBOX, grpc_url,
+        DecoderType.OPENCV,
+        PreprocessStrategy.LETTERBOX,
+        grpc_url,
         output_cls=MyTritonRequest,
     ),
     inference=InferenceNode[MyTritonRequest, MyInferenceOutput](grpc_url, metadata_cache),
@@ -199,7 +203,9 @@ The framework routes events using **subtype-aware matching**:
 bundle = ModelBundle(
     name="yolo",
     preprocessor=PreprocessorNode[MyImageEvent, MyTritonRequest](
-        DecoderType.OPENCV, PreprocessStrategy.LETTERBOX, grpc_url,
+        DecoderType.OPENCV,
+        PreprocessStrategy.LETTERBOX,
+        grpc_url,
         output_cls=MyTritonRequest,
     ),
     inference=InferenceNode[MyTritonRequest, MyInferenceOutput](grpc_url, metadata_cache),

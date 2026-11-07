@@ -68,13 +68,14 @@ User processors inherit from a base class that declares the variant. Six base cl
 ```python
 from triton_redis_connector import BaseThreadProcessor
 
+
 class ImagePreprocessor(BaseThreadProcessor[RawImageEvent, TensorEvent]):
     def __init__(self, target_size: tuple[int, int]) -> None:
         super().__init__()
         self.target_size = target_size
 
-    def __call__(self, event: RawImageEvent) -> TensorEvent | None:
-        ...
+    def __call__(self, event: RawImageEvent) -> TensorEvent | None: ...
+
 
 # No wrapping needed -- variant is declared by the base class
 registry.register("preprocessor", ImagePreprocessor(target_size=(640, 640)))

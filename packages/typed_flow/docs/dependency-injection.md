@@ -40,13 +40,19 @@ container = make_app_container(config)
 # Один клиент для всего приложения
 client = container.get(Redis[bytes])
 
-source = RedisThreadSource[MyEvent](redis=config.redis, source=SourceConfig(
-    stream_name="input:stream",
-    consumer_group="my-group",
-))
-sink = RedisThreadSink[MyEvent, MyResult](redis=config.redis, sink=SinkConfig(
-    stream_name="output:stream",
-))
+source = RedisThreadSource[MyEvent](
+    redis=config.redis,
+    source=SourceConfig(
+        stream_name="input:stream",
+        consumer_group="my-group",
+    ),
+)
+sink = RedisThreadSink[MyEvent, MyResult](
+    redis=config.redis,
+    sink=SinkConfig(
+        stream_name="output:stream",
+    ),
+)
 
 # Передаём клиент в Application.build() для метрик
 app = Application.build(config, [source, MyProcessor(), sink], redis_client=client)
@@ -70,12 +76,14 @@ container = make_container(TypedFlowProvider(), context={AppConfig: config})
 from dishka import Provider, Scope, provide
 import tritonclient.grpc as grpcclient
 
+
 class TritonProvider(Provider):
     scope = Scope.APP
 
     @provide
     def triton_client(self) -> grpcclient.InferenceServerClient:
         return grpcclient.InferenceServerClient(url="localhost:8001")
+
 
 # Объединяем провайдеры
 container = make_container(
@@ -94,10 +102,12 @@ from unittest.mock import Mock
 from dishka import Provider, Scope, provide, make_container
 from redis import Redis
 
+
 class MockRedisProvider(Provider):
     @provide(scope=Scope.APP, override=True)
     def redis_client(self) -> Redis[bytes]:
         return Mock(spec=Redis)
+
 
 test_container = make_container(
     TypedFlowProvider(),

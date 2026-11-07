@@ -92,6 +92,7 @@ uv run pytest -n 0 -x --tb=long
 ```python
 import pytest
 
+
 # With auto mode, just write async test functions:
 async def test_redis_consumer_reads_messages(
     redis_client: redis.asyncio.Redis,
@@ -100,16 +101,17 @@ async def test_redis_consumer_reads_messages(
     messages = await redis_client.xread(streams={"stream:test": "0"}, count=1)
     assert len(messages) == 1
 
+
 # With strict mode, mark explicitly:
 @pytest.mark.asyncio
-async def test_triton_health_check() -> None:
-    ...
+async def test_triton_health_check() -> None: ...
 ```
 
 ### Async Fixtures
 
 ```python
 from collections.abc import AsyncIterator
+
 
 @pytest.fixture
 async def redis_client() -> AsyncIterator[redis.asyncio.Redis]:
@@ -157,6 +159,7 @@ def test_source_produces_event() -> None:
     assert event is not None
     assert isinstance(event, ImageEvent)
 
+
 def test_source_returns_none_when_no_data() -> None:
     source = MyRedisSource(config=empty_config)
 
@@ -174,6 +177,7 @@ import threading
 from triton_redis_connector.engine.wrappers import DetachedThreadSource
 from triton_redis_connector.engine.metric_aggregator import MetricAggregator
 
+
 def test_wrapped_source_records_metrics() -> None:
     inner = MyRedisSource(config=test_config)
     aggregator = MetricAggregator()
@@ -185,6 +189,7 @@ def test_wrapped_source_records_metrics() -> None:
     snap = aggregator.snapshot()
     assert snap.call_count == 1
     assert snap.empty_count == 0
+
 
 def test_wrapped_source_records_empty() -> None:
     inner = MyRedisSource(config=empty_config)
@@ -215,6 +220,7 @@ def test_processor_transforms_event() -> None:
     assert isinstance(result, TensorEvent)
     assert result.tensor.shape == (1, 3, 640, 640)
 
+
 def test_processor_returns_none_to_filter() -> None:
     processor = MyFilterProcessor(min_confidence=0.5)
     low_confidence_event = DetectionEvent(confidence=0.1)
@@ -229,8 +235,10 @@ def test_processor_returns_none_to_filter() -> None:
 ```python
 from triton_redis_connector.engine.middleware import RetryMiddleware, ConcurrencyLimitMiddleware
 
+
 def test_retry_middleware_retries_on_exception() -> None:
     call_count = 0
+
     def flaky_processor(event: MyEvent) -> MyResult:
         nonlocal call_count
         call_count += 1
@@ -245,9 +253,12 @@ def test_retry_middleware_retries_on_exception() -> None:
     assert result is not None
     assert call_count == 3
 
+
 def test_concurrency_limit_drops_when_full() -> None:
     import threading
+
     blocker = threading.Event()
+
     def slow_processor(event: MyEvent) -> MyResult:
         blocker.wait()
         return MyResult(data="ok")
@@ -256,7 +267,9 @@ def test_concurrency_limit_drops_when_full() -> None:
     # Start one call that blocks
     thread = threading.Thread(target=limiter, args=(MyEvent(),))
     thread.start()
-    import time; time.sleep(0.05)
+    import time
+
+    time.sleep(0.05)
     # Second call should be dropped
     result = limiter(MyEvent())
     assert result is None
@@ -310,6 +323,7 @@ def test_sink_writes_to_redis() -> None:
     assert len(fake_redis.written) == 1
     assert fake_redis.written[0]["stream"] == "stream:results"
 
+
 def test_sink_returns_none_on_success() -> None:
     sink = MyResultSink(redis_client=FakeRedisStreamWriter(), stream="s")
 
@@ -323,6 +337,7 @@ def test_sink_returns_none_on_success() -> None:
 ```python
 from triton_redis_connector.engine.wrappers import DetachedThreadSink
 from triton_redis_connector.engine.metric_aggregator import MetricAggregator
+
 
 def test_wrapped_sink_records_metrics() -> None:
     inner = MyResultSink(redis_client=fake_redis, stream="s")
@@ -342,9 +357,11 @@ def test_wrapped_sink_records_metrics() -> None:
 ```python
 from triton_redis_connector.engine.context import EventContext, set_context, reset_context, current_context
 
+
 def test_current_context_raises_outside_scope() -> None:
     with pytest.raises(LookupError):
         current_context()
+
 
 def test_set_and_get_context() -> None:
     ctx = EventContext(message_id="msg-1", source_stream="stream:input", created_at=1000.0)
@@ -353,6 +370,7 @@ def test_set_and_get_context() -> None:
         assert current_context() == ctx
     finally:
         reset_context(token)
+
 
 def test_processor_with_context() -> None:
     ctx = EventContext(message_id="msg-1", source_stream="stream:input", created_at=1000.0)
@@ -371,18 +389,24 @@ def test_processor_with_context() -> None:
 
 ```python
 from triton_redis_connector.engine.metric_aggregator import (
-    extract_event_counters, extract_field_gauges, extract_field_group_bys,
-    MetricAggregator, NodeMetricSnapshot,
+    extract_event_counters,
+    extract_field_gauges,
+    extract_field_group_bys,
+    MetricAggregator,
+    NodeMetricSnapshot,
 )
+
 
 def test_event_counter_extraction() -> None:
     counters = extract_event_counters(DecodedImage)
     assert len(counters) == 1
     assert counters[0].name == "decode_success"
 
+
 def test_field_gauge_extraction() -> None:
     gauges = extract_field_gauges(DetectionResult)
     assert any(name == "inference_time_ms" for name, _ in gauges)
+
 
 def test_metric_aggregator_snapshot() -> None:
     agg = MetricAggregator()
@@ -393,6 +417,7 @@ def test_metric_aggregator_snapshot() -> None:
     assert snap.call_count == 2
     assert snap.error_count == 1
     assert snap.total_processing_ms == 15.5
+
 
 def test_metric_aggregator_interval_calls() -> None:
     agg = MetricAggregator()
@@ -416,6 +441,7 @@ def test_factory_creates_shared_context() -> None:
     assert shared is not None
     assert shared.model_loaded
 
+
 def test_factory_creates_processor_with_shared_state() -> None:
     shared = MyProcessorFactory.create_shared(config=test_config)
     processor = MyProcessorFactory.create_processor(shared)
@@ -423,6 +449,7 @@ def test_factory_creates_processor_with_shared_state() -> None:
     assert processor is not None
     result = processor(test_event)
     assert result is not None
+
 
 def test_factory_creates_independent_processors() -> None:
     shared = MyProcessorFactory.create_shared(config=test_config)
@@ -435,13 +462,15 @@ def test_factory_creates_independent_processors() -> None:
     assert result_a is not None
     assert result_b is not None
 
+
 def test_factory_shared_state_is_process_safe() -> None:
     import multiprocessing
 
     shared = MyProcessorFactory.create_shared(config=test_config)
     # SharedContext should use process-safe primitives
     assert isinstance(shared.counter, multiprocessing.Value) or isinstance(
-        shared.queue, multiprocessing.Queue,
+        shared.queue,
+        multiprocessing.Queue,
     )
 ```
 
@@ -456,20 +485,21 @@ The graph is verified at startup: DAG from type annotations, union returns = mul
 ```python
 def test_valid_graph_passes_verification() -> None:
     graph = PipelineGraph()
-    graph.add_source(MySource)          # -> ImageEvent
-    graph.add_processor(MyProcessor)    # ImageEvent -> TensorEvent
-    graph.add_sink(MySink)              # TensorEvent -> MetricEvent | None
+    graph.add_source(MySource)  # -> ImageEvent
+    graph.add_processor(MyProcessor)  # ImageEvent -> TensorEvent
+    graph.add_sink(MySink)  # TensorEvent -> MetricEvent | None
 
     errors = graph.verify()
 
     assert errors == []
 
+
 def test_graph_with_union_return_all_consumed() -> None:
     graph = PipelineGraph()
-    graph.add_source(MySource)          # -> ImageEvent
-    graph.add_processor(MyRouter)       # ImageEvent -> HighConfEvent | LowConfEvent
-    graph.add_sink(HighConfSink)        # HighConfEvent -> MetricEvent | None
-    graph.add_sink(LowConfSink)         # LowConfEvent -> MetricEvent | None
+    graph.add_source(MySource)  # -> ImageEvent
+    graph.add_processor(MyRouter)  # ImageEvent -> HighConfEvent | LowConfEvent
+    graph.add_sink(HighConfSink)  # HighConfEvent -> MetricEvent | None
+    graph.add_sink(LowConfSink)  # LowConfEvent -> MetricEvent | None
 
     errors = graph.verify()
 
@@ -481,9 +511,9 @@ def test_graph_with_union_return_all_consumed() -> None:
 ```python
 def test_disconnected_node_fails_verification() -> None:
     graph = PipelineGraph()
-    graph.add_source(MySource)          # -> ImageEvent
-    graph.add_processor(MyProcessor)    # ImageEvent -> TensorEvent
-    graph.add_sink(MySink)              # TensorEvent -> MetricEvent | None
+    graph.add_source(MySource)  # -> ImageEvent
+    graph.add_processor(MyProcessor)  # ImageEvent -> TensorEvent
+    graph.add_sink(MySink)  # TensorEvent -> MetricEvent | None
     graph.add_processor(OrphanProcessor)  # UnrelatedEvent -> OtherEvent (no input)
 
     errors = graph.verify()
@@ -491,11 +521,12 @@ def test_disconnected_node_fails_verification() -> None:
     assert len(errors) > 0
     assert any("disconnected" in e.lower() or "orphan" in e.lower() for e in errors)
 
+
 def test_union_return_with_missing_consumer_fails() -> None:
     graph = PipelineGraph()
-    graph.add_source(MySource)          # -> ImageEvent
-    graph.add_processor(MyRouter)       # ImageEvent -> HighConfEvent | LowConfEvent
-    graph.add_sink(HighConfSink)        # HighConfEvent -> MetricEvent | None
+    graph.add_source(MySource)  # -> ImageEvent
+    graph.add_processor(MyRouter)  # ImageEvent -> HighConfEvent | LowConfEvent
+    graph.add_sink(HighConfSink)  # HighConfEvent -> MetricEvent | None
     # Missing: LowConfEvent consumer
 
     errors = graph.verify()
@@ -503,11 +534,12 @@ def test_union_return_with_missing_consumer_fails() -> None:
     assert len(errors) > 0
     assert any("LowConfEvent" in e for e in errors)
 
+
 def test_cycle_in_graph_fails_verification() -> None:
     graph = PipelineGraph()
     graph.add_source(MySource)
-    graph.add_processor(ProcA)          # ImageEvent -> TensorEvent
-    graph.add_processor(ProcB)          # TensorEvent -> ImageEvent (cycle!)
+    graph.add_processor(ProcA)  # ImageEvent -> TensorEvent
+    graph.add_processor(ProcB)  # TensorEvent -> ImageEvent (cycle!)
 
     errors = graph.verify()
 
@@ -534,6 +566,7 @@ def test_processor_sends_error_to_queue_instead_of_raising() -> None:
     assert isinstance(error_event, ErrorEvent)
     assert "decode" in error_event.message.lower() or "corrupt" in error_event.message.lower()
 
+
 def test_source_sends_connection_error_to_queue() -> None:
     error_queue: queue.Queue[ErrorEvent] = queue.Queue(maxsize=100)
     source = MyRedisSource(
@@ -557,6 +590,7 @@ The main loop monitors parallel variants and restarts them on crash.
 import threading
 import time
 
+
 def test_main_loop_restarts_crashed_thread_source() -> None:
     crash_count = 0
 
@@ -578,6 +612,7 @@ def test_main_loop_restarts_crashed_thread_source() -> None:
     monitor.stop_all()
 
     assert crash_count >= 2  # At least one restart happened
+
 
 def test_main_loop_does_not_restart_after_clean_stop() -> None:
     call_count = 0
@@ -644,7 +679,9 @@ class FakeRedisStreamReader:
         return len(ids)
 
     def seed_messages(
-        self, stream: str, messages: list[tuple[str, dict[str, str]]],
+        self,
+        stream: str,
+        messages: list[tuple[str, dict[str, str]]],
     ) -> None:
         self.streams.setdefault(stream, []).extend(messages)
 ```
@@ -658,6 +695,7 @@ Use `unittest.mock.AsyncMock` / `MagicMock` for:
 
 ```python
 from unittest.mock import AsyncMock
+
 
 async def test_handles_redis_connection_error() -> None:
     mock_redis = AsyncMock()
@@ -679,12 +717,14 @@ async def test_handles_redis_connection_error() -> None:
 import numpy as np
 from unittest.mock import MagicMock
 
+
 def make_fake_infer_result(
     outputs: dict[str, np.ndarray],
 ) -> MagicMock:
     result = MagicMock()
     result.as_numpy = lambda name: outputs[name]
     return result
+
 
 def test_inference_worker_with_mock_client() -> None:
     fake_output = np.array([[0.5, 0.5, 0.8, 0.8, 0.95, 0]]).astype(np.float32)
@@ -717,14 +757,8 @@ def make_fake_model_metadata(
     outputs: list[tuple[str, str, list[int]]],
 ) -> MagicMock:
     metadata = MagicMock()
-    metadata.inputs = [
-        MagicMock(name=name, datatype=dtype, shape=shape)
-        for name, dtype, shape in inputs
-    ]
-    metadata.outputs = [
-        MagicMock(name=name, datatype=dtype, shape=shape)
-        for name, dtype, shape in outputs
-    ]
+    metadata.inputs = [MagicMock(name=name, datatype=dtype, shape=shape) for name, dtype, shape in inputs]
+    metadata.outputs = [MagicMock(name=name, datatype=dtype, shape=shape) for name, dtype, shape in outputs]
     return metadata
 ```
 
@@ -737,6 +771,7 @@ Verify that full queues drop items instead of blocking:
 ```python
 import queue
 
+
 def test_queue_overflow_drops_item() -> None:
     q: queue.Queue[str] = queue.Queue(maxsize=2)
     q.put("a")
@@ -746,6 +781,7 @@ def test_queue_overflow_drops_item() -> None:
     dropped = not try_enqueue(q, "c")
     assert dropped
     assert q.qsize() == 2
+
 
 def test_queue_overflow_emits_metric(caplog) -> None:
     q: queue.Queue[str] = queue.Queue(maxsize=1)
@@ -763,19 +799,26 @@ def test_queue_overflow_emits_metric(caplog) -> None:
 ```python
 import time
 
+
 def test_interleave_ratio_processes_pending_and_new() -> None:
     fake_redis = FakeRedisStreamReader()
-    fake_redis.seed_messages("stream:input", [
-        ("pending-1", {"data": "old"}),
-        ("pending-2", {"data": "old"}),
-    ])
+    fake_redis.seed_messages(
+        "stream:input",
+        [
+            ("pending-1", {"data": "old"}),
+            ("pending-2", {"data": "old"}),
+        ],
+    )
     # Seed new messages separately
-    fake_redis.seed_new_messages("stream:input", [
-        ("new-1", {"data": "fresh"}),
-        ("new-2", {"data": "fresh"}),
-        ("new-3", {"data": "fresh"}),
-        ("new-4", {"data": "fresh"}),
-    ])
+    fake_redis.seed_new_messages(
+        "stream:input",
+        [
+            ("new-1", {"data": "fresh"}),
+            ("new-2", {"data": "fresh"}),
+            ("new-3", {"data": "fresh"}),
+            ("new-4", {"data": "fresh"}),
+        ],
+    )
 
     recovery = RecoveryReader(
         redis_client=fake_redis,
@@ -787,13 +830,17 @@ def test_interleave_ratio_processes_pending_and_new() -> None:
     assert sum(1 for m in batch if m.is_new) == 4
     assert sum(1 for m in batch if not m.is_new) == 1
 
+
 def test_expired_pending_messages_are_dropped() -> None:
     fake_redis = FakeRedisStreamReader()
     # Message with idle time > TTL
-    fake_redis.seed_messages_with_idle("stream:input", [
-        ("expired-1", {"data": "stale"}, 120_000),  # 120s idle
-        ("fresh-1", {"data": "ok"}, 5_000),          # 5s idle
-    ])
+    fake_redis.seed_messages_with_idle(
+        "stream:input",
+        [
+            ("expired-1", {"data": "stale"}, 120_000),  # 120s idle
+            ("fresh-1", {"data": "ok"}, 5_000),  # 5s idle
+        ],
+    )
 
     recovery = RecoveryReader(
         redis_client=fake_redis,
@@ -824,6 +871,7 @@ Tests run with `-n auto` (parallel). Each worker is a separate process.
    names per test to avoid collisions:
    ```python
    import uuid
+
 
    def test_something(tmp_path: Path) -> None:
        stream_name = f"test:stream:{uuid.uuid4().hex[:8]}"
@@ -903,12 +951,12 @@ import pytest
 
 pytestmark = pytest.mark.integration  # Marks all tests in this module
 
+
 # OR per-test:
 @pytest.mark.integration
 async def test_redis_stream_roundtrip(
     redis_client: redis.asyncio.Redis,
-) -> None:
-    ...
+) -> None: ...
 ```
 
 ### Integration conftest.py
@@ -917,6 +965,7 @@ async def test_redis_stream_roundtrip(
 import pytest
 import redis.asyncio
 from collections.abc import AsyncIterator
+
 
 @pytest.fixture(scope="session")
 async def redis_client() -> AsyncIterator[redis.asyncio.Redis]:
@@ -928,6 +977,7 @@ async def redis_client() -> AsyncIterator[redis.asyncio.Redis]:
         pytest.skip("Redis not available (docker-compose not running)")
     yield client
     await client.aclose()
+
 
 @pytest.fixture(autouse=True)
 async def clean_redis(redis_client: redis.asyncio.Redis) -> AsyncIterator[None]:
@@ -945,11 +995,13 @@ async def clean_redis(redis_client: redis.asyncio.Redis) -> AsyncIterator[None]:
 def triton_available() -> bool:
     """Check if Triton server is reachable."""
     import tritonclient.grpc as grpcclient  # noqa: PLC0415
+
     try:
         client = grpcclient.InferenceServerClient(url="triton:8001")
         return client.is_server_ready()
     except Exception:  # noqa: BLE001
         return False
+
 
 @pytest.fixture
 def require_triton(triton_available: bool) -> None:
@@ -990,6 +1042,7 @@ import numpy as np
 import pytest
 from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor
 
+
 @pytest.mark.integration
 def test_letterbox_matches_ultralytics() -> None:
     from ultralytics.data.augment import LetterBox  # noqa: PLC0415
@@ -1011,6 +1064,7 @@ def test_letterbox_matches_ultralytics() -> None:
 
 ```python
 from triton_shared_models.detection.preprocessing import LetterBoxPreprocessor
+
 
 def test_letterbox_properties() -> None:
     image = np.zeros((1080, 1920, 3), dtype=np.uint8)

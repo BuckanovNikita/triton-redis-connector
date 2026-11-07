@@ -59,6 +59,7 @@ result = output.as_cpu().as_array()[0]  # numpy array
 ```python
 from nvidia.dali.plugin.triton import autoserialize
 
+
 @autoserialize
 @pipeline_def(batch_size=1, num_threads=4, device_id=0)
 def pipe():
@@ -83,7 +84,7 @@ be named `dali.py` or `model.dali` in the model version directory.
 images = fn.decoders.image(
     encoded,
     device="mixed",
-    output_type=types.BGR,    # or types.RGB
+    output_type=types.BGR,  # or types.RGB
 )
 # Output: GPU tensor (H, W, C) uint8
 ```
@@ -102,8 +103,8 @@ orig_w = fn.slice(shapes, 1, 1, axes=[0])
 # Resize to exact dimensions
 resized = fn.resize(
     images,
-    resize_x=new_w,         # target width (can be DALI expression)
-    resize_y=new_h,         # target height (can be DALI expression)
+    resize_x=new_w,  # target width (can be DALI expression)
+    resize_y=new_h,  # target height (can be DALI expression)
     interp_type=types.INTERP_LINEAR,  # bilinear interpolation
 )
 
@@ -122,9 +123,9 @@ Centered padding with fill value (letterbox style):
 padded = fn.paste(
     resized,
     paste_x=fn.cast(pad_left, dtype=types.FLOAT) / target_w,  # normalized [0,1]
-    paste_y=fn.cast(pad_top, dtype=types.FLOAT) / target_h,   # normalized [0,1]
+    paste_y=fn.cast(pad_top, dtype=types.FLOAT) / target_h,  # normalized [0,1]
     ratio=1.0,
-    fill_value=(114, 114, 114),          # ultralytics gray
+    fill_value=(114, 114, 114),  # ultralytics gray
     min_canvas_size=(target_h, target_w),
 )
 # Crop to exact target size (paste may overshoot)
@@ -171,10 +172,10 @@ Combined normalize/transpose in one operator:
 ```python
 normalized = fn.crop_mirror_normalize(
     rgb,
-    mean=[0.0, 0.0, 0.0],           # subtract mean
-    std=[255.0, 255.0, 255.0],       # divide by std (=normalize /255)
-    output_layout="CHW",             # HWC -> CHW transpose
-    dtype=types.FLOAT,               # output dtype
+    mean=[0.0, 0.0, 0.0],  # subtract mean
+    std=[255.0, 255.0, 255.0],  # divide by std (=normalize /255)
+    output_layout="CHW",  # HWC -> CHW transpose
+    dtype=types.FLOAT,  # output dtype
 )
 ```
 
@@ -255,8 +256,7 @@ def pipe():
     new_h = fn.cast(fn.cast(orig_h, dtype=types.FLOAT) * scale, dtype=types.INT32)
     new_w = fn.cast(fn.cast(orig_w, dtype=types.FLOAT) * scale, dtype=types.INT32)
 
-    resized = fn.resize(images, resize_x=new_w, resize_y=new_h,
-                        interp_type=types.INTERP_LINEAR)
+    resized = fn.resize(images, resize_x=new_w, resize_y=new_h, interp_type=types.INTERP_LINEAR)
 
     pad_top = fn.cast((target_h - new_h) / 2, dtype=types.INT32)
     pad_left = fn.cast((target_w - new_w) / 2, dtype=types.INT32)
@@ -269,8 +269,7 @@ def pipe():
         fill_value=(114, 114, 114),
         min_canvas_size=(target_h, target_w),
     )
-    padded = fn.crop(padded, crop_h=target_h, crop_w=target_w,
-                     crop_pos_x=0.0, crop_pos_y=0.0)
+    padded = fn.crop(padded, crop_h=target_h, crop_w=target_w, crop_pos_x=0.0, crop_pos_y=0.0)
 
     rgb = fn.color_space_conversion(padded, image_type=types.BGR, output_type=types.RGB)
 
@@ -346,8 +345,7 @@ input_tensor = grpcclient.InferInput("INPUT_0", input_array.shape, "UINT8")
 input_tensor.set_data_from_numpy(input_array)
 
 output = grpcclient.InferRequestedOutput("OUTPUT_0")
-result = client.infer(model_name="model_dali_preprocess",
-                      inputs=[input_tensor], outputs=[output])
+result = client.infer(model_name="model_dali_preprocess", inputs=[input_tensor], outputs=[output])
 preprocessed = result.as_numpy("OUTPUT_0")  # (1, 3, H, W) float32
 ```
 

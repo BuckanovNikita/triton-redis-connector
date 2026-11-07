@@ -37,6 +37,7 @@ source = RedisProcessSource[FrameEvent](redis=redis_cfg, source=source_cfg)
 class CameraSource(RedisThreadSource[FrameEvent]):
     pass
 
+
 source = CameraSource(redis=redis_cfg, source=source_cfg)
 ```
 
@@ -101,6 +102,7 @@ from typed_flow.protocols.messaging import BaseEvent
 
 class MyEvent(BaseEvent):
     data: str
+
 
 class FileSource(BaseThreadSource[MyEvent]):
     def __init__(self, path: str) -> None:

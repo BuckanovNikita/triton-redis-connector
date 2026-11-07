@@ -130,9 +130,11 @@ class BaseThreadProcessor[TIn, TOut]:
 ### Application.build() Classmethod (Preferred)
 
 ```python
-app = Application.build(config, processors=[
-    source, router, preprocessor, inference_node, postprocessor, sink, error_sink
-], triton_collector=collector)
+app = Application.build(
+    config,
+    processors=[source, router, preprocessor, inference_node, postprocessor, sink, error_sink],
+    triton_collector=collector,
+)
 ```
 
 - Explicit processor list — no magic wiring

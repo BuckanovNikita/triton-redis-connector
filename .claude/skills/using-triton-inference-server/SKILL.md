@@ -19,8 +19,8 @@ client = grpcclient.InferenceServerClient(url="triton:8001")
 ### Health Checks
 
 ```python
-client.is_server_live()    # True if server process is running
-client.is_server_ready()   # True if server is ready to accept requests
+client.is_server_live()  # True if server process is running
+client.is_server_ready()  # True if server is ready to accept requests
 client.is_model_ready("yolo11s")  # True if specific model is loaded
 ```
 
@@ -40,7 +40,7 @@ result = client.infer(
     model_name="yolo11s",
     inputs=[input_tensor],
     outputs=[output],
-    model_version="",    # empty string = latest version
+    model_version="",  # empty string = latest version
 )
 
 output_data = result.as_numpy("output0")  # numpy array
@@ -414,6 +414,7 @@ model_repository/
 import numpy as np
 import triton_python_backend_utils as pb_utils
 
+
 class TritonPythonModel:
     def initialize(self, args):
         """Called once when model is loaded."""
@@ -423,9 +424,7 @@ class TritonPythonModel:
         """Execute inference on batch of requests."""
         responses = []
         for request in requests:
-            input_tensor = pb_utils.get_input_tensor_by_name(
-                request, "INPUT_NAME"
-            ).as_numpy()
+            input_tensor = pb_utils.get_input_tensor_by_name(request, "INPUT_NAME").as_numpy()
 
             # Process
             result = input_tensor * 2.0
@@ -434,9 +433,7 @@ class TritonPythonModel:
                 "OUTPUT_NAME",
                 result.astype(np.float32),
             )
-            responses.append(
-                pb_utils.InferenceResponse(output_tensors=[output_tensor])
-            )
+            responses.append(pb_utils.InferenceResponse(output_tensors=[output_tensor]))
         return responses
 
     def finalize(self):

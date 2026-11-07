@@ -17,9 +17,9 @@ Quick reference for ultralytics `YOLO` class — prediction and export only.
 ```python
 from ultralytics import YOLO
 
-model = YOLO("yolo11s.pt")        # pretrained weights (auto-downloads)
-model = YOLO("path/to/best.pt")   # custom trained weights
-model = YOLO("yolo11s.onnx")      # ONNX model for inference
+model = YOLO("yolo11s.pt")  # pretrained weights (auto-downloads)
+model = YOLO("path/to/best.pt")  # custom trained weights
+model = YOLO("yolo11s.onnx")  # ONNX model for inference
 ```
 
 ## Predict API
@@ -28,11 +28,11 @@ model = YOLO("yolo11s.onnx")      # ONNX model for inference
 
 ```python
 results = model.predict(
-    source="image.jpg",       # str | Path | np.ndarray | list
-    conf=0.25,                # confidence threshold
-    iou=0.45,                 # NMS IoU threshold
-    imgsz=640,                # int or (h, w) tuple
-    verbose=False,            # suppress output
+    source="image.jpg",  # str | Path | np.ndarray | list
+    conf=0.25,  # confidence threshold
+    iou=0.45,  # NMS IoU threshold
+    imgsz=640,  # int or (h, w) tuple
+    verbose=False,  # suppress output
 )
 ```
 
@@ -81,13 +81,13 @@ results = model.predict("image.jpg", conf=0.25)
 for result in results:
     # Bounding boxes
     boxes = result.boxes
-    xyxy = boxes.xyxy.cpu().numpy()        # (N, 4) x1,y1,x2,y2
-    xywh = boxes.xywh.cpu().numpy()        # (N, 4) center_x, center_y, w, h
-    conf = boxes.conf.cpu().numpy()         # (N,) confidence scores
+    xyxy = boxes.xyxy.cpu().numpy()  # (N, 4) x1,y1,x2,y2
+    xywh = boxes.xywh.cpu().numpy()  # (N, 4) center_x, center_y, w, h
+    conf = boxes.conf.cpu().numpy()  # (N,) confidence scores
     cls = boxes.cls.cpu().numpy().astype(int)  # (N,) class indices
 
     # Class names
-    names = result.names                    # {0: "person", 1: "car", ...}
+    names = result.names  # {0: "person", 1: "car", ...}
 
     # Iterate detections
     for box in boxes:
